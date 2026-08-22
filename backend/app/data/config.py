@@ -111,3 +111,20 @@ DRAINAGE_DENSITY_WINDOW_RADIUS_M = float(os.environ.get("DRAINAGE_DENSITY_WINDOW
 # literature-calibrated, overridable, folded into
 # get_building_density's cache version.
 BUILDING_DENSITY_WINDOW_RADIUS_M = float(os.environ.get("BUILDING_DENSITY_WINDOW_RADIUS_M", "200.0"))
+
+# Live cloud-fallback raster reads (dem.py's Copernicus DEM, worldcover.py's
+# ESA WorldCover -- both a bare rasterio.open("https://...") straight
+# against a public S3 bucket) hit occasional transient failures:
+# "RasterioIOError: CURL error: Empty reply from server", reproduced live
+# during a normal browser session. Not a code bug or a dead endpoint --
+# a plain urllib range request to the exact same tile URL, run
+# immediately after, succeeded in under a second. GDAL's own HTTP layer
+# already retries this class of transient failure (and is respected for
+# any http(s)-backed dataset open, not only explicit /vsicurl/ paths) far
+# more robustly than a hand-rolled Python retry loop would, so both fetch
+# functions open their datasets inside `with rasterio.Env(**GDAL_HTTP_RETRY_ENV):`.
+GDAL_HTTP_RETRY_ENV = {
+    "GDAL_HTTP_MAX_RETRY": int(os.environ.get("GDAL_HTTP_MAX_RETRY", "3")),
+    "GDAL_HTTP_RETRY_DELAY": float(os.environ.get("GDAL_HTTP_RETRY_DELAY", "1.0")),
+    "GDAL_HTTP_TIMEOUT": int(os.environ.get("GDAL_HTTP_TIMEOUT", "30")),
+}

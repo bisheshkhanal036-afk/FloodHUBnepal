@@ -590,6 +590,85 @@ them.
   nothing about `overlay/compute.py`, `service.py`, `router.py`, or
   `ahp/` changed. Frontend: added to `frontend/src/config/criteria.js`
   under Exposure, closing the gap noted above.
+- Frontend: a **visual identity + landing page redesign**, renamed
+  **FloodHUB** (matching the project's own GitHub repo name; the
+  Kathmandu Valley scope moved to a subtitle/pilot note rather than the
+  product name itself) — a design pass only, no data flow/state/API
+  changes. `App.jsx` gained a local `view` ('landing' | 'tool') state
+  (presentation-only navigation, not part of `AppStateContext`); the
+  tool itself (`Sidebar` + `MapView`) is unchanged functionally. New:
+  `LandingPage.jsx` (a single centered-column hero — an earlier version
+  paired it with an inline-SVG contour illustration, removed at the
+  user's request as "not good enough"; a small `Logo.jsx` mark is used
+  instead, in both the landing nav and `Sidebar`'s header), and a
+  `CreditsSection.jsx` shown both on the landing page and via a
+  persistent "About" button in `Sidebar`'s header (`AboutModal.jsx`) so
+  it's reachable without leaving the tool. `frontend/src/config/
+  attribution.js` holds this content: team cards (name, email,
+  LinkedIn, a photo cropped with Pillow to a head-and-shoulders square
+  from each person's own full-body original — a plain circular crop of
+  a full-body shot would shrink the face to a speck), and the 3
+  criterion-source attribution strings copied verbatim from
+  `backend/app/data/attribution.py` (no live API call from the landing
+  page, since it's shown before any AOI/compute exists — see that
+  file's own docstring for the sync caveat) plus HydroBASINS/Nepal-
+  boundary credits. Methodology citations (Saaty/AHP, the drainage-
+  density technique reference) are deliberately left out for now at the
+  user's request ("don't cite papers yet") — the drainage-density
+  reference in particular only has an informal "the Siraha paper"
+  mention in `backend/app/data/hydrology.py`, no full bibliographic
+  details anywhere in this codebase, and shouldn't be published as a
+  citation until those are supplied. `index.css` was rewritten around
+  an explicit design-token system (type/spacing/radius/shadow scales, a
+  teal/terracotta palette distinct from the risk ramp so UI chrome is
+  never mistaken for a risk value, both themes) that every existing
+  panel (`AOIPanel`, `CriteriaPanel`, `WeightingPanel`, `ComputePanel`,
+  `ResultPanel`, the AHP pairwise editor) reads through — none of those
+  component files needed logic changes, since they were already driven
+  entirely by class names. Verified with headless-browser screenshots
+  across light/dark × landing/tool × every sidebar step, no console/
+  page errors.
+- Backend: **basin selections are no longer capped to a bounding
+  rectangle**, per explicit user request. Two related fixes in
+  `app/common/aoi.py` / `app/overlay/compute.py`:
+  1. The area cap (`MAX_AREA_KM2`, raised 500 → 1000 km² earlier in this
+     phase — real HydroBASINS basins routinely exceeded 500 km²) no
+     longer applies at all to any AOI with a true `polygon` set (i.e.
+     any basin selection) — only a plain hand-drawn bbox is still
+     capped. A basin is a fixed-size real-world unit, not an arbitrary
+     rectangle a cap should protect against; documented tradeoff this
+     accepts: Nepal has multi-thousand-km² basins, and at 10m
+     resolution that's a very large, slow, memory-heavy grid with no
+     ceiling today.
+  2. The risk surface's own output is now masked to the AOI's true
+     polygon shape (`mask_risk_surface_to_polygon`, new in
+     `compute.py`, via `AOI.polygon_utm` reprojection + a
+     `rasterio.features.rasterize` inside/outside test), not left
+     filling the full rectangular grid — previously, even a basin
+     selection's *result* always rendered as a rectangle regardless of
+     the basin's real shape, since a raster grid is inherently
+     rectangular and nothing downstream of Phase 2 ever consulted
+     `polygon`. Verified live against a real basin (true area 370 km²
+     inside a 2,156 km² bounding box): the masked result came back with
+     17.1% valid pixels, matching that ~17% true-shape-to-bbox ratio.
+     `compute_cache_key` now folds in the polygon's WKT too, so a basin
+     and a same-bbox rectangle can never collide in the risk-surface
+     cache. Covered by new hand-verified tests in `test_compute.py`
+     (masking math), `test_aoi.py` (`polygon_utm` reprojection, cap
+     exemption even when a polygon's true area also exceeds the cap),
+     and `test_service.py` (orchestration wiring, mocked).
+- Backend: fixed a real transient-failure bug in the DEM/WorldCover
+  cloud-fallback fetch (`app/data/dem.py`, `worldcover.py`) — a bare
+  `rasterio.open("https://...")` against public S3 has no retry
+  configured by default, so an ordinary transient network blip
+  ("CURL error: Empty reply from server", reproduced live) surfaced
+  straight to the user as a failure. Both now open their datasets
+  inside `rasterio.Env(**config.GDAL_HTTP_RETRY_ENV)` (new in
+  `config.py`, env-overridable) — GDAL's own HTTP retry, not a hand-
+  rolled Python loop. Also fixed: `jenkspy` (added to `requirements.txt`
+  in an earlier phase) was missing from the actual running container
+  because the image was never rebuilt after that change — Jenks breaks
+  were silently 500ing until this was caught and the image rebuilt.
 - Not yet implemented: AOI persistence, vulnerability classification
   (discrete display classes derived from the continuous risk surface),
   and shelter identification. The GeoTIFF file route is a simple

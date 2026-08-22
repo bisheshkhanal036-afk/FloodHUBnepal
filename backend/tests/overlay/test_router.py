@@ -74,7 +74,7 @@ def test_compute_endpoint_surfaces_source_warnings_per_criterion(monkeypatch):
 def test_compute_endpoint_rejects_aoi_exceeding_area_cap(monkeypatch):
     _fake_resolve(monkeypatch)
     payload = _payload({"a": 1.0})
-    payload["aoi"] = {"bbox": [85.0, 27.0, 85.5, 27.5]}  # ~2,500+ km^2, well over the 500 km^2 cap
+    payload["aoi"] = {"bbox": [85.0, 27.0, 85.5, 27.5]}  # ~2,500+ km^2, well over the 1000 km^2 cap
 
     response = client.post("/api/overlay/compute", json=payload)
 
@@ -185,7 +185,7 @@ def test_criteria_breaks_endpoint_rejects_unrecognized_source():
 
 def test_criteria_breaks_endpoint_rejects_aoi_exceeding_area_cap():
     payload = _breaks_payload()
-    payload["aoi"] = {"bbox": [85.0, 27.0, 85.5, 27.5]}  # ~2,500+ km^2, well over the 500 km^2 cap
+    payload["aoi"] = {"bbox": [85.0, 27.0, 85.5, 27.5]}  # ~2,500+ km^2, well over the 1000 km^2 cap
 
     response = client.post("/api/overlay/criteria/breaks", json=payload)
 

@@ -136,3 +136,53 @@ def test_geotiff_is_rewritten_if_missing_even_on_a_cache_hit(test_aoi, monkeypat
 
     assert len(calls) == 1  # array computation was still a cache hit
     assert Path(second.data_url).exists()  # but the file was rematerialized
+
+
+# --- true-polygon-shape masking (basin selections) ---
+
+
+def test_a_polygon_aoi_gets_masked_to_its_true_shape(monkeypatch):
+    """A basin selection (AOI.polygon set) must have its result run
+    through mask_risk_surface_to_polygon, and the RETURNED result must
+    actually be what masking produced -- not just call it and discard
+    the output. The masking math itself is covered separately and
+    hand-verified in test_compute.py; this only checks the orchestration
+    wiring, same spirit as this file's existing mocked-resolve tests.
+    """
+    from app.data.aoi import AOI
+    from app.overlay.compute import RiskSurfaceResult
+
+    calls = []
+    _fake_resolve(monkeypatch, calls)
+    sentinel = RiskSurfaceResult(risk_surface=np.zeros((1, 1), dtype=np.float32), grid=GRID, nodata=RISK_SURFACE_NODATA)
+    mask_calls = []
+
+    def fake_mask(result, polygon_utm):
+        mask_calls.append((result, polygon_utm))
+        return sentinel
+
+    monkeypatch.setattr("app.overlay.service.mask_risk_surface_to_polygon", fake_mask)
+
+    from shapely.geometry import box as shapely_box
+
+    polygon_aoi = AOI(bbox_4326=(85.30, 27.70, 85.32, 27.72), polygon=shapely_box(85.30, 27.70, 85.32, 27.72))
+    criteria = [OverlayCriterionRequest(id="a", source="dem_elevation", reclassification_rules=[])]
+
+    result = compute_overlay(polygon_aoi, criteria, {"a": 1.0}, complete=True)
+
+    assert len(mask_calls) == 1
+    assert result.risk_surface is sentinel
+
+
+def test_a_plain_bbox_aoi_never_gets_masked(test_aoi, monkeypatch):
+    calls = []
+    _fake_resolve(monkeypatch, calls)
+
+    def fail_if_called(result, polygon_utm):
+        raise AssertionError("mask_risk_surface_to_polygon must not run for a bbox-only AOI")
+
+    monkeypatch.setattr("app.overlay.service.mask_risk_surface_to_polygon", fail_if_called)
+    criteria = [OverlayCriterionRequest(id="a", source="dem_elevation", reclassification_rules=[])]
+
+    assert test_aoi.polygon is None
+    compute_overlay(test_aoi, criteria, {"a": 1.0}, complete=True)  # must not raise

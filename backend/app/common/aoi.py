@@ -4,10 +4,25 @@ its request body should use this `AOIInput` model for that field — the
 cap check then applies automatically, the same way, everywhere, without
 each route author having to remember to add it.
 
-Per schemas/aoi.schema.json: `max_area_km2` defaults to 500 km^2 ("enough
-to cover the Kathmandu Valley with headroom, while bounding per-request
-compute cost"). A request whose AOI exceeds the cap is rejected with a
-clear 422, not silently clipped.
+Per schemas/aoi.schema.json: `max_area_km2` defaults to 1000 km^2 for a
+plain bbox-only AOI (raised from an initial 500 km^2 — real HydroBASINS
+basins routinely exceed 500 km^2, which rejected legitimate basin
+selections outright). A request whose bbox-only AOI exceeds the cap is
+rejected with a clear 422, not silently clipped.
+
+A basin selection (any AOI with `polygon` set) is EXEMPT from the cap
+entirely, at the user's explicit request -- a hand-drawn rectangle can
+be arbitrarily (and often accidentally) large, but a basin is a real,
+fixed-size hydrological unit; capping it means some legitimate basins
+could never be analyzed at all no matter how the cap is tuned. This does
+carry a real cost/memory risk this module does not otherwise guard
+against: a very large basin (Nepal has some in the multi-thousand-km^2
+range) means a proportionally large 10m-resolution grid -- tens to
+hundreds of millions of pixels -- for every criterion raster in the
+request, which can be genuinely slow and memory-heavy. Accepted here as
+a deliberate tradeoff, not an oversight; a future phase could reintroduce
+a (much higher) sanity ceiling or a resolution back-off for very large
+basins specifically, if that turns out to matter in practice.
 
 `polygon` is optional and additive: omitting it (the original shape of
 this model) gives a plain bbox-only AOI exactly as before. Passing a
@@ -26,7 +41,7 @@ from shapely.geometry import shape
 
 from app.data.aoi import AOI
 
-MAX_AREA_KM2 = 500.0
+MAX_AREA_KM2 = 1000.0
 
 
 class AOIInput(BaseModel):
@@ -35,12 +50,18 @@ class AOIInput(BaseModel):
         None,
         description=(
             "Optional GeoJSON Polygon/MultiPolygon geometry, EPSG:4326 (e.g. from a basin "
-            "selection). Omit for a plain bbox-only AOI."
+            "selection). Omit for a plain bbox-only AOI. An AOI with polygon set is exempt "
+            "from the area cap (see this module's docstring)."
         ),
     )
 
     @model_validator(mode="after")
     def _check_area_cap(self) -> "AOIInput":
+        # A basin selection (polygon set) is exempt from the cap
+        # entirely -- see module docstring. Only a plain bbox-only AOI
+        # (a hand-drawn rectangle) is checked.
+        if self.polygon is not None:
+            return self
         area_km2 = self.to_domain().area_km2
         if area_km2 > MAX_AREA_KM2:
             raise ValueError(

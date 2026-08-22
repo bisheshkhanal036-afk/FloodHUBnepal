@@ -43,6 +43,19 @@ class AOI:
     polygon: BaseGeometry | None = None
 
     @property
+    def polygon_utm(self) -> BaseGeometry | None:
+        """`polygon` reprojected to EPSG:32645, or None if no true shape
+        is set — the same reprojection `bounds_utm` does for the bbox
+        envelope, but for the polygon itself. Used by the overlay engine
+        (app/overlay/compute.py) to mask the final risk surface to the
+        AOI's true shape rather than its bounding rectangle, for basin
+        selections (or any other AOI with a real `polygon`).
+        """
+        if self.polygon is None:
+            return None
+        return shapely_transform(_TO_UTM.transform, self.polygon)
+
+    @property
     def bounds_utm(self) -> tuple[float, float, float, float]:
         """The AOI's bounding envelope in EPSG:32645, used for every area/
         distance/grid calculation (SPEC.md, CRS convention). Reprojects

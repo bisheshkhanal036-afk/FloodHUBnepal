@@ -8,7 +8,7 @@
     "cache_key": {
       "type": "string",
       "pattern": "^[a-f0-9]{64}$",
-      "description": "SHA-256 hex digest of a canonical serialization of (AOI bbox + the set of criterion ids used + their final weights). Two requests that hash to the same cache_key are considered identical and may reuse the same stored surface."
+      "description": "SHA-256 hex digest of a canonical serialization of (AOI bbox + the AOI's true polygon shape, when present + the set of criterion ids used + their final weights). Two requests that hash to the same cache_key are considered identical and may reuse the same stored surface."
     },
     "aoi": {
       "$ref": "aoi.schema.json",

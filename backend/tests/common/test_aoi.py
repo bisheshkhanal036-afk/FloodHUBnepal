@@ -17,7 +17,7 @@ def test_accepts_a_kathmandu_valley_sized_bbox():
 
 def test_rejects_a_bbox_exceeding_the_area_cap():
     # ~0.5deg x 0.5deg near Kathmandu's latitude is roughly 2,500+ km^2.
-    with pytest.raises(ValidationError, match="exceeds the 500"):
+    with pytest.raises(ValidationError, match="exceeds the 1000"):
         AOIInput(bbox=[85.0, 27.0, 85.5, 27.5])
 
 
@@ -47,21 +47,40 @@ def test_accepts_a_geojson_polygon_and_carries_it_into_the_domain_aoi():
     assert domain.bbox_4326 == (85.30, 27.70, 85.35, 27.75)
 
 
-def test_area_cap_uses_true_polygon_area_not_bbox_envelope_area():
+def test_a_polygon_aoi_is_exempt_from_the_area_cap_even_when_its_own_bbox_is_over():
     # A tall, narrow rectangle whose full-rectangle area is over the cap
-    # (confirmed below by rejecting the equivalent bbox-only AOI), but
-    # whose diagonal-half TRIANGLE is under the cap -- a right triangle
-    # inscribed in a rectangle has exactly half the rectangle's area.
-    bbox = [85.0, 27.0, 85.1, 27.7]
+    # (confirmed below by rejecting the equivalent bbox-only AOI) -- the
+    # bbox-only version must still be rejected exactly as before.
+    bbox = [85.0, 27.0, 85.1, 28.4]  # ~0.1deg x 1.4deg near Kathmandu's latitude, ~1,500+ km^2
 
-    with pytest.raises(ValidationError, match="exceeds the 500"):
-        AOIInput(bbox=bbox)  # confirms the full rectangle really is over the cap
+    with pytest.raises(ValidationError, match="exceeds the 1000"):
+        AOIInput(bbox=bbox)
 
     geojson_triangle = {
         "type": "Polygon",
-        "coordinates": [[[85.0, 27.0], [85.1, 27.0], [85.0, 27.7], [85.0, 27.0]]],
+        "coordinates": [[[85.0, 27.0], [85.1, 27.0], [85.0, 28.4], [85.0, 27.0]]],
     }
-    # Must NOT raise: the true triangle area is about half the rectangle's,
-    # and comfortably under the cap even though its own bbox is not.
+    # Must NOT raise, even though this triangle's own true area (~770 km^2)
+    # is itself comfortably under the cap -- see the next test for the
+    # case that actually proves the exemption (a polygon whose TRUE area
+    # exceeds the cap too).
     aoi_input = AOIInput(bbox=bbox, polygon=geojson_triangle)
     assert aoi_input.to_domain().area_km2 < MAX_AREA_KM2
+
+
+def test_a_polygon_aoi_is_exempt_even_when_its_true_area_also_exceeds_the_cap():
+    # A basin selection is exempt from the area cap entirely (at the
+    # user's explicit request -- see app/common/aoi.py's module
+    # docstring), not just "exempt because its true shape happens to be
+    # smaller than its bbox". This square's true area (well over
+    # 2,000 km^2) itself exceeds MAX_AREA_KM2, and it must still be
+    # accepted precisely because polygon is set.
+    bbox = [85.0, 27.0, 85.5, 27.5]  # ~2,500+ km^2, same bbox test_rejects_a_bbox_exceeding_the_area_cap uses
+    geojson_square = {
+        "type": "Polygon",
+        "coordinates": [[[85.0, 27.0], [85.5, 27.0], [85.5, 27.5], [85.0, 27.5], [85.0, 27.0]]],
+    }
+
+    aoi_input = AOIInput(bbox=bbox, polygon=geojson_square)  # must not raise
+
+    assert aoi_input.to_domain().area_km2 > MAX_AREA_KM2  # confirms this really would have been over the cap

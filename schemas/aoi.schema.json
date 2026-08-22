@@ -30,8 +30,8 @@
     "max_area_km2": {
       "type": "number",
       "exclusiveMinimum": 0,
-      "default": 500,
-      "description": "The area cap a request's AOI must not exceed, in km². Default 500 km², chosen to comfortably cover the Kathmandu Valley (~ 665 km² basin / ~ 350-400 km² urbanized core, depending on the boundary used) while bounding compute cost. A request whose computed area_km2 exceeds max_area_km2 must be rejected with a clear validation error rather than silently clipped."
+      "default": 1000,
+      "description": "The area cap a PLAIN BBOX-ONLY AOI must not exceed, in km². Default 1000 km² (raised from an initial 500 km²: real HydroBASINS basin selections routinely exceed 500 km², which rejected legitimate basins outright) — comfortably covers the Kathmandu Valley (~ 665 km² basin / ~ 350-400 km² urbanized core, depending on the boundary used), while still bounding a hand-drawn rectangle's compute cost. Does NOT apply to an AOI with a true `polygon` set (e.g. a basin selection) — those are exempt from this cap entirely, since a basin is a fixed-size real-world unit rather than an arbitrary user-drawn rectangle; see backend/app/common/aoi.py's module docstring for the reasoning and the tradeoff this accepts. A request whose bbox-only AOI's computed area_km2 exceeds max_area_km2 must be rejected with a clear validation error rather than silently clipped."
     }
   },
   "required": ["bbox", "crs"],

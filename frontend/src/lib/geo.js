@@ -5,7 +5,7 @@
 // here (not fetched from the backend) since it's a fixed schema default,
 // not runtime config; the backend's own POST endpoints remain the
 // authoritative check regardless of what this constant says.
-export const AREA_CAP_KM2 = 500.0
+export const AREA_CAP_KM2 = 1000.0
 
 /**
  * Approximate area of a EPSG:4326 bbox in km^2, via an equirectangular

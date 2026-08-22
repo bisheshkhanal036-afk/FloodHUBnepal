@@ -6,13 +6,16 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from shapely.geometry import box, shape
 
 from app.data.grid import AOIGrid
 from app.overlay.compute import (
     RISK_SURFACE_NODATA,
     CriterionRaster,
+    RiskSurfaceResult,
     compute_cache_key,
     compute_risk_surface,
+    mask_risk_surface_to_polygon,
 )
 from app.overlay.errors import OverlayValidationError
 
@@ -177,3 +180,65 @@ def test_cache_key_matches_schema_pattern():
     aoi = AOI(bbox_4326=(85.30, 27.70, 85.32, 27.72))
     key = compute_cache_key(aoi, [{"criterion_id": "a", "weight": 1.0}])
     assert re.fullmatch(r"[a-f0-9]{64}", key)
+
+
+def test_cache_key_differs_for_a_polygon_aoi_vs_a_plain_bbox_aoi_with_the_same_envelope():
+    # A basin selection (polygon set) must never collide in the cache
+    # with a hand-drawn AOI that happens to share the same bbox envelope
+    # -- since compute_overlay now masks the result to the true polygon
+    # shape, those two requests produce genuinely different surfaces.
+    from app.data.aoi import AOI
+
+    bbox = (85.30, 27.70, 85.32, 27.72)
+    bbox_only = AOI(bbox_4326=bbox)
+    triangle = {
+        "type": "Polygon",
+        "coordinates": [[[85.30, 27.70], [85.32, 27.70], [85.30, 27.72], [85.30, 27.70]]],
+    }
+    with_polygon = AOI(bbox_4326=bbox, polygon=shape(triangle))
+
+    criteria_set = [{"criterion_id": "a", "weight": 1.0}]
+    assert compute_cache_key(bbox_only, criteria_set) != compute_cache_key(with_polygon, criteria_set)
+
+
+# --- mask_risk_surface_to_polygon ---
+
+
+def test_mask_sets_pixels_outside_the_polygon_to_nodata_and_leaves_inside_pixels_untouched():
+    # 4x4 grid over x:[0,40], y:[0,40] (10m cells); polygon covers only
+    # the left half (x in [0,20]) -- so after masking, columns 0-1 must
+    # stay 0.5 and columns 2-3 (pixel centers x=25, x=35, outside the
+    # polygon) must become nodata, for every row.
+    grid = _grid(width=4, height=4, origin_x=0.0, origin_y=40.0)
+    surface = np.full((4, 4), 0.5, dtype=np.float32)
+    result = RiskSurfaceResult(risk_surface=surface, grid=grid, nodata=RISK_SURFACE_NODATA)
+    left_half = box(0, 0, 20, 40)
+
+    masked = mask_risk_surface_to_polygon(result, left_half)
+
+    assert np.all(masked.risk_surface[:, 0:2] == 0.5)
+    assert np.all(masked.risk_surface[:, 2:4] == RISK_SURFACE_NODATA)
+    assert masked.grid == grid
+    assert masked.nodata == RISK_SURFACE_NODATA
+
+
+def test_mask_with_a_polygon_covering_the_whole_grid_changes_nothing():
+    grid = _grid(width=3, height=3, origin_x=0.0, origin_y=30.0)
+    surface = np.full((3, 3), 0.8, dtype=np.float32)
+    result = RiskSurfaceResult(risk_surface=surface, grid=grid, nodata=RISK_SURFACE_NODATA)
+    whole_grid = box(0, 0, 30, 30)
+
+    masked = mask_risk_surface_to_polygon(result, whole_grid)
+
+    assert np.all(masked.risk_surface == 0.8)
+
+
+def test_mask_with_a_polygon_entirely_outside_the_grid_masks_everything():
+    grid = _grid(width=3, height=3, origin_x=0.0, origin_y=30.0)
+    surface = np.full((3, 3), 0.8, dtype=np.float32)
+    result = RiskSurfaceResult(risk_surface=surface, grid=grid, nodata=RISK_SURFACE_NODATA)
+    far_away = box(1000, 1000, 1010, 1010)
+
+    masked = mask_risk_surface_to_polygon(result, far_away)
+
+    assert np.all(masked.risk_surface == RISK_SURFACE_NODATA)

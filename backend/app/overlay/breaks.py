@@ -27,7 +27,7 @@ from .sources import _raw_layer_for_source
 NUM_CLASSES = 5
 
 # Fisher-Jenks is at least O(n*k); on a large AOI's full pixel
-# population (up to ~5,000,000 at the 500km^2/10m cap) that's still slow
+# population (up to ~10,000,000 at the 1000km^2/10m cap) that's still slow
 # enough to matter for a live UI control. Capped to a deterministic
 # (fixed-seed) sample of this many valid pixels before running Jenks --
 # the same practice QGIS's own "Natural Breaks (Jenks)" classifier uses

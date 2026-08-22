@@ -51,10 +51,12 @@ def test_get_basin_detail_404s_for_unknown_id():
 
 def test_get_basin_aoi_returns_a_shape_directly_usable_by_overlay_compute():
     # BASIN_SMALL, not BASIN_FULLY_IN_NEPAL: the latter is a realistically
-    # large (~11,000 km^2) basin, deliberately over the overlay endpoint's
-    # 500 km^2 area cap -- correct behavior, not a bug, but not what this
-    # test is checking (that's covered by test_accepts_a_geojson_polygon...
-    # and the area-cap tests in tests/common/test_aoi.py).
+    # large (~11,000 km^2) basin -- accepted regardless of size since a
+    # polygon AOI is exempt from the overlay endpoint's area cap entirely
+    # (app/common/aoi.py), but a small fixture keeps this test's own
+    # focus (the response shape round-tripping into AOIInput) fast and
+    # unrelated to the cap exemption itself, which is covered by
+    # tests/common/test_aoi.py's own dedicated tests.
     response = client.get(f"/api/basins/{BASIN_SMALL}/aoi")
 
     assert response.status_code == 200

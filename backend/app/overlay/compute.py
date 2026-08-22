@@ -140,11 +140,18 @@ def compute_risk_surface(rasters: list[CriterionRaster], weights: dict[str, floa
 
 
 def compute_cache_key(aoi: AOI, criteria_set: list[dict]) -> str:
-    """SHA-256 hex digest of (AOI bbox + criteria_set), matching
-    schemas/risk_surface.schema.json's `cache_key` description exactly:
-    "a canonical serialization of (AOI bbox + the set of criterion ids
-    used + their final weights)". `criteria_set` is
+    """SHA-256 hex digest of (AOI bbox + true polygon shape, when present
+    + criteria_set), matching schemas/risk_surface.schema.json's
+    `cache_key` description. `criteria_set` is
     [{"criterion_id": str, "weight": float}, ...].
+
+    Includes `aoi.polygon`'s WKT when set, not just `bbox_4326`: since
+    compute_overlay now masks the final surface to the true polygon shape
+    (mask_risk_surface_to_polygon below) for a basin-derived AOI, two
+    requests that share a bbox but differ in polygon (e.g. a hand-drawn
+    AOI vs. a basin selection whose envelope happens to match it) must
+    never collide on the same cache entry — they'd produce genuinely
+    different masked surfaces.
     """
     normalized_criteria = sorted(
         (
@@ -154,7 +161,51 @@ def compute_cache_key(aoi: AOI, criteria_set: list[dict]) -> str:
         key=lambda c: c["criterion_id"],
     )
     payload = json.dumps(
-        {"bbox_4326": [round(v, 8) for v in aoi.bbox_4326], "criteria_set": normalized_criteria},
+        {
+            "bbox_4326": [round(v, 8) for v in aoi.bbox_4326],
+            "polygon_wkt": aoi.polygon.wkt if aoi.polygon is not None else None,
+            "criteria_set": normalized_criteria,
+        },
         sort_keys=True,
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def mask_risk_surface_to_polygon(result: RiskSurfaceResult, polygon_utm) -> RiskSurfaceResult:
+    """Sets every pixel of `result.risk_surface` whose cell does not fall
+    inside `polygon_utm` (already reprojected to `result.grid`'s CRS —
+    see AOI.polygon_utm) to RISK_SURFACE_NODATA, leaving everything
+    inside untouched.
+
+    Why: without this, a basin selection's risk surface always fills the
+    AOI's full rectangular bounding envelope — every earlier stage
+    (Phase 2 sources, compute_risk_surface above) works on that
+    rectangular grid regardless of whether the AOI has a true `polygon`,
+    since a raster grid is inherently rectangular. The frontend already
+    renders RISK_SURFACE_NODATA pixels as fully transparent
+    (MapView.jsx), so masking here is what actually makes a basin
+    selection's *result* follow the basin's real shape on the map,
+    rather than always looking like a rectangle regardless of what was
+    selected.
+
+    `all_touched=False` (pixel center must fall inside the polygon):
+    matches this codebase's own established convention for "is this grid
+    cell inside this shape" (app/data/density_raster.py's coverage
+    rasterization uses the same setting for the same reason), as opposed
+    to the `all_touched=True` distance_raster.py uses for line-nearness,
+    a different question entirely.
+    """
+    from rasterio.features import rasterize
+
+    grid = result.grid
+    inside_mask = rasterize(
+        [(polygon_utm, 1)],
+        out_shape=(grid.height, grid.width),
+        transform=grid.transform,
+        fill=0,
+        all_touched=False,
+        dtype=np.uint8,
+    ).astype(bool)
+
+    masked = np.where(inside_mask, result.risk_surface, np.float32(result.nodata))
+    return RiskSurfaceResult(risk_surface=masked, grid=grid, nodata=result.nodata)

@@ -70,14 +70,15 @@ def _fetch_worldcover_from_s3(aoi: AOI):
     urls = [S3_WORLDCOVER_URL_TEMPLATE.format(ns=ns, lat=lat, ew=ew, lon=lon) for lat, lon, ns, ew in tiles]
     logger.info("worldcover: cloud fallback, fetching %d tile(s) from s3://esa-worldcover", len(urls))
 
-    datasets = [rasterio.open(url) for url in urls]
-    try:
-        mosaic, mosaic_transform = rio_merge(datasets, bounds=aoi.bbox_4326)
-        crs = datasets[0].crs
-        src_nodata = datasets[0].nodata
-    finally:
-        for ds in datasets:
-            ds.close()
+    with rasterio.Env(**config.GDAL_HTTP_RETRY_ENV):
+        datasets = [rasterio.open(url) for url in urls]
+        try:
+            mosaic, mosaic_transform = rio_merge(datasets, bounds=aoi.bbox_4326)
+            crs = datasets[0].crs
+            src_nodata = datasets[0].nodata
+        finally:
+            for ds in datasets:
+                ds.close()
     return mosaic[0], mosaic_transform, crs, src_nodata
 
 

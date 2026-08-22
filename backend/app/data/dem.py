@@ -75,18 +75,19 @@ def _fetch_dem_from_s3(aoi: AOI):
     urls = [S3_DEM_URL_TEMPLATE.format(ns=ns, lat=lat, ew=ew, lon=lon) for lat, lon, ns, ew in tiles]
     logger.info("dem: cloud fallback, fetching %d tile(s) from s3://copernicus-dem-30m", len(urls))
 
-    datasets = [rasterio.open(url) for url in urls]
-    try:
-        mosaic, mosaic_transform = rio_merge(datasets, bounds=aoi.bbox_4326)
-        crs = datasets[0].crs
-        # Verified live during implementation: GLO-30 COG tiles report no
-        # nodata tag (void-filled product, no missing pixels within a
-        # tile) — read it from the dataset rather than assume, so a
-        # future change on the producer's side would surface here.
-        src_nodata = datasets[0].nodata
-    finally:
-        for ds in datasets:
-            ds.close()
+    with rasterio.Env(**config.GDAL_HTTP_RETRY_ENV):
+        datasets = [rasterio.open(url) for url in urls]
+        try:
+            mosaic, mosaic_transform = rio_merge(datasets, bounds=aoi.bbox_4326)
+            crs = datasets[0].crs
+            # Verified live during implementation: GLO-30 COG tiles report no
+            # nodata tag (void-filled product, no missing pixels within a
+            # tile) — read it from the dataset rather than assume, so a
+            # future change on the producer's side would surface here.
+            src_nodata = datasets[0].nodata
+        finally:
+            for ds in datasets:
+                ds.close()
     return mosaic[0], mosaic_transform, crs, src_nodata
 
 

@@ -35,7 +35,13 @@ class OverlayCriterionInput(BaseModel):
 
 
 class OverlayComputeRequest(BaseModel):
-    aoi: AOIInput = Field(..., description="Rejected with 422 if its area exceeds the shared 500 km² cap.")
+    aoi: AOIInput = Field(
+        ...,
+        description=(
+            "Rejected with 422 if a plain bbox-only AOI's area exceeds the shared 1000 km² cap "
+            "— an AOI with a true `polygon` (e.g. a basin selection) is exempt from that cap."
+        ),
+    )
     criteria: list[OverlayCriterionInput] = Field(..., min_length=1)
     final_weights: dict[str, float] = Field(
         ..., description="Phase 1's AHPComputeResponse.final_weights — criterion_id -> weight."

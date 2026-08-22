@@ -14,7 +14,7 @@ from app.data import config
 from app.data.aoi import AOI
 from app.data.cache import cached_or_compute
 
-from .compute import CriterionRaster, RiskSurfaceResult, compute_cache_key, compute_risk_surface
+from .compute import CriterionRaster, RiskSurfaceResult, compute_cache_key, compute_risk_surface, mask_risk_surface_to_polygon
 from .errors import OverlayValidationError
 from .geotiff import write_risk_surface_geotiff
 from .sources import resolve_criterion_raster
@@ -105,6 +105,14 @@ def compute_overlay(
                 source_warnings.append(SourceWarning(criterion_id=criterion.id, message=warning))
 
         risk_surface_result = compute_risk_surface(rasters, final_weights)
+        # A basin selection's AOI carries its true polygon shape, not
+        # just its bounding rectangle -- without this, the result always
+        # fills the full rectangular grid regardless of what shape was
+        # actually selected (see mask_risk_surface_to_polygon's own
+        # docstring). A plain drawn-bbox AOI has no polygon, so this is a
+        # no-op for that case, exactly as before.
+        if aoi.polygon is not None:
+            risk_surface_result = mask_risk_surface_to_polygon(risk_surface_result, aoi.polygon_utm)
         return risk_surface_result, sorted(attributions), source_warnings
 
     risk_surface_result, attribution, source_warnings = cached_or_compute(
