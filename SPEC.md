@@ -669,6 +669,51 @@ them.
   in an earlier phase) was missing from the actual running container
   because the image was never rebuilt after that change — Jenks breaks
   were silently 500ing until this was caught and the image rebuilt.
+- Backend: **fixed the slow-OSM-lookup problem** (`osm.py`'s local-file
+  path took ~145-210s per AOI, since `pyrosm` has no partial/indexed
+  read of a raw `.osm.pbf` — it scans+decodes the whole file regardless
+  of AOI size). Original plan was to pre-process the `.pbf` into a
+  GeoJSON extract and host it on Cloudflare R2, but that got dropped for
+  a better one raised by the user: this project's `backend/data/raw/
+  osm/` already had a Geofabrik shapefile export (`nepal-260713-
+  free.shp/`) sitting alongside the `.pbf`, already split by feature
+  type. `osm.py` now has a third, FASTEST local tier ahead of the raw
+  `.pbf`: geometry-only FlatGeobuf files (`backend/data/raw/osm/
+  processed/{buildings,roads,waterways}.fgb`, built once from that
+  shapefile export per that directory's own README — buildings filtered
+  to nothing, roads to a driving-network approximation via Geofabrik's
+  `fclass` field, waterways to river/stream/canal, matching osm.py's
+  existing `WATERWAY_TAGS` exactly), read with a bbox-filtered
+  `geopandas.read_file` that uses FlatGeobuf's built-in spatial index.
+  Verified live against the real 412MB Nepal `.pbf`/its real Geofabrik
+  export: 0.23s for buildings+roads, 0.01s for waterways (was
+  145-210s) — a ~600-900x speedup, with the `.pbf`-via-pyrosm tier kept
+  as the fallback for a local file dropped in without regenerating these
+  extracts, and R2 (config wiring for which was built first, before the
+  pivot, and left in place as a legitimate option) staying the fallback
+  for a deployment with no local files of either kind. Building the
+  pre-processed extract itself surfaced two real, separate infrastructure
+  problems worth remembering: (1) the naive version of this — re-parsing
+  the whole `.pbf` with `pyrosm` for ALL of Nepal at once, before the
+  shapefile-export idea — OOM-killed the backend container (Docker
+  Desktop's WSL2 VM is capped at 6.7GB by default); switching to reading
+  the already-resolved shapefile geometries directly via `pyogrio`, and
+  running the one-time conversion on the HOST Python rather than inside
+  the container, avoided this entirely. (2) the host's C: drive was
+  found completely full (0 bytes free) mid-session from something
+  entirely unrelated to this project (Docker's own footprint here is
+  only ~8.5GB) — several backend crashes and a truncated pickle cache
+  entry traced back to this before it was caught; `backend/data/
+  cache/processed/` is safe to clear entirely if this recurs (regenerable
+  output cache, not source data, per its own `.gitignore` comment).
+  Also fixed while investigating this: `.gitignore`'s existing
+  `!backend/data/raw/**/.gitkeep` / `!backend/data/cache/**/.gitkeep`
+  negations had never actually worked (verified with `git check-ignore`
+  — a `dir/*` blanket exclude can't be overridden by a `!dir/**/pattern`
+  negation for anything nested inside it, a real gitignore limitation,
+  not a typo) — nothing under either directory was ever tracked despite
+  the clear intent; rewritten as `dir/**` + an explicit directory-level
+  `!dir/**/` re-include, which actually works.
 - Not yet implemented: AOI persistence, vulnerability classification
   (discrete display classes derived from the continuous risk surface),
   and shelter identification. The GeoTIFF file route is a simple

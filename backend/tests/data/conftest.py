@@ -42,6 +42,15 @@ def no_local_sources_by_default(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "LOCAL_DEM_DIR", tmp_path / "raw" / "dem")
     monkeypatch.setattr(config, "LOCAL_WORLDCOVER_DIR", tmp_path / "raw" / "worldcover")
     monkeypatch.setattr(config, "LOCAL_OSM_DIR", tmp_path / "raw" / "osm")
+    # LOCAL_OSM_PROCESSED_DIR is its own constant (computed once, from
+    # the ORIGINAL LOCAL_OSM_DIR, at import time) -- monkeypatching
+    # LOCAL_OSM_DIR above does NOT retroactively move it, so it needs
+    # its own override here. Without this, every test in this suite
+    # would see tier 1's real backend/data/raw/osm/processed/*.fgb (once
+    # generated) instead of the empty-by-default tmp_path every other
+    # local source gets, silently short-circuiting all the .pbf-fixture-
+    # based local-hit/fallback tests below it.
+    monkeypatch.setattr(config, "LOCAL_OSM_PROCESSED_DIR", tmp_path / "raw" / "osm" / "processed")
     monkeypatch.setattr(config, "OSM_R2_BUILDINGS_URL", None)
     monkeypatch.setattr(config, "OSM_R2_ROADS_URL", None)
     monkeypatch.setattr(config, "OSM_R2_WATERWAYS_URL", None)

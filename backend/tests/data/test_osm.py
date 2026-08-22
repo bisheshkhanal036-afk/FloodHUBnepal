@@ -8,7 +8,13 @@ import pytest
 from app.data import config
 from app.data.attribution import OSM_ATTRIBUTION
 from app.data.errors import DataSourceUnavailableError
-from app.data.osm import _find_local_pbf, get_osm_features, get_waterways, reset_local_osm_parser_cache
+from app.data.osm import (
+    _find_local_pbf,
+    _local_processed_path,
+    get_osm_features,
+    get_waterways,
+    reset_local_osm_parser_cache,
+)
 from tests.data.conftest import FIXTURES_DIR
 
 FIXTURE_PBF = FIXTURES_DIR / "osm" / "nepal-test-extract.osm.pbf"
@@ -72,6 +78,111 @@ def test_find_local_pbf_picks_the_most_recently_modified_file_regardless_of_name
     monkeypatch.setattr(config, "LOCAL_OSM_DIR", d)
 
     assert _find_local_pbf() == newer
+
+
+# --- _local_processed_path / tier 1 (pre-processed local FlatGeobuf) ---
+
+
+def _write_fgb(path, geometries, **props):
+    from shapely.geometry import base as shapely_base
+
+    if isinstance(geometries, shapely_base.BaseGeometry):
+        geometries = [geometries]
+    gdf = gpd.GeoDataFrame({k: [v] * len(geometries) for k, v in props.items()}, geometry=geometries, crs="EPSG:4326")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    gdf.to_file(path, driver="FlatGeobuf")
+
+
+def test_local_processed_path_returns_none_when_directory_or_file_is_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "LOCAL_OSM_PROCESSED_DIR", tmp_path / "does_not_exist")
+    assert _local_processed_path("buildings.fgb") is None
+
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+    monkeypatch.setattr(config, "LOCAL_OSM_PROCESSED_DIR", empty_dir)
+    assert _local_processed_path("buildings.fgb") is None
+
+
+def test_local_processed_path_finds_the_exact_named_file(monkeypatch, tmp_path):
+    d = tmp_path / "processed"
+    d.mkdir()
+    (d / "buildings.fgb").write_bytes(b"fake")
+    monkeypatch.setattr(config, "LOCAL_OSM_PROCESSED_DIR", d)
+
+    assert _local_processed_path("buildings.fgb") == d / "buildings.fgb"
+    assert _local_processed_path("roads.fgb") is None  # only buildings.fgb exists in this dir
+
+
+def test_processed_local_hit_bbox_filters_a_real_fgb_file(test_aoi, monkeypatch, tmp_path):
+    """A real (if tiny) FlatGeobuf file written with geopandas, containing
+    one building inside TEST_AOI_BBOX_4326 and one well outside it -- this
+    exercises the actual bbox= spatial filter end to end, not just "the
+    file was read".
+    """
+    from shapely.geometry import Point
+
+    d = tmp_path / "processed"
+    inside = Point(85.3070, 27.7040).buffer(0.0001)  # inside TEST_AOI_BBOX_4326
+    outside = Point(0.0, 0.0).buffer(0.0001)  # nowhere near it
+    _write_fgb(d / "buildings.fgb", [inside, outside])
+    _write_fgb(d / "roads.fgb", [])
+    monkeypatch.setattr(config, "LOCAL_OSM_PROCESSED_DIR", d)
+
+    result = get_osm_features(test_aoi)
+
+    assert result.source_used == "local_processed"
+    assert result.attribution == OSM_ATTRIBUTION
+    assert len(result.buildings) == 1  # the outside one must be filtered out by bbox=
+
+
+def test_processed_local_hit_used_for_waterways_too(test_aoi, monkeypatch, tmp_path):
+    from shapely.geometry import LineString
+
+    d = tmp_path / "processed"
+    inside = LineString([(85.306, 27.703), (85.306, 27.707)])
+    _write_fgb(d / "waterways.fgb", [inside])
+    monkeypatch.setattr(config, "LOCAL_OSM_PROCESSED_DIR", d)
+
+    result = get_waterways(test_aoi)
+
+    assert result.source_used == "local_processed"
+    assert len(result.waterways) == 1
+
+
+def test_processed_local_takes_priority_over_the_raw_pbf_when_both_are_present(test_aoi, monkeypatch, tmp_path):
+    """Tier 1 must win over tier 2 -- there's no reason to pay the slow
+    .pbf parse when the fast pre-processed extract is right there too.
+    """
+    _use_local_pbf(monkeypatch, tmp_path, FIXTURE_PBF)  # tier 2 present, has 1 building/1 road
+    d = tmp_path / "processed"
+    from shapely.geometry import Point
+
+    _write_fgb(d / "buildings.fgb", [Point(85.3070, 27.7040).buffer(0.0001)] * 2)  # deliberately != tier 2's count
+    _write_fgb(d / "roads.fgb", [])
+    monkeypatch.setattr(config, "LOCAL_OSM_PROCESSED_DIR", d)
+
+    result = get_osm_features(test_aoi)
+
+    assert result.source_used == "local_processed"
+    assert len(result.buildings) == 2  # tier 1's count, not tier 2's (which would be 1)
+
+
+def test_falls_through_to_pbf_when_only_one_of_buildings_roads_fgb_is_present(test_aoi, monkeypatch, tmp_path):
+    """get_osm_features requires BOTH buildings.fgb and roads.fgb to use
+    tier 1 -- mirrors _fetch_from_r2 requiring both R2 URLs together.
+    A directory with only one of the two must fall through to tier 2/3,
+    not silently use a missing file.
+    """
+    _use_local_pbf(monkeypatch, tmp_path, FIXTURE_PBF)
+    d = tmp_path / "processed"
+    from shapely.geometry import Point
+
+    _write_fgb(d / "buildings.fgb", [Point(85.3070, 27.7040).buffer(0.0001)])  # roads.fgb deliberately missing
+    monkeypatch.setattr(config, "LOCAL_OSM_PROCESSED_DIR", d)
+
+    result = get_osm_features(test_aoi)
+
+    assert result.source_used.startswith("local:")  # fell through to tier 2, not tier 1
 
 
 # --- local-hit path (fast, no network — real tiny .pbf, real pyrosm parse) ---

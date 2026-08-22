@@ -13,9 +13,22 @@ backend/.pytest_cache/
 # and the processed-per-AOI cache (regenerable, not source data).
 # tests/data/fixtures/ is intentionally NOT excluded — those are tiny,
 # committed, synthetic fixtures, not raw downloads.
-backend/data/raw/*
+# A trailing-slash-only re-include (!.../**/ ) is required alongside the
+# blanket exclude below so git still descends into these directories to
+# apply the later, more specific re-includes -- a bare `dir/*` exclude
+# with no matching directory re-include can never be overridden by a
+# `!dir/**/pattern` negation for anything nested inside it (a git
+# gitignore limitation: a file can't be re-included if a parent
+# directory of it is itself excluded). Verified with `git check-ignore`
+# after an earlier version of this file's !backend/data/raw/**/.gitkeep
+# turned out to have silently never worked -- nothing under raw/ was
+# ever actually tracked despite that line's intent.
+backend/data/raw/**
+!backend/data/raw/**/
 !backend/data/raw/**/.gitkeep
-backend/data/cache/*
+!backend/data/raw/osm/processed/README.md
+backend/data/cache/**
+!backend/data/cache/**/
 !backend/data/cache/**/.gitkeep
 
 # Reference material: downloaded papers kept locally for background

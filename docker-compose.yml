@@ -21,6 +21,17 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-flood_admin}:${POSTGRES_PASSWORD:-devpassword}@db:5432/${POSTGRES_DB:-flood_risk_ktm}
+      # Pre-processed Nepal-wide OSM extract (buildings/roads/waterways)
+      # on Cloudflare R2 -- the fallback osm.py uses when no local
+      # *.osm.pbf covers the requested AOI. Empty/unset is fine (the
+      # existing local-file fast path keeps working); config.py's
+      # OSM_R2_*_URL constants read these the same way, and
+      # DataSourceUnavailableError already gives a clear error if
+      # neither local nor R2 is available. Real values live in a
+      # gitignored .env, never committed here -- see .env.example.
+      OSM_R2_BUILDINGS_URL: ${OSM_R2_BUILDINGS_URL:-}
+      OSM_R2_ROADS_URL: ${OSM_R2_ROADS_URL:-}
+      OSM_R2_WATERWAYS_URL: ${OSM_R2_WATERWAYS_URL:-}
     volumes:
       - ./backend/app:/app/app
       - ./backend/tests:/app/tests
