@@ -1,0 +1,32 @@
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+numpy==2.1.2
+pydantic==2.9.2
+
+# geospatial data layer (app/data/)
+rasterio==1.4.4
+pyproj==3.7.1
+shapely==2.1.2
+geopandas==1.1.4
+pyrosm==0.13.1
+scipy==1.14.0
+
+# hydrology.py: DEM sink-fill + D8 flow direction/accumulation (see that
+# module's docstring for why pysheds over richdem). numba is pysheds'
+# own hard dependency, pinned explicitly (rather than left to pysheds'
+# transitive resolution) because the version pip resolves by default,
+# 0.60.0, does not support numpy==2.1.2 above -- verified live.
+pysheds==0.5
+numba>=0.61
+
+# overlay/breaks.py: Fisher-Jenks natural-breaks classification, for the
+# frontend's Jenks reclassification-break option (POST /api/overlay/
+# criteria/breaks). A small, single-purpose, C-accelerated
+# implementation, not hand-rolled -- same rationale as pysheds over a
+# custom flow-accumulation algorithm.
+jenkspy==0.4.1
+
+# test-only, but kept unpinned-light here since this project has no
+# separate dev-requirements file yet
+pytest==8.3.3
+httpx==0.27.2

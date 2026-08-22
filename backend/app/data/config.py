@@ -1,0 +1,113 @@
+"""Environment-driven configuration for the geospatial data layer.
+
+Every path/URL here can be overridden via environment variable so the
+same code runs unmodified in local dev (files under DATA_DIR) and in a
+deployed environment that may have zero local files (env vars pointing
+at the R2 fallback only).
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+# Root of all local geospatial data: raw pre-downloaded sources (optional
+# fast-path only) and the processed/clipped-per-AOI cache (never a raw
+# source itself). Defaults to backend/data/, i.e. a sibling of app/.
+DATA_DIR = Path(os.environ.get("DATA_DIR", Path(__file__).resolve().parents[2] / "data"))
+
+LOCAL_DEM_DIR = DATA_DIR / "raw" / "dem"
+LOCAL_WORLDCOVER_DIR = DATA_DIR / "raw" / "worldcover"
+
+# A directory, not a fixed filename — mirrors LOCAL_DEM_DIR/LOCAL_
+# WORLDCOVER_DIR's own local_source.find_local_raster_covering_aoi
+# pattern (glob a directory rather than require an exact name) rather
+# than the single hardcoded "nepal-latest.osm.pbf" this used to be.
+# That exact-name requirement was a real bug: a Geofabrik/Planet OSM
+# export's filename always carries its own extract date (e.g.
+# "nepal-260821.osm.pbf"), so a real downloaded file placed here would
+# never match and osm.py would silently fall through to the (usually
+# unconfigured) R2 fallback instead of ever using it — caught by
+# verifying against a real 412MB Nepal extract during implementation.
+# osm.py's _find_local_pbf() picks the most-recently-modified
+# "*.osm.pbf" file in this directory.
+LOCAL_OSM_DIR = Path(os.environ.get("OSM_PBF_DIR", str(DATA_DIR / "raw" / "osm")))
+
+# HydroBASINS Asia (region "as"), level 8, "Standard" (polygon) product —
+# NOT the "Pour Points" product, which is point geometry and can't
+# represent a basin boundary. Download from
+# https://www.hydrosheds.org/products/hydrobasins. Overridable since the
+# actual downloaded filename may differ from HydroSHEDS' own naming
+# convention depending on how/when it was obtained. Default path verified
+# against the actual placed download during implementation: HydroSHEDS'
+# own zip layout nests the shapefile in a same-named subdirectory.
+LOCAL_BASINS_PATH = Path(
+    os.environ.get(
+        "BASINS_SHAPEFILE_PATH",
+        str(DATA_DIR / "raw" / "basins" / "hybas_as_lev08_v1c" / "hybas_as_lev08_v1c.shp"),
+    )
+)
+
+# Nepal's true country boundary (ADM0), used to compute an accurate
+# support-status area-percentage for basins.classify_support_status —
+# optional: if absent, that classification falls back to the rough
+# NEPAL_BBOX_4326 rectangle proxy (basins.py) rather than failing.
+# Source: HERMES (https://download.hermes.com.np) — NON-COMMERCIAL USE
+# ONLY per that site's license terms; not redistributed by this repo
+# (backend/data/raw/ is gitignored). If this project ever needs a
+# commercially-usable boundary, swap in one from e.g. OCHA/HDX or
+# Natural Earth instead.
+LOCAL_NEPAL_BOUNDARY_PATH = Path(
+    os.environ.get(
+        "NEPAL_BOUNDARY_SHAPEFILE_PATH",
+        str(DATA_DIR / "raw" / "basins" / "hermes_NPL_new_wgs" / "hermes_NPL_new_wgs_0.shp"),
+    )
+)
+
+PROCESSED_CACHE_DIR = DATA_DIR / "cache" / "processed"
+
+# OSM fallback: a pre-processed Nepal buildings+roads extract on a
+# configurable S3-compatible bucket (Cloudflare R2 in production). Two
+# separate URLs rather than one bucket name, so the extract doesn't have
+# to be a single combined file and the naming convention isn't hardcoded
+# here — see the "decisions to confirm" note on this choice.
+OSM_R2_BUILDINGS_URL = os.environ.get("OSM_R2_BUILDINGS_URL")
+OSM_R2_ROADS_URL = os.environ.get("OSM_R2_ROADS_URL")
+
+# Same fallback pattern, for osm.py's get_waterways() (dist_to_river's
+# source). A separate URL/file rather than folding waterways into the
+# roads or buildings extract, so each pre-processed extract stays a
+# single-geometry-type file. Confirmed.
+OSM_R2_WATERWAYS_URL = os.environ.get("OSM_R2_WATERWAYS_URL")
+
+# Drainage density (app/data/hydrology.py): the flow-accumulation cell
+# count at/above which a pixel is treated as part of the synthetic
+# stream network. NOT literature-calibrated here — a structurally
+# reasonable placeholder (500 cells @ 10m resolution = 5 hectares of
+# upstream contributing area) pending an actual value derived from a
+# real Kathmandu Valley stream-network comparison (confirmed as a
+# placeholder; the real value is still to be set via literature/
+# calibration). Overridable via env var (and folded into hydrology.py's
+# cache versioning) so recalibrating it never needs a code change or
+# risks serving a stale cached result computed under the old threshold.
+DRAINAGE_DENSITY_THRESHOLD_CELLS = int(os.environ.get("DRAINAGE_DENSITY_THRESHOLD_CELLS", "500"))
+
+# Radius, in meters, of the circular moving window hydrology.py uses to
+# turn the extracted stream network into a continuous per-pixel
+# drainage-density raster (see hydrology.compute_drainage_density_raster).
+# Not specified in the brief; 500m chosen as a plausible Kathmandu-
+# Valley-scale neighborhood (local enough to stay meaningful at 10m
+# resolution, wide enough not to be dominated by single-pixel noise).
+# Confirmed, same as the threshold above.
+DRAINAGE_DENSITY_WINDOW_RADIUS_M = float(os.environ.get("DRAINAGE_DENSITY_WINDOW_RADIUS_M", "500.0"))
+
+# Radius, in meters, of the circular moving window density_raster.py
+# uses to turn OSM building footprints into a continuous per-pixel
+# building-density (Exposure cluster) raster. Deliberately smaller than
+# DRAINAGE_DENSITY_WINDOW_RADIUS_M above: buildings vary at a finer
+# spatial scale than stream networks, so a 500m neighborhood would
+# over-smooth block-to-block density differences that matter for
+# exposure. 200m chosen as a "roughly one city block" scale; not
+# literature-calibrated, overridable, folded into
+# get_building_density's cache version.
+BUILDING_DENSITY_WINDOW_RADIUS_M = float(os.environ.get("BUILDING_DENSITY_WINDOW_RADIUS_M", "200.0"))

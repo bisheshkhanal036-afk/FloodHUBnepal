@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flood-risk-ktm.dev/schemas/risk_surface.schema.json",
+  "title": "RiskSurface",
+  "description": "The computed composite flood risk output for one AOI: a normalized 0-1 continuous raster (the weighted-overlay AHP score), not the 1-5 display classes — discrete classes are derived from this value separately, at display/legend time, and are never what gets stored or cached here. Keyed by a hash of (AOI + criteria set + weights) so identical requests can be served from cache instead of recomputed.",
+  "type": "object",
+  "properties": {
+    "cache_key": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 hex digest of a canonical serialization of (AOI bbox + the set of criterion ids used + their final weights). Two requests that hash to the same cache_key are considered identical and may reuse the same stored surface."
+    },
+    "aoi": {
+      "$ref": "aoi.schema.json",
+      "description": "The AOI this surface was computed for."
+    },
+    "criteria_set": {
+      "type": "array",
+      "description": "The criteria and final weights used to compute this surface, snapshotted at compute time (independent of any later change to a Criterion's stored weight).",
+      "items": {
+        "type": "object",
+        "properties": {
+          "criterion_id": { "type": "string" },
+          "weight": { "type": "number", "minimum": 0, "maximum": 1 }
+        },
+        "required": ["criterion_id", "weight"],
+        "additionalProperties": false
+      },
+      "minItems": 1
+    },
+    "grid": {
+      "type": "object",
+      "description": "The common analysis grid this raster is stored on. See SPEC.md, 'Grid/resolution convention' — origin is derived deterministically from the AOI so repeated requests for the same AOI produce an identical pixel grid.",
+      "properties": {
+        "crs": { "const": "EPSG:32645" },
+        "resolution_m": { "const": 10 },
+        "origin_x": { "type": "number", "description": "X coordinate (EPSG:32645, meters) of the grid's top-left corner." },
+        "origin_y": { "type": "number", "description": "Y coordinate (EPSG:32645, meters) of the grid's top-left corner." },
+        "width": { "type": "integer", "exclusiveMinimum": 0, "description": "Grid width in pixels." },
+        "height": { "type": "integer", "exclusiveMinimum": 0, "description": "Grid height in pixels." }
+      },
+      "required": ["crs", "resolution_m", "origin_x", "origin_y", "width", "height"],
+      "additionalProperties": false
+    },
+    "data_url": {
+      "type": "string",
+      "description": "Location (path or URL) of the stored raster data — a single-band float raster with values in [0, 1]."
+    },
+    "nodata_value": {
+      "type": ["number", "null"],
+      "description": "Nodata sentinel used in the output raster, e.g. for pixels outside the AOI or where an input criterion was nodata. null means every pixel in the grid carries a valid value."
+    },
+    "value_range": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        { "const": 0 },
+        { "const": 1 }
+      ],
+      "description": "Fixed [0, 1]. The composite score is always normalized to this range; it is not the 1-5 risk class scale."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this surface was computed and cached."
+    }
+  },
+  "required": ["cache_key", "aoi", "criteria_set", "grid", "data_url", "value_range"],
+  "additionalProperties": false
+}

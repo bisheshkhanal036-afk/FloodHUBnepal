@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flood-risk-ktm.dev/schemas/ahp_pairwise_matrix.schema.json",
+  "title": "AhpPairwiseMatrix",
+  "description": "The complete AHP (Analytic Hierarchy Process) comparison structure for one analysis: a top-level matrix comparing the 5 clusters against each other, plus one matrix per cluster comparing that cluster's member criteria against each other. Each matrix carries its raw pairwise judgments (Saaty 1-9 scale) and the computed eigenvector weights and consistency ratio. A criterion's final weight = its cluster's weight (from cluster_comparison) × its weight within that cluster (from within_cluster_comparisons). See SPEC.md, 'AHP Pairwise Matrix' for the consistency-ratio formula and the standard random-index table.",
+  "type": "object",
+  "$defs": {
+    "saatyValue": {
+      "type": "number",
+      "minimum": 0.1111111111111111,
+      "maximum": 9,
+      "description": "A pairwise comparison value on Saaty's 1-9 scale, or its reciprocal (1/9 .. 1). 1 = equal importance, 9 = extreme importance of the row item over the column item, 1/9 = extreme importance of the column item over the row item. Conventionally chosen from {1/9, 1/8, ..., 1/2, 1, 2, ..., 9}."
+    },
+    "pairwiseMatrix": {
+      "type": "object",
+      "description": "One n×n pairwise comparison matrix plus its derived AHP results.",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Ordered ids of the things being compared — either the 5 cluster names (for the top-level matrix) or criterion ids within one cluster (for a within-cluster matrix). Row/column order of 'matrix' follows this list."
+        },
+        "matrix": {
+          "type": "array",
+          "description": "n×n matrix of raw pairwise judgments, n = length of 'items'. matrix[i][j] expresses how much more important items[i] is than items[j] on the Saaty scale. Must be reciprocal (matrix[i][j] == 1 / matrix[j][i]) and have 1s on the diagonal.",
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/saatyValue" }
+          }
+        },
+        "weights": {
+          "type": "array",
+          "items": { "type": "number", "minimum": 0, "maximum": 1 },
+          "description": "Principal eigenvector of 'matrix', normalized to sum to 1, in the same order as 'items'. This is the relative-priority output of the AHP calculation for this matrix."
+        },
+        "consistency_index": {
+          "type": "number",
+          "description": "CI = (λmax − n) / (n − 1), where λmax is the matrix's principal eigenvalue and n is its size."
+        },
+        "random_index": {
+          "type": "number",
+          "description": "RI, Saaty's average random-consistency index for an n×n matrix, looked up from the standard table (see SPEC.md)."
+        },
+        "consistency_ratio": {
+          "type": "number",
+          "minimum": 0,
+          "description": "CR = CI / RI. By AHP convention CR < 0.10 is considered acceptably consistent; CR >= 0.10 flags that the underlying judgments should be revisited."
+        }
+      },
+      "required": ["items", "matrix"],
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "cluster_comparison": {
+      "allOf": [{ "$ref": "#/$defs/pairwiseMatrix" }],
+      "description": "The top-level 5×5 matrix comparing the 5 clusters (Topographic, Hydrological, Land Use, Infrastructure, Exposure) against each other. 'items' must be exactly those 5 cluster names."
+    },
+    "within_cluster_comparisons": {
+      "type": "object",
+      "description": "One pairwise matrix per cluster, keyed by cluster name, comparing that cluster's member criteria against each other.",
+      "propertyNames": {
+        "enum": ["Topographic", "Hydrological", "Land Use", "Infrastructure", "Exposure"]
+      },
+      "additionalProperties": { "$ref": "#/$defs/pairwiseMatrix" }
+    },
+    "final_weights": {
+      "type": "object",
+      "description": "Final AHP weight per criterion id: cluster_comparison weight for that criterion's cluster × its weight within within_cluster_comparisons[cluster]. Values should sum to 1 across all criteria in the analysis. This is the same value written back onto Criterion.weight.",
+      "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 }
+    }
+  },
+  "required": ["cluster_comparison", "within_cluster_comparisons"],
+  "additionalProperties": false
+}

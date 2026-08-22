@@ -1,0 +1,604 @@
+# SPEC — Flood Risk Mapping & Shelter Identification, Kathmandu Valley
+
+Status: **Backend (AHP engine, geospatial data layer, overlay engine) and a
+working frontend map UI implemented; vulnerability classification and
+shelter identification still pending** — see §5. This document defines
+the shared data contracts and project-wide conventions that every phase
+(backend, frontend, analysis pipeline) must follow.
+
+## 1. Repository layout
+
+```
+/backend    FastAPI service (Python) — API, AHP computation, raster overlay
+/frontend   React + MapLibre GL client
+/schemas    JSON Schema data contracts, shared source of truth for both sides
+SPEC.md     this document
+docker-compose.yml   local dev stack: PostGIS + backend + frontend, localhost-only
+```
+
+The contents of `/schemas` are the single source of truth for the shapes
+described below. Backend Pydantic models and frontend TypeScript/JS types
+should be generated from, or kept in lockstep with, these files — not
+redefined independently.
+
+## 2. Project-wide conventions
+
+### 2.1 CRS convention
+
+- **EPSG:4326** (WGS 84 lon/lat) is used for the AOI as drawn/entered by the
+  user, and for all API request/response bodies that carry coordinates.
+- **EPSG:32645** (WGS 84 / UTM Zone 45N) is used for every calculation that
+  is metric in nature: area, distance, slope, buffering, and all raster
+  overlay math. Kathmandu Valley falls entirely within UTM Zone 45N.
+- Data is reprojected to EPSG:32645 on the fly for calculation and the
+  result translated back to EPSG:4326 only where the API contract calls for
+  it. **Area, distance, and slope must never be computed directly against
+  EPSG:4326 degree coordinates** — degrees are not a uniform unit of length,
+  and doing so silently produces wrong numbers rather than an error.
+
+### 2.2 Grid/resolution convention
+
+- Every input raster is reprojected into EPSG:32645 and resampled onto a
+  single common analysis grid at **10m resolution**.
+- The grid's origin/alignment is derived **deterministically from the AOI**
+  (not from each source raster's native alignment), so that repeated
+  requests for the same AOI always produce an identical pixel grid — this is
+  what makes the `RiskSurface.cache_key` scheme in §3.4 safe to rely on.
+- Resampling method depends on data type, and this must not be mixed up:
+  - **Continuous data** (elevation, slope, rainfall, distance surfaces) →
+    **bilinear** resampling.
+  - **Categorical / already-reclassified data** (land cover, discrete 1-5
+    risk classes) → **nearest-neighbor** resampling only. Averaging across
+    discrete category codes produces meaningless intermediate values and
+    must never be used.
+- `Criterion.resampling_method` in the schema records which of the two
+  applies to a given input layer.
+
+### 2.3 Nodata handling
+
+- Every input raster must declare an explicit, known nodata value
+  (`Criterion.declared_nodata_value`) before it participates in any overlay
+  math.
+- Nodata values must be reconciled/consistent across all criteria in a given
+  analysis before pixels are combined. Mismatched or undeclared nodata is a
+  known silent-failure risk (e.g. a stray `0` or `-9999` from one layer
+  bleeding into a weighted sum as if it were a real value).
+- Validation must **raise a clear, actionable error** the first time
+  inconsistent or missing nodata is detected — it must never be silently
+  ignored, coerced, or averaged away.
+
+## 3. Data contracts
+
+Full field-level definitions live in `/schemas/*.schema.json`
+(JSON Schema, draft 2020-12). Summarized in plain language:
+
+### 3.1 AOI — `schemas/aoi.schema.json`
+
+The Area of Interest a request is scoped to — either hand-drawn (a plain
+bbox) or selected from a basin (§3.5). Both are the same `AOI` type and
+flow through every later stage identically.
+
+| Field | Meaning |
+|---|---|
+| `bbox` | `[minx, miny, maxx, maxy]` in EPSG:4326. A rectangle; width and height need not match. For a basin-derived AOI, this is the basin polygon's bounding envelope, derived automatically — never hand-specified alongside a polygon. |
+| `polygon` | Optional GeoJSON Polygon/MultiPolygon, EPSG:4326. `null`/absent for a hand-drawn bbox AOI (the original, still-default case). Set to the true basin geometry for a basin-derived AOI. Every current AOI-consuming stage (DEM/WorldCover fetch, reclassification, the overlay engine) reads only `bbox`/its UTM envelope and ignores `polygon` entirely — it exists for a future consumer that needs true-shape correctness (e.g. flow accumulation for TWI/drainage density) to clip to the real shape instead of just the bbox. |
+| `crs` | Always `"EPSG:4326"`. |
+| `area_km2` | Server-computed area, in km², measured after reprojecting to EPSG:32645 — never computed from raw degrees. Uses the true `polygon` area when one is set (a basin is very often much smaller than its own bounding envelope), otherwise the bbox rectangle's area. |
+| `max_area_km2` | Cap the AOI's area must not exceed. Default **500 km²** — enough to cover the Kathmandu Valley with headroom, while bounding per-request compute cost. Requests over the cap are rejected with a validation error, not silently clipped. Enforced once, centrally, by `backend/app/common/aoi.py`'s shared `AOIInput` request model — every endpoint that accepts an AOI (`POST /api/overlay/compute`, and basin selection via §3.5) uses this same model, so the cap applies automatically rather than being re-implemented (or forgotten) per endpoint. |
+
+### 3.2 Criterion — `schemas/criterion.schema.json`
+
+One input layer in the AHP model (e.g. Slope, Distance to River, Land Cover).
+
+| Field | Meaning |
+|---|---|
+| `id` / `name` | Machine id and human-readable label. |
+| `cluster` | One of the 5 top-level clusters: `Topographic`, `Hydrological`, `Land Use`, `Infrastructure`, `Exposure`. |
+| `source_type` | `preloaded` (curated server-side layer) or `uploaded` (user-supplied). |
+| `raster_source` | Path (preloaded) or URL (uploaded) to the native-resolution raster. |
+| `native_resolution_m` / `native_crs` | Resolution and CRS of the source raster as delivered, before it's reprojected onto the shared 10m/EPSG:32645 grid. |
+| `resampling_method` | `bilinear` for continuous data, `nearest` for categorical data — see §2.2. |
+| `declared_nodata_value` | The raster's nodata sentinel, made explicit — see §2.3. |
+| `reclassification_rules` | Ordered, non-overlapping, gap-free ranges mapping this criterion's native values to the 5 discrete risk classes (1 = lowest, 5 = highest). Used for legend/display, and where the model calls for a reclassified intermediate layer — **not** how the stored composite score is produced (that stays continuous, §3.4). |
+| `weight` | This criterion's final AHP weight (cluster weight × within-cluster weight). `null` until an AHP run has been computed for the criteria set it belongs to. |
+
+### 3.3 AHP Pairwise Matrix — `schemas/ahp_pairwise_matrix.schema.json`
+
+The full AHP comparison structure for one analysis:
+
+- `cluster_comparison` — one 5×5 matrix comparing the 5 clusters against each
+  other (Saaty 1-9 scale, reciprocal off-diagonal, 1s on the diagonal).
+- `within_cluster_comparisons` — one n×n matrix **per cluster**, comparing
+  that cluster's member criteria against each other.
+- Each matrix carries its raw judgments (`matrix`), the derived principal
+  eigenvector (`weights`, normalized to sum to 1), and its consistency
+  metrics (`consistency_index`, `random_index`, `consistency_ratio`).
+- `final_weights` — per-criterion final weight = its cluster's weight (from
+  `cluster_comparison`) × its weight within its cluster (from
+  `within_cluster_comparisons[cluster]`). This is the value written back
+  onto `Criterion.weight`. `within_cluster_comparisons` may legitimately
+  cover fewer than all 5 clusters (e.g. while criteria are still being
+  assembled), in which case `final_weights` does not sum to 1 — the
+  `POST /api/ahp/compute` response carries an explicit `complete` flag
+  (and `missing_clusters` list) alongside `final_weights` so a caller
+  can never mistake a partial, un-normalized weight set for a finished
+  one.
+
+**Consistency ratio.** `CR = CI / RI`, where `CI = (λmax − n) / (n − 1)`
+(λmax = the matrix's principal eigenvalue, n = matrix size) and `RI` is
+Saaty's standard random-consistency index, looked up by matrix size:
+
+| n | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| RI | 0.00 | 0.00 | 0.58 | 0.90 | 1.12 | 1.24 | 1.32 | 1.41 | 1.45 | 1.49 |
+
+By convention, `CR < 0.10` is treated as an acceptably consistent set of
+judgments; `CR >= 0.10` should be flagged back to whoever entered the
+pairwise comparisons so they can be revisited.
+
+### 3.4 Risk Surface — `schemas/risk_surface.schema.json`
+
+The computed composite output for one AOI.
+
+| Field | Meaning |
+|---|---|
+| `cache_key` | SHA-256 hex digest of a canonical `(AOI + criteria set + weights)` serialization. Identical requests hash identically and can be served from cache. |
+| `aoi` | The AOI this surface was computed for. |
+| `criteria_set` | Snapshot of which criteria and weights were actually used, independent of any later change to a `Criterion`'s stored weight. |
+| `grid` | The common EPSG:32645 / 10m grid this raster is stored on — `origin_x/y`, `width`, `height` (see §2.2 on deterministic AOI-derived alignment). |
+| `data_url` | Location of the stored raster: single-band float, values in `[0, 1]`. |
+| `nodata_value` | Nodata sentinel in the *output* raster, if any (e.g. pixels outside the AOI). |
+| `value_range` | Fixed `[0, 1]`. **This is a continuous normalized score, not the 1-5 display classes.** Discrete risk classes for the legend/map display are derived from this value at render time and are never what gets stored or cached here. |
+| `created_at` | When this surface was computed. |
+
+**Weighted-sum formula and normalization.** For each pixel, with
+`weight_i` the AHP final weight for criterion *i* and `class_i` its
+reclassified risk class (an integer 1-5, per `Criterion.reclassification_rules`):
+
+```
+R      = Σ (weight_i × class_i)         -- R ∈ [1, 5] when weights sum to 1
+R_norm = (R - 1) / (5 - 1)              -- R_norm ∈ [0, 1]
+```
+
+`R_norm` is a **fixed-range linear transform**, not a min-max
+normalization over the AOI's own computed values. The 1-5 bounds come
+from the reclassification scheme (5 fixed classes), not from whatever
+values happen to occur in a given request's output. This is deliberate:
+min-max normalization would make scores incomparable across AOIs or
+re-runs — a pixel scoring `R_norm = 0.8` must mean the same thing
+regardless of which AOI it came from, which only holds under a fixed
+reference range. Every phase that reads a risk surface (vulnerability
+classification, the frontend legend, anything downstream) should use
+this formula's inverse to recover `R` if it ever needs the underlying
+1-5 scale back, rather than re-deriving normalization from the array.
+
+**Nodata.** The overlay engine uses one explicit sentinel,
+`RISK_SURFACE_NODATA = -9999.0` (`backend/app/overlay/compute.py`) —
+chosen outside `[0, 1]` specifically so it can never be mistaken for a
+real, computed score. A pixel is nodata in the output if *any*
+contributing criterion is nodata at that pixel (`reclassify.RECLASSIFIED_NODATA
+= 0`); it is never treated as zero-risk or silently dropped from the sum.
+
+### 3.5 Basin-based AOI selection — `backend/app/data/basins.py`, `backend/app/basins/`
+
+An **alternative** way to produce an AOI, alongside hand-drawing a bbox —
+not a replacement. Backed by HydroBASINS Asia, level 8 (polygon
+watershed boundaries — 28,907 basins; ~547 overlap Nepal's rough
+extent), loaded once from a local shapefile (`config.LOCAL_BASINS_PATH`,
+override via `BASINS_SHAPEFILE_PATH`) and cached in memory; there is no
+cloud fallback for basins (unlike DEM/WorldCover/OSM) — a missing/invalid
+file is a clear 503, not a degraded live-query path.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/basins` | GeoJSON `FeatureCollection` of basins overlapping Nepal's *rough* extent (a generous bbox screen, not a hard restriction — cross-border basins are kept whole, never clipped), each tagged with `support_status`. Real-data payload is ~3.9 MB at full geometry resolution regardless of caching (no simplification/pagination implemented — deferred, no clear need yet); response time is ~4s cold, ~0.17s once `get_basin_support_status`/`get_basin_pct_in_nepal`'s per-HYBAS_ID cache is warm (§ below). |
+| `GET /api/basins/{hybas_id}` | One basin's detail: area (true polygon area, km²), `pct_in_nepal`, `support_status`, geometry. |
+| `GET /api/basins/{hybas_id}/aoi` | `{bbox, polygon}` — the exact shape `AOIInput` (§3.1) accepts, so a selected basin drops straight into `POST /api/overlay/compute`'s `aoi` field unchanged. |
+
+**Support status** — the fraction of a basin's own true area (EPSG:32645,
+never raw degrees) that falls within Nepal's true country boundary
+(`config.LOCAL_NEPAL_BOUNDARY_PATH`) when that optional file is
+available, or `NEPAL_BBOX_4326` (a rough rectangular proxy) as an
+automatic fallback when it isn't:
+
+| Status | Threshold | Meaning |
+|---|---|---|
+| `fully_in_nepal` | ≥ 98% | The whole basin is effectively inside Nepal; edge effects are negligible. |
+| `partial_likely_adequate` | ≥ 50%, < 98% | Most of the basin's hydrology is captured; DEM/WorldCover data itself is globally available so there's no raw *data* gap at the border, but a meaningful share of the catchment lies outside the usual analysis frame. |
+| `likely_degraded_at_edges` | < 50% | Most of the basin is outside Nepal; treat results with low confidence. |
+
+These thresholds are a judgment call, not derived from an external
+standard — see the basins-phase decisions-to-confirm record for the
+reasoning. Real-data breakdown across the ~547 basins overlapping
+Nepal's rough extent: 155 `fully_in_nepal`, 41 `partial_likely_adequate`,
+351 `likely_degraded_at_edges` — expected for a rectangular screening
+filter against a mountainous country's actual (much smaller, irregular)
+territory.
+
+**Nepal's true boundary source**: HERMES
+(https://download.hermes.com.np) — **non-commercial use only, no
+redistribution without consent** per that site's license. Never
+committed to this repo (`backend/data/raw/` is gitignored); swap in a
+commercially-usable boundary (e.g. OCHA/HDX, Natural Earth) before any
+commercial deployment.
+
+**Classification caching**: `classify_support_status`/`pct_area_in_nepal`
+are recomputed on a cache miss and cached per HYBAS_ID
+(`get_basin_support_status`/`get_basin_pct_in_nepal`, backed by
+module-level dicts in `basins.py`) — a basin's geometry never changes at
+runtime, so this is a pure speedup with no behavior change. Measured on
+the real dataset: ~4.0s cold (547 basins classified against Nepal's full
+boundary polygon) vs. ~0.17s once warm. Invalidated automatically by
+`reset_basins_cache()`/`reset_nepal_boundary_cache()`, since the
+classification is a function of both the basin's own geometry and
+whichever Nepal reference geometry is currently loaded.
+
+### 3.6 Criterion sources & the pluggable registry — `backend/app/overlay/sources.py`
+
+A `Criterion.source` (§3.2) is resolved to its raw physical layer through
+a small, explicit, **pluggable** registry — `register_source(name, fn)`
+maps a source name to a `(AOI) -> (raw_array, grid, nodata, attribution,
+warning)` function (`warning` is `str | None`, `None` for every source
+except `twi`/`drainage_density`, see below); `resolve_criterion_raster`
+looks a criterion's declared `source` up in it, then applies
+`reclassification_rules` (§2.3, §3.2). Adding a new source needs only a
+matching function + one `register_source()` call — see `sources.py`'s
+own module docstring for the exact steps, and
+`tests/overlay/test_sources.py`'s registry-extensibility test, which
+proves this end-to-end by registering a throwaway dummy source from the
+test file itself, through the public `register_source()` function only,
+with zero changes to `sources.py` or any other `overlay/` file.
+
+| `source` | Raw layer | Continuous/categorical | Backing module |
+|---|---|---|---|
+| `dem_elevation` | Elevation (m) | Continuous | `app/data/dem.py` |
+| `dem_slope` | Slope (degrees, Horn's method) | Continuous | `app/data/dem.py` |
+| `worldcover_land_cover` | ESA WorldCover class code | Categorical | `app/data/worldcover.py` |
+| `dist_to_river` | Euclidean distance to nearest river/stream/canal (m) | Continuous | `app/data/distance_raster.py` (+ `app/data/osm.py`'s `get_waterways`) |
+| `dist_to_road` | Euclidean distance to nearest road (m) | Continuous | `app/data/distance_raster.py` (reuses `get_osm_features(aoi).roads` — no separate OSM query) |
+| `twi` | Topographic Wetness Index | Continuous | `app/data/hydrology.py` |
+| `drainage_density` | Local drainage density (km stream / km² window) | Continuous | `app/data/hydrology.py` |
+| `building_density` | Local building-footprint coverage fraction (0-1) | Continuous | `app/data/density_raster.py` (reuses `get_osm_features(aoi).buildings` — no separate OSM query) |
+
+**Distance rasters** (`distance_raster.py`): a generic
+`compute_distance_raster(features, grid)` rasterizes arbitrary vector
+features onto the common grid and runs a Euclidean distance transform
+(`scipy.ndimage.distance_transform_edt`), quantized to the grid's own
+10m resolution (accurate to within about one pixel diagonal of the true
+vector distance — the same precision every other raster in this layer
+already operates at). Not river/road-specific, so a future "distance
+from X" criterion can reuse it directly.
+
+**Density rasters** (`density_raster.py`): a generic
+`compute_density_raster(features, grid, window_radius_m)` rasterizes
+arbitrary polygon (or line/point) features onto the common grid
+(`all_touched=False` — deliberately different from
+`compute_distance_raster`'s `all_touched=True`: correct for area
+coverage, where counting a pixel a polygon edge merely clips would
+overstate density), then runs a circular moving-window mean of that
+mask — the same "Line Density"-style construction `hydrology.py`'s
+drainage density already uses, generalized from line length to area
+coverage. `building_density` is its first, and Exposure cluster's first
+criterion (what's at risk, rather than the hazard's own physical
+behavior — every other criterion here describes that instead): local
+building-footprint coverage (0-1) within
+`config.BUILDING_DENSITY_WINDOW_RADIUS_M` (default 200m — smaller than
+`DRAINAGE_DENSITY_WINDOW_RADIUS_M`'s 500m, since buildings vary at a
+finer spatial scale than stream networks), reusing
+`get_osm_features(aoi).buildings` — no new OSM query, same "no separate
+query" principle `dist_to_road` already follows for roads. `nodata` is
+always `None` — density is defined everywhere (0 where no buildings
+fall within the window, never "unknown"; `get_osm_features` itself is
+what raises if the underlying source is unavailable at all) — the first
+source in this registry to actually use `reclassify.py`'s "`nodata is
+None`, so every pixel is valid" code path rather than a real sentinel.
+
+**Local OSM extract discovery** (`osm.py`): `config.LOCAL_OSM_DIR` is a
+*directory*, not one fixed filename — `_find_local_pbf()` globs it for
+the most-recently-modified `*.osm.pbf`, the same "glob a directory"
+pattern `local_source.py` already uses for DEM/WorldCover. This was a
+real bug fix, not a preemptive design choice: the original single fixed
+name (`nepal-latest.osm.pbf`) never matches a real downloaded extract,
+whose filename always carries its own extract date (e.g.
+`nepal-260821.osm.pbf`) — caught when a real 412MB Nepal extract was
+placed for verification and silently fell through to the (unconfigured)
+R2 fallback instead of ever being used. Parsing a real full-country
+extract is genuinely expensive: verified live, pyrosm's first
+extraction on a freshly-opened `OSM(...)` object took ~145-210s (a
+one-time low-level parse of the whole file); a *second* extraction on
+that same already-parsed object took 0.02s. `_load_local_osm`
+(`@lru_cache(maxsize=4)`, keyed by `(path, bbox)`) exists so
+`get_osm_features` (buildings+roads) and `get_waterways`, when both
+needed for the same AOI in the same request — a normal case, since this
+project's frontend lets a user check both `dist_to_road` and
+`dist_to_river` at once — share that one parse instead of each paying it
+separately; verified live (0.01s for the second call once the first had
+run). Still ~145-210s for whichever call runs first against a real AOI
+with no local file previously seen — `POST /api/overlay/compute`'s own
+response time inherits that on a cache miss, which is well beyond what
+"a few seconds" implies; the frontend's compute-in-progress message
+says so explicitly when a road/river-distance criterion is selected.
+
+**Hydrology** (`hydrology.py`): `twi` and `drainage_density` both build
+on a shared DEM sink-fill + D8 flow-direction + flow-accumulation
+pipeline (`compute_flow_accumulation`), using **pysheds** (not
+richdem — richdem's only PyPI wheels are Linux/macOS-only, which would
+break local testing on a plain Windows environment outside Docker, as
+this project's is; pysheds ships a pure-Python/NumPy wheel with
+equivalent algorithms, verified to produce hand-checked correct results
+on both Windows and in the Docker image). pysheds pulls in `numba` as a
+hard dependency; `requirements.txt` pins `numba>=0.61` explicitly since
+the version pip resolves by default (0.60.0) does not support this
+project's pinned `numpy==2.1.2`.
+
+- When the AOI carries a true `polygon` (a basin-derived AOI, §3.5), the
+  DEM is clipped to that polygon *before* flow routing — every pixel
+  outside it becomes nodata, so flow accumulation has no way to route
+  across the basin boundary from ground that isn't really part of that
+  basin. This is what makes the basin case hydrologically correct,
+  since a basin has no external inflow by definition.
+- When the AOI is a plain bbox (`polygon` is `None`), the full
+  rectangular grid is used as-is, and the result's `warning` field
+  (`hydrology.EDGE_RELIABILITY_WARNING`) flags that flow-accumulation-
+  derived values near the AOI's own edges may be underestimated — a
+  known limitation (the same kind of edge effect `dem.py`'s Horn's-
+  method slope already has). This is a dedicated field, never folded
+  into `attribution` (which always stays the plain, unmodified source
+  citation) — see "Response fields" below.
+- Cached per-AOI like every other source, but `version`-keyed
+  (`_hydrology_cache_version`) so a basin-derived AOI and a plain bbox
+  AOI that happen to share the same `bbox_4326` never share a cache
+  entry — `AOI.cache_key()` itself is deliberately bbox-only (§3.1's
+  `polygon` row), so this is exactly the "future consumer that needs
+  true-shape correctness" case that decision anticipated.
+
+`twi`: `TWI = ln(α / tan(β))`, `α` (specific catchment area) =
+flow-accumulation cell count × `resolution_m` (the standard Moore et al.
+(1991) convention — upslope contributing area divided by contour length,
+approximated on a D8 grid as one cell width per contributing cell — so
+TWI values here are directly comparable to published-literature
+thresholds, rather than offset by a constant `ln(cell_size)` from them),
+`β` = local slope in radians (reusing `dem.compute_slope_degrees` —
+Horn's method — on the AOI's own unfilled elevation, not the sink-filled
+DEM used for flow routing). `tan(β)` is floored to
+`tan(MIN_SLOPE_RADIANS)` on flat ground so TWI never diverges to
++infinity.
+
+**Response fields.** `POST /api/overlay/compute`'s response carries two
+separate, never-conflated per-source fields: `attribution` (deduplicated
+citation strings, unchanged by this phase) and `source_warnings` (a list
+of `{criterion_id, message}`, one entry per criterion whose registered
+source function returned a non-`None` warning — empty when nothing has
+anything to flag). Only `twi`/`drainage_density` on a plain bbox AOI
+ever populate it today, but the field itself is generic — any future
+source can use it the same way, with no special-casing anywhere in the
+overlay engine beyond the registry's own 5-tuple contract.
+
+`drainage_density`: flow accumulation is thresholded
+(`config.DRAINAGE_DENSITY_THRESHOLD_CELLS`, not literature-calibrated
+yet — a placeholder pending calibration against a real Kathmandu Valley
+stream network) to extract a synthetic stream network, then turned into
+a continuous per-pixel raster via a circular moving-window line-density
+transform (`config.DRAINAGE_DENSITY_WINDOW_RADIUS_M`) — the same
+construction as ArcGIS Spatial Analyst's "Line Density" tool — rather
+than a single catchment-wide scalar, so it can serve as a pixel-weighted
+AHP criterion like every other source here. Both parameters are
+env-overridable and folded into the cache version, so recalibrating
+either one never needs a code change or silently reuses a stale result.
+
+## 4. Local development
+
+Everything runs locally via Docker Compose, bound to `127.0.0.1` only —
+nothing is exposed beyond localhost.
+
+```
+docker compose up
+```
+
+| Service | URL | Notes |
+|---|---|---|
+| `frontend` | http://localhost:5173 | Vite dev server, React + MapLibre GL |
+| `backend` | http://localhost:8000 | FastAPI, hot-reload via mounted volume |
+| `db` | localhost:5432 | PostGIS (`postgis/postgis:16-3.4`) |
+
+`backend/data/` (both `raw/` — DEM/WorldCover/OSM/basins local files — and
+the per-AOI processed `cache/`) is volume-mounted into the backend
+container at `/app/data`, matching `config.py`'s own default `DATA_DIR`
+resolution inside it. Without this mount every local-check-first source
+falls straight to its cloud/R2 fallback (or, for basins/OSM with no R2
+configured, a 503) regardless of what's actually placed on the host —
+this was a real bug (not caught until basin selection and OSM-backed
+criteria were actually exercised through `docker compose up` rather
+than a directly-run backend process), fixed by adding the mount.
+
+Backend and frontend source directories are volume-mounted into their
+containers so edits on the host are picked up without rebuilding the image.
+See `.env.example` for the (dev-only, non-secret) default Postgres
+credentials — copy it to `.env` before first run if you want to override
+them.
+
+## 5. Status
+
+- `/schemas` contracts, this SPEC, and the Docker Compose skeleton: done.
+- Backend: `GET /` and `GET /health` (skeleton), plus a working **AHP
+  engine** (`backend/app/ahp/`) exposing `POST /api/ahp/compute` — exact
+  eigenvector priority weights (primary) and the column-sum-and-average
+  approximation (diagnostic only), consistency checking (CR < 0.10, per
+  §3.3), and two-level cluster/criteria weight composition. Covered by
+  `backend/tests/`, including test cases verified against published
+  literature matrices (see the citations in `backend/app/ahp/core.py`).
+- Backend: a **geospatial data layer** (`backend/app/data/`) for the 3
+  input sources — Copernicus GLO-30 DEM (+ derived slope), ESA WorldCover
+  10m, and OSM buildings/roads. Every source follows local-check-first /
+  cloud-fetch-fallback: an optional pre-downloaded file under
+  `backend/data/raw/` is used if present and it covers the AOI; otherwise
+  DEM and WorldCover fall back to a live windowed read from their public,
+  anonymous-access S3 COG buckets, and OSM falls back to a pre-processed
+  extract on a configurable bucket (Cloudflare R2 in production) — never
+  the live Overpass API. Every source reprojects/resamples onto the
+  common per-AOI grid (§2.2), assigns an explicit output nodata value,
+  and is cached per-AOI (`backend/data/cache/processed/`, separate from
+  the raw sources) so repeat requests never re-fetch or re-reproject.
+  Reclassification (continuous/categorical values -> 5 risk classes) is
+  a generic engine driven entirely by a criterion's
+  `reclassification_rules` (schemas/criterion.schema.json), not
+  hardcoded per criterion. Covered by `backend/tests/data/`, including 2
+  real-network integration tests (marked `slow`, verified against live
+  Copernicus/WorldCover data during implementation) and R2/local-file
+  fallback behavior confirmed via mocking.
+- Backend: an **overlay engine** (`backend/app/overlay/`) exposing
+  `POST /api/overlay/compute` — combines Phase 1's AHP `final_weights`
+  and Phase 2's reclassified criterion rasters into the composite
+  `RiskSurface` described in §3.4 (fixed-range normalization,
+  `RISK_SURFACE_NODATA`). Rejects an incomplete AHP weight set
+  (`complete=False`) rather than computing on non-normalized weights, and
+  never re-reprojects — a grid mismatch between two criteria is a hard
+  error, not something this module works around. Cached per
+  `RiskSurface.cache_key` (AOI + criteria set + weights — distinct from
+  Phase 2's per-source AOI cache, since the same AOI yields a different
+  surface under different weights) and materialized as a GeoTIFF for the
+  response's `data_url` — served back over HTTP by
+  `GET /api/overlay/risk_surface/{cache_key}.tif` (`data_url` is that
+  route's path, not a raw filesystem path), so the frontend can load a
+  computed surface directly as a raster/image source. Every AOI-accepting
+  request (this endpoint today) goes through the shared `AOIInput` model
+  (§3.1), so an oversized AOI is rejected with a 422 before any Phase 2
+  fetch happens. Covered by `backend/tests/overlay/`, including an
+  end-to-end integration test using the real AHP engine and real Phase 2
+  local-fixture data together with no mocking.
+- Backend: **basin-based AOI selection** (§3.5) — `backend/app/data/basins.py`
+  (HydroBASINS lookup/classification/`basin_to_aoi`) and
+  `backend/app/basins/` (`GET /api/basins`, `/{hybas_id}`,
+  `/{hybas_id}/aoi`). `AOI` (`backend/app/data/aoi.py`) now optionally
+  carries a true `polygon` alongside `bbox_4326` — additive only; every
+  existing bbox-only AOI consumer (DEM/WorldCover fetch, reclassification,
+  the overlay engine) is unmodified and unaffected, verified by the full
+  Phase 1-3 test suite passing with zero changes. The correct dataset
+  (HydroBASINS Asia, level 08, "Standard" polygon format — 28,907
+  basins) and Nepal's true country boundary (used for accurate
+  support-status classification, falling back to a rough bbox proxy when
+  absent) are both now in place and verified end to end against the real
+  files; earlier in this phase the file initially placed was HydroBASINS'
+  "Pour Points" product (point geometry, wrong dataset entirely) —
+  `basins.py` still validates for exactly that mismatch and fails with a
+  clear, actionable error rather than misbehaving on point geometry,
+  should it recur. Per-HYBAS_ID classification caching brings real-data
+  `GET /api/basins` from ~4.0s cold to ~0.17s warm (§3.5). All automated
+  tests still use a small synthetic fixture
+  (`tests/data/fixtures/basins/`), never the real ~100MB+ downloads.
+- Backend: **4 new criterion sources** (§3.6) — `dist_to_river`,
+  `dist_to_road` (`backend/app/data/distance_raster.py`, plus
+  `osm.py`'s new `get_waterways()`), and `twi`, `drainage_density`
+  (`backend/app/data/hydrology.py`, DEM sink-fill + D8 flow routing via
+  pysheds) — registered through `overlay/sources.py`'s now-pluggable
+  `register_source()` mechanism alongside the original 3 Phase 2
+  sources. Basin true-shape clipping (`AOI.polygon`, previously unused
+  by anything) is now actually exercised: `twi`/`drainage_density` clip
+  flow accumulation to a basin's true boundary when available, falling
+  back to the AOI's bbox (with an explicit edge-reliability note in the
+  response) otherwise. Covered by `backend/tests/data/test_hydrology.py`
+  (a hand-verified synthetic V-shaped-valley DEM confirming flow
+  actually converges toward the valley bottom, and that polygon-clipped
+  vs. bbox-unclipped runs produce different, exercised results near the
+  clip boundary), `test_distance_raster.py`, `test_osm.py`'s new
+  waterways tests, and `test_sources.py`'s registry-extensibility test.
+  Full Phase 1-4 suite passes unmodified alongside these additions.
+- Frontend: a working **React + MapLibre GL map UI** (`frontend/src/`),
+  replacing the earlier blank skeleton — draw-a-bbox or select-a-basin
+  AOI selection, criteria checkboxes grouped by cluster, three weighting
+  modes (equal — default, computed client-side, no AHP call at all;
+  full AHP pairwise comparison, live-computed via `POST /api/ahp/compute`;
+  or direct numeric entry, auto-normalized to sum to 1), `POST /api/
+  overlay/compute` + the resulting GeoTIFF rendered as a colorized raster
+  overlay (client-side `geotiff` decode + `proj4` UTM→WGS84 corner
+  reprojection), a reclassification breakdown and attribution/warnings
+  display, and a placeholder-values warning banner (§3.2's default
+  `reclassification_rules` are equal-interval placeholders, not
+  literature-sourced — see the per-criterion config in
+  `frontend/src/config/criteria.js` for the exact values, and note
+  below on cluster assignment). All 3 backend engines exercised together
+  end-to-end via headless-browser testing during implementation, not just
+  built against the API contract in isolation.
+  - AHP mode deliberately does **not** require every one of the 5
+    canonical clusters to have a selected criterion (unlike the
+    backend's own `AHPComputeResponse.complete`, which does) — it only
+    requires every cluster that has a *selected* criterion to have a
+    consistent (CR < 0.10) within-cluster comparison, then renormalizes
+    the backend's `final_weights` over just the selected criteria. This
+    mirrors equal-weights mode's own philosophy (never requires touching
+    every cluster), and was originally what made AHP mode usable at all
+    before `building_density` existed (Exposure had no criterion at
+    all); kept even now that it does, since there's no reason to force
+    every one of the 5 clusters into every analysis.
+  - Criterion → cluster assignment (`frontend/src/config/criteria.js`):
+    Topographic = elevation, slope, TWI; Hydrological = distance-to-
+    river, drainage density; Land Use = land cover; Infrastructure =
+    distance-to-road; Exposure = building density (§3.6).
+- Frontend: **night mode** (a toggle in the sidebar header, persisted to
+  `localStorage`, defaulting to the OS's own `prefers-color-scheme`) —
+  every CSS color is a custom property redefined once under
+  `:root[data-theme='dark']` (`frontend/src/index.css`), and the map's
+  own basemap swaps live between OSM's standard tiles and CARTO's free
+  "Dark Matter" tiles (`basemaps.cartocdn.com` — OSM has no official
+  dark style of its own; CARTO's is free, no key/signup, rendered from
+  OSM data too) via MapLibre's `setTiles()`, no full style/map reload.
+  Both tile providers' attribution is shown together regardless of which
+  is active, rather than wiring a second dynamic attribution control.
+  The sidebar is also now 420px (was 340px).
+- Backend + frontend: **user-defined reclassification breaks**
+  (`POST /api/overlay/criteria/breaks`, `app/overlay/breaks.py`) — for
+  any continuous criterion, computes equal-interval, quantile, and
+  Fisher-Jenks natural-breaks candidate break points (4 interior breaks
+  each, 5 classes fixed by schemas/criterion.schema.json's risk_class
+  range) from that criterion's *actual* raw value distribution over the
+  requested AOI, resolved through the exact same registry
+  (`overlay/sources.py`) the overlay engine itself uses — a 9th/10th/...
+  criterion source gets this for free too. Jenks (`jenkspy`, a small
+  C-accelerated implementation, not hand-rolled) is capped to a
+  deterministic (fixed-seed) sample of `JENKS_SAMPLE_SIZE` (10,000)
+  valid pixels for responsiveness on a large AOI — the same practice
+  QGIS's own Jenks classifier uses; equal-interval/quantile use the full
+  population, no sampling needed. The frontend's per-criterion
+  classification editor (`ClassificationEditor.jsx`, expandable under
+  each checked criterion in the Criteria panel) lets the breaks be
+  auto-filled from any of the 3 methods and then still hand-edited
+  (`ComputePanel.jsx` blocks compute with a clear message if they end up
+  out of order), or edited directly as "Manual" from the start;
+  categorical `worldcover_land_cover` instead gets a simple per-legend-
+  code risk-class editor (no "breaks" concept applies to discrete
+  codes). Verified live: Jenks and quantile breaks for the same real AOI
+  come back genuinely different, data-driven values (e.g. elevation
+  breaks in the 1299-1327m range for one tested AOI, nothing like the
+  static 1360/1520/1680/1840m defaults) — not a coincidental match to
+  the static defaults, confirming the fetch and the resulting
+  reclassification_rules are actually AOI-specific.
+- Backend: fixed a real bug in `app/data/osm.py`'s local-file discovery
+  (config now takes a directory, `LOCAL_OSM_DIR`, globbed for the most
+  recently modified `*.osm.pbf`, rather than one fixed filename that a
+  real downloaded extract's own dated filename would never match — see
+  §3.6) and added a bounded in-process parse cache
+  (`_load_local_osm`) so `get_osm_features` and `get_waterways` share
+  one ~145-210s full-file parse instead of each separately paying it —
+  both caught and verified live against a real 412MB Nepal `.osm.pbf`
+  placed for this purpose.
+- Backend: **`building_density`**, an 8th criterion source
+  (`app/data/density_raster.py`) and Exposure cluster's first — see
+  §3.6. Registered through the same pluggable `register_source()`
+  mechanism as every other source (proving Phase 5's own extensibility
+  claim again, this time for real rather than a test-only dummy source):
+  only `overlay/sources.py` gained a new adapter + registration line,
+  nothing about `overlay/compute.py`, `service.py`, `router.py`, or
+  `ahp/` changed. Frontend: added to `frontend/src/config/criteria.js`
+  under Exposure, closing the gap noted above.
+- Not yet implemented: AOI persistence, vulnerability classification
+  (discrete display classes derived from the continuous risk surface),
+  and shelter identification. The GeoTIFF file route is a simple
+  direct-read endpoint, not a general static-asset server or CDN — fine
+  for local dev and this phase's needs, but worth revisiting if the
+  cache grows large or needs to be served from object storage in a real
+  deployment. The `drainage_density` stream-extraction threshold and
+  moving-window radius are structurally-reasonable placeholders, not
+  literature-calibrated values (§3.6) — pending real calibration against
+  a known Kathmandu Valley stream network. The frontend's bundle
+  (~1.1MB main chunk, mostly MapLibre GL + geotiff.js) isn't code-split
+  — fine for local dev, worth revisiting before any real deployment.

@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flood-risk-ktm.dev/schemas/criterion.schema.json",
+  "title": "Criterion",
+  "description": "A single input layer (criterion) used in the AHP composite flood risk model, e.g. 'Elevation', 'Distance to River', 'Land Cover'. Holds provenance, the resampling/reclassification rules that turn its raw values into the 5-class risk scale, and its final AHP weight once computed.",
+  "type": "object",
+  "$defs": {
+    "reclassificationRule": {
+      "type": "object",
+      "description": "One rule mapping a range of the criterion's native continuous (or categorical) values to one of the 5 discrete risk classes (1 = lowest risk, 5 = highest risk). For a categorical source value, set min = max = that value with both bounds inclusive. Rules for a given criterion must be ordered, non-overlapping, and together cover the full domain of valid (non-nodata) input values — validation should reject gaps or overlaps rather than let unmatched pixels fall through silently.",
+      "properties": {
+        "min": {
+          "type": ["number", "null"],
+          "description": "Lower bound of the source value range. null means unbounded below."
+        },
+        "max": {
+          "type": ["number", "null"],
+          "description": "Upper bound of the source value range. null means unbounded above."
+        },
+        "min_inclusive": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether 'min' itself belongs to this rule's range."
+        },
+        "max_inclusive": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether 'max' itself belongs to this rule's range."
+        },
+        "risk_class": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "description": "Discrete risk class this range maps to (1 = lowest risk, 5 = highest risk)."
+        }
+      },
+      "required": ["min", "max", "risk_class"],
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "description": "Stable, unique, machine-readable identifier for this criterion, e.g. 'slope', 'dist_to_river', 'land_cover'."
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable display name, e.g. 'Slope', 'Distance to River Network', 'Land Cover'."
+    },
+    "cluster": {
+      "type": "string",
+      "enum": ["Topographic", "Hydrological", "Land Use", "Infrastructure", "Exposure"],
+      "description": "Which of the 5 top-level AHP clusters this criterion belongs to. Every criterion belongs to exactly one cluster."
+    },
+    "source_type": {
+      "type": "string",
+      "enum": ["preloaded", "uploaded"],
+      "description": "'preloaded' = a curated raster already available on the server (e.g. a DEM-derived slope layer for the valley). 'uploaded' = a raster the user supplied for this analysis."
+    },
+    "raster_source": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Location of the native-resolution source raster: a server-side path/identifier when source_type is 'preloaded', or a URL/storage reference to the uploaded file when source_type is 'uploaded'."
+    },
+    "native_resolution_m": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Pixel resolution of the source raster in meters, before it is reprojected/resampled onto the shared 10m analysis grid."
+    },
+    "native_crs": {
+      "type": "string",
+      "pattern": "^EPSG:[0-9]+$",
+      "description": "CRS of the source raster as delivered, e.g. 'EPSG:4326' or 'EPSG:32645'. It is reprojected to EPSG:32645 during processing regardless of its native CRS — see SPEC.md, 'Grid/resolution convention'."
+    },
+    "resampling_method": {
+      "type": "string",
+      "enum": ["bilinear", "nearest"],
+      "description": "Resampling method used when this criterion's raster is reprojected onto the common 10m grid. Must be 'bilinear' for continuous data (elevation, slope, rainfall) and 'nearest' for categorical/already-reclassified data (land cover, discrete risk classes). Never 'average' or another continuous method for categorical data."
+    },
+    "declared_nodata_value": {
+      "type": ["number", "null"],
+      "description": "The nodata sentinel value used by this criterion's source raster, made explicit so it can be validated for consistency across all input rasters before overlay math runs. null means the source raster has no nodata value (fully populated over the AOI)."
+    },
+    "reclassification_rules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/reclassificationRule" },
+      "description": "Ordered rules describing how this criterion's continuous (or categorical) native values are reclassified into the 5 discrete risk classes. Used for display/legend purposes and, where the model calls for it, as an intermediate step — the stored composite risk surface itself remains continuous (see risk_surface.schema.json)."
+    },
+    "weight": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1,
+      "default": null,
+      "description": "This criterion's final AHP weight = cluster_weight × within_cluster_weight (see ahp_pairwise_matrix.schema.json). null until an AHP calculation has been run for the criteria set this criterion belongs to."
+    }
+  },
+  "required": ["id", "name", "cluster", "source_type", "raster_source", "native_resolution_m", "native_crs", "resampling_method"],
+  "additionalProperties": false
+}

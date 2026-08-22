@@ -1,0 +1,57 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-flood_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
+      POSTGRES_DB: ${POSTGRES_DB:-flood_risk_ktm}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-flood_admin} -d ${POSTGRES_DB:-flood_risk_ktm}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-flood_admin}:${POSTGRES_PASSWORD:-devpassword}@db:5432/${POSTGRES_DB:-flood_risk_ktm}
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/tests:/app/tests
+      - ./schemas:/app/schemas:ro
+      # Local pre-downloaded sources (backend/data/raw/ -- DEM/WorldCover/
+      # OSM/basins) and the per-AOI processed cache (backend/data/cache/).
+      # Without this, the container's /app/data/ is whatever the image
+      # was built with (nothing -- the Dockerfile never COPYs data/), so
+      # every local-check-first source falls straight through to its
+      # cloud/R2 fallback (or, for basins/OSM, a 503) no matter what's
+      # actually on the host -- this was a real, user-visible bug, not
+      # just a theoretical gap: config.py's DATA_DIR default resolves to
+      # exactly /app/data inside this container, matching the mount
+      # target below.
+      - ./backend/data:/app/data
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

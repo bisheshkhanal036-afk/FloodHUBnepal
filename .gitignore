@@ -1,0 +1,30 @@
+# Node
+node_modules/
+frontend/dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+backend/.pytest_cache/
+
+# Geospatial data: local pre-downloaded sources (optional fast-path only,
+# never committed — Nepal-wide DEM/WorldCover/OSM extents are multi-GB)
+# and the processed-per-AOI cache (regenerable, not source data).
+# tests/data/fixtures/ is intentionally NOT excluded — those are tiny,
+# committed, synthetic fixtures, not raw downloads.
+backend/data/raw/*
+!backend/data/raw/**/.gitkeep
+backend/data/cache/*
+!backend/data/cache/**/.gitkeep
+
+# Reference material: downloaded papers kept locally for background
+# reading, not authored by this project and not cleared for redistribution.
+lee2020.pdf
+
+# Env
+.env
+
+# Editor / OS
+.DS_Store
+.vscode/

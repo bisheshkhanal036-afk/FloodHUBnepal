@@ -1,0 +1,251 @@
+"""OSM building footprints + road network source.
+
+Same local-check-first shape as dem.py/worldcover.py, but the fallback is
+different by design, per the brief:
+
+- Local: any `*.osm.pbf` file under backend/data/raw/osm/ (a Nepal-wide
+  Geofabrik/Planet extract — see _find_local_pbf for why this is a
+  directory glob, not one fixed filename), parsed and clipped to the AOI
+  with pyrosm.
+- Fallback: a pre-processed buildings+roads extract on a configurable
+  S3-compatible bucket (Cloudflare R2 in production) — never the live
+  Overpass API. Overpass is explicitly excluded from the request path:
+  it's unreliable/rate-limited at Kathmandu Valley's building density and
+  unsuitable for per-request use in production.
+- If neither is available, raise DataSourceUnavailableError explicitly
+  rather than silently falling through to something slow/unreliable.
+
+Parsing a real, full Nepal `.osm.pbf` is expensive: verified live against
+a real 412MB Planet-derived Nepal extract, pyrosm's first extraction call
+on a freshly-opened `OSM(...)` object took ~145s (a one-time low-level
+parse of the whole file, filtered to the AOI's bounding_box) — a *second*
+extraction on that same already-parsed object took 0.02s. `_load_local_osm`
+below exists specifically so get_osm_features (buildings+roads) and
+get_waterways, when both needed for the same AOI in the same request
+(a completely normal case — this project's frontend lets a user check
+both `dist_to_road` and `dist_to_river` at once), don't each separately
+pay that ~145s cost against the same file.
+"""
+
+from __future__ import annotations
+
+import io
+import logging
+from functools import lru_cache
+from pathlib import Path
+
+import geopandas as gpd
+import httpx
+from shapely.geometry import box
+
+from . import config
+from .aoi import AOI
+from .attribution import OSM_ATTRIBUTION
+from .cache import cached_or_compute
+from .errors import DataSourceUnavailableError
+
+logger = logging.getLogger(__name__)
+
+_EMPTY_GEOMETRY_COLUMNS = ["geometry"]
+
+# OSM `waterway=*` values counted as "river" for dist_to_river
+# (distance_raster.get_distance_to_river). Matches the brief's own
+# wording ("river/stream/canal") — deliberately excludes drain/ditch
+# (mostly engineered urban storm drains, not natural watercourses) and
+# waterway=riverbank (an area, not a line, and largely superseded by
+# `natural=water` polygons in current OSM tagging practice anyway).
+# Confirmed.
+WATERWAY_TAGS = ["river", "stream", "canal"]
+
+
+class OSMResult:
+    def __init__(self, buildings: gpd.GeoDataFrame, roads: gpd.GeoDataFrame, source_used: str):
+        self.buildings = buildings
+        self.roads = roads
+        self.source_used = source_used
+        self.attribution = OSM_ATTRIBUTION
+
+
+class WaterwaysResult:
+    def __init__(self, waterways: gpd.GeoDataFrame, source_used: str):
+        self.waterways = waterways
+        self.source_used = source_used
+        self.attribution = OSM_ATTRIBUTION
+
+
+def _empty_geodataframe() -> gpd.GeoDataFrame:
+    return gpd.GeoDataFrame(columns=_EMPTY_GEOMETRY_COLUMNS, geometry="geometry", crs="EPSG:4326")
+
+
+def _find_local_pbf() -> Path | None:
+    """The most-recently-modified `*.osm.pbf` file directly under
+    config.LOCAL_OSM_DIR, or None if the directory doesn't exist or has
+    none.
+
+    Deliberately a directory glob, not one fixed expected filename: a
+    real downloaded Geofabrik/Planet extract always carries its own
+    extract date in the filename (e.g. "nepal-260821.osm.pbf"), which
+    this project has no control over and shouldn't require renaming —
+    the same reason DEM/WorldCover's local-check (local_source.py) globs
+    a directory rather than expecting one exact name. "Most recently
+    modified" (not alphabetical) so that if an older extract is ever left
+    in place alongside a newer one, the newer one wins regardless of how
+    their filenames happen to sort.
+    """
+    if not config.LOCAL_OSM_DIR.exists():
+        return None
+    candidates = sorted(config.LOCAL_OSM_DIR.glob("*.osm.pbf"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return candidates[0] if candidates else None
+
+
+@lru_cache(maxsize=4)
+def _load_local_osm(path_str: str, bbox: tuple[float, float, float, float]):
+    """Parses `path_str` (a local .osm.pbf) once, filtered to `bbox`, and
+    keeps a small bounded (maxsize=4) in-process cache of the resulting
+    pyrosm `OSM` object, keyed by (path, bbox) — see this module's own
+    docstring for why: it's what lets get_osm_features and get_waterways
+    share one ~145s full-file parse instead of each paying it separately
+    when both are needed for the same AOI.
+
+    This is NOT a replacement for cache.py's per-AOI *result* cache
+    (which persists the extracted GeoDataFrames to disk, across process
+    restarts) — this one is in-memory only, and exists purely to avoid
+    redundant work *within* however many extractions one process ends up
+    doing for the same (file, AOI) pair. Bounded to 4 entries so it can't
+    grow unboundedly over a long-running server's lifetime across many
+    distinct AOIs — there's no benefit to keeping more anyway, since a
+    repeat request for an AOI already seen hits cache.py's on-disk
+    result cache before this function is ever called again for it.
+    """
+    from pyrosm import OSM  # lazy import: heavy optional dependency, only needed on this path
+
+    return OSM(path_str, bounding_box=list(bbox))
+
+
+def reset_local_osm_parser_cache() -> None:
+    """Test-only: clears _load_local_osm's cache, so one test's parsed
+    (path, bbox) entry can never be silently reused by a later test that
+    expects a different local file at the same path (e.g. a fixture
+    swapped in via monkeypatch between tests within the same process).
+    """
+    _load_local_osm.cache_clear()
+
+
+def _parse_local_pbf(path, aoi: AOI):
+    """Parse + clip the local .osm.pbf to the AOI. Isolated as its own
+    function (rather than inlined in get_osm_features) so tests can mock
+    it directly without needing a real pyrosm/osmium install or a real
+    Nepal-wide .pbf file.
+    """
+    osm = _load_local_osm(str(path), aoi.bbox_4326)
+    buildings = osm.get_buildings()
+    roads = osm.get_network(network_type="driving")
+    return (
+        buildings if buildings is not None else _empty_geodataframe(),
+        roads if roads is not None else _empty_geodataframe(),
+    )
+
+
+def _parse_local_pbf_waterways(path, aoi: AOI):
+    """Same shape as _parse_local_pbf, but for waterway lines — pyrosm has
+    no dedicated get_waterways() helper (unlike get_buildings()/
+    get_network()), so this uses its general-purpose custom-criteria
+    filter on the `waterway` tag instead. Isolated as its own function
+    for the same reason _parse_local_pbf is: testable without a real
+    pyrosm/osmium install or a real Nepal-wide .pbf file.
+    """
+    osm = _load_local_osm(str(path), aoi.bbox_4326)
+    waterways = osm.get_data_by_custom_criteria(
+        custom_filter={"waterway": WATERWAY_TAGS},
+        filter_type="keep",
+        keep_nodes=False,
+        keep_relations=False,
+    )
+    return waterways if waterways is not None else _empty_geodataframe()
+
+
+def _read_remote_geojson(url: str) -> gpd.GeoDataFrame:
+    response = httpx.get(url, timeout=30.0)
+    response.raise_for_status()
+    return gpd.read_file(io.BytesIO(response.content))
+
+
+def _fetch_from_r2(aoi: AOI):
+    """Fetch the pre-processed Nepal buildings+roads extract from R2 and
+    clip to the AOI. Isolated as its own function so tests can mock it
+    without touching the network. Raises DataSourceUnavailableError if R2
+    isn't configured at all, or if the fetch itself fails — either way,
+    that's this function's contract: it either returns data, or raises
+    this one explicit error type.
+    """
+    if not config.OSM_R2_BUILDINGS_URL or not config.OSM_R2_ROADS_URL:
+        raise DataSourceUnavailableError(
+            "osm: no local *.osm.pbf found and R2 fallback is not configured "
+            "(set OSM_R2_BUILDINGS_URL and OSM_R2_ROADS_URL)"
+        )
+    try:
+        buildings = _read_remote_geojson(config.OSM_R2_BUILDINGS_URL)
+        roads = _read_remote_geojson(config.OSM_R2_ROADS_URL)
+    except (httpx.HTTPError, OSError) as exc:
+        raise DataSourceUnavailableError(f"osm: R2 fallback fetch failed: {exc}") from exc
+
+    aoi_box = box(*aoi.bbox_4326)
+    return buildings.clip(aoi_box), roads.clip(aoi_box)
+
+
+def _fetch_waterways_from_r2(aoi: AOI):
+    """Same shape as _fetch_from_r2, for the separate waterways extract
+    (see config.OSM_R2_WATERWAYS_URL's docstring for why it's a separate
+    file rather than folded into the roads/buildings extract).
+    """
+    if not config.OSM_R2_WATERWAYS_URL:
+        raise DataSourceUnavailableError(
+            "osm: no local *.osm.pbf found and R2 fallback is not configured (set OSM_R2_WATERWAYS_URL)"
+        )
+    try:
+        waterways = _read_remote_geojson(config.OSM_R2_WATERWAYS_URL)
+    except (httpx.HTTPError, OSError) as exc:
+        raise DataSourceUnavailableError(f"osm: R2 fallback fetch failed: {exc}") from exc
+
+    return waterways.clip(box(*aoi.bbox_4326))
+
+
+def get_osm_features(aoi: AOI) -> OSMResult:
+    def _compute() -> OSMResult:
+        local_path = _find_local_pbf()
+        if local_path is not None:
+            logger.info("osm: LOCAL HIT for aoi=%s -> %s", aoi.bbox_4326, local_path)
+            buildings, roads = _parse_local_pbf(local_path, aoi)
+            source_used = f"local:{local_path.name}"
+        else:
+            logger.info("osm: no local *.osm.pbf in %s, falling back to R2", config.LOCAL_OSM_DIR)
+            buildings, roads = _fetch_from_r2(aoi)
+            source_used = "r2"
+
+        return OSMResult(buildings=buildings, roads=roads, source_used=source_used)
+
+    return cached_or_compute("osm", aoi, _compute)
+
+
+def get_waterways(aoi: AOI) -> WaterwaysResult:
+    """River/stream/canal lines for this AOI — the source feeding
+    distance_raster.get_distance_to_river. Same local-check-first/R2-
+    fallback shape as get_osm_features, cached separately (under
+    "osm_waterways", not "osm") since it's a different query/result
+    against the same underlying .pbf or R2 bucket.
+    """
+
+    def _compute() -> WaterwaysResult:
+        local_path = _find_local_pbf()
+        if local_path is not None:
+            logger.info("osm: LOCAL HIT (waterways) for aoi=%s -> %s", aoi.bbox_4326, local_path)
+            waterways = _parse_local_pbf_waterways(local_path, aoi)
+            source_used = f"local:{local_path.name}"
+        else:
+            logger.info("osm: no local *.osm.pbf in %s, falling back to R2 (waterways)", config.LOCAL_OSM_DIR)
+            waterways = _fetch_waterways_from_r2(aoi)
+            source_used = "r2"
+
+        return WaterwaysResult(waterways=waterways, source_used=source_used)
+
+    return cached_or_compute("osm_waterways", aoi, _compute)

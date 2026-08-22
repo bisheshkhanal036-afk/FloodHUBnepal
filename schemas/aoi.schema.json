@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flood-risk-ktm.dev/schemas/aoi.schema.json",
+  "title": "AreaOfInterest",
+  "description": "A user-defined rectangular Area of Interest (AOI) for a flood risk analysis request. Coordinates travel over the API in EPSG:4326 (lon/lat degrees). The AOI is not required to be square. Area is computed server-side by reprojecting the bbox to EPSG:32645 (UTM Zone 45N) — never computed directly from EPSG:4326 degrees, since degree-based area is not metrically meaningful. See SPEC.md, 'CRS convention'.",
+  "type": "object",
+  "properties": {
+    "bbox": {
+      "type": "array",
+      "description": "[minx, miny, maxx, maxy] in EPSG:4326 decimal degrees (minx/maxx = longitude, miny/maxy = latitude). A rectangle; width and height need not be equal.",
+      "items": { "type": "number" },
+      "minItems": 4,
+      "maxItems": 4,
+      "prefixItems": [
+        { "type": "number", "minimum": -180, "maximum": 180, "description": "minx (west longitude)" },
+        { "type": "number", "minimum": -90, "maximum": 90, "description": "miny (south latitude)" },
+        { "type": "number", "minimum": -180, "maximum": 180, "description": "maxx (east longitude)" },
+        { "type": "number", "minimum": -90, "maximum": 90, "description": "maxy (north latitude)" }
+      ]
+    },
+    "crs": {
+      "const": "EPSG:4326",
+      "description": "Fixed. All AOI coordinates in API requests/responses are EPSG:4326."
+    },
+    "area_km2": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Computed area of the AOI in square kilometers. MUST be computed by reprojecting the bbox to EPSG:32645 (UTM 45N) and measuring there, not from raw EPSG:4326 degrees. Populated by the server; not supplied by the client."
+    },
+    "max_area_km2": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "default": 500,
+      "description": "The area cap a request's AOI must not exceed, in km². Default 500 km², chosen to comfortably cover the Kathmandu Valley (~ 665 km² basin / ~ 350-400 km² urbanized core, depending on the boundary used) while bounding compute cost. A request whose computed area_km2 exceeds max_area_km2 must be rejected with a clear validation error rather than silently clipped."
+    }
+  },
+  "required": ["bbox", "crs"],
+  "additionalProperties": false
+}
