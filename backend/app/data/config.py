@@ -90,11 +90,18 @@ LOCAL_NEPAL_BOUNDARY_PATH = Path(
 
 PROCESSED_CACHE_DIR = DATA_DIR / "cache" / "processed"
 
-# OSM fallback: a pre-processed Nepal buildings+roads extract on a
-# configurable S3-compatible bucket (Cloudflare R2 in production). Two
-# separate URLs rather than one bucket name, so the extract doesn't have
-# to be a single combined file and the naming convention isn't hardcoded
-# here — see the "decisions to confirm" note on this choice.
+# OSM fallback: the same pre-processed Nepal buildings+roads FlatGeobuf
+# extracts LOCAL_OSM_PROCESSED_DIR points at locally, instead hosted on a
+# configurable S3-compatible bucket (Cloudflare R2 in production) for a
+# deployment with no local files. Must be plain public object URLs
+# ending in .fgb (format is detected from the URL, same as any local
+# path) -- osm.py's _read_remote_fgb does a bbox-filtered *partial* read
+# over HTTP (FlatGeobuf's own range-request support), not a whole-file
+# download, so this scales the same way the local read does even for the
+# ~1.9GB buildings extract. Two separate URLs rather than one bucket
+# name, so the extract doesn't have to be a single combined file and the
+# naming convention isn't hardcoded here — see the "decisions to
+# confirm" note on this choice.
 OSM_R2_BUILDINGS_URL = os.environ.get("OSM_R2_BUILDINGS_URL")
 OSM_R2_ROADS_URL = os.environ.get("OSM_R2_ROADS_URL")
 

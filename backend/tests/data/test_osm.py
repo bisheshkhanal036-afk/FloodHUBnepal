@@ -217,6 +217,48 @@ def test_repeated_call_for_same_aoi_hits_the_processed_cache(test_aoi, monkeypat
     assert first.source_used == second.source_used
 
 
+# --- _read_remote_fgb: bbox-filtered remote read + error translation ---
+# (mocks pyogrio.read_dataframe directly -- no real network call)
+
+
+def test_read_remote_fgb_passes_the_aoi_bbox_through_to_pyogrio(test_aoi, monkeypatch):
+    import pyogrio
+
+    from app.data.osm import _read_remote_fgb
+
+    calls = []
+
+    def fake_read_dataframe(url, bbox):
+        calls.append((url, bbox))
+        return _fake_buildings_gdf()
+
+    monkeypatch.setattr(pyogrio, "read_dataframe", fake_read_dataframe)
+
+    result = _read_remote_fgb("https://example-r2.dev/buildings.fgb", test_aoi)
+
+    assert calls == [("https://example-r2.dev/buildings.fgb", test_aoi.bbox_4326)]
+    assert len(result) == 1
+
+
+def test_read_remote_fgb_translates_pyogrio_datasourceerror(test_aoi, monkeypatch):
+    """A network/access failure from pyogrio (unreachable host, 403, a
+    bucket that doesn't exist, etc.) must surface as this module's own
+    DataSourceUnavailableError, not pyogrio's own exception type leaking
+    out of osm.py's public functions.
+    """
+    import pyogrio
+
+    from app.data.osm import _read_remote_fgb
+
+    def failing_read_dataframe(url, bbox):
+        raise pyogrio.errors.DataSourceError("CURL error: Could not resolve host")
+
+    monkeypatch.setattr(pyogrio, "read_dataframe", failing_read_dataframe)
+
+    with pytest.raises(DataSourceUnavailableError, match="Could not resolve host"):
+        _read_remote_fgb("https://example-r2.dev/buildings.fgb", test_aoi)
+
+
 # --- R2 fallback path (mocked — no network) ---
 
 

@@ -44,14 +44,11 @@ tier 1 is populated) occasions this fallback tier is actually used.
 
 from __future__ import annotations
 
-import io
 import logging
 from functools import lru_cache
 from pathlib import Path
 
 import geopandas as gpd
-import httpx
-from shapely.geometry import box
 
 from . import config
 from .aoi import AOI
@@ -200,33 +197,51 @@ def _parse_local_pbf_waterways(path, aoi: AOI):
     return waterways if waterways is not None else _empty_geodataframe()
 
 
-def _read_remote_geojson(url: str) -> gpd.GeoDataFrame:
-    response = httpx.get(url, timeout=30.0)
-    response.raise_for_status()
-    return gpd.read_file(io.BytesIO(response.content))
+def _read_remote_fgb(url: str, aoi: AOI) -> gpd.GeoDataFrame:
+    """Bbox-filtered read of a remote FlatGeobuf file over plain HTTP(S).
+    Deliberately pyogrio.read_dataframe directly, not gpd.read_file
+    (which _read_local_fgb uses for the local case): geopandas' own
+    read_file has extra URL-handling indirection ahead of the actual
+    GDAL/pyogrio read for a remote path, which was observed (while
+    building this) to raise urllib's URLError instead of pyogrio's own
+    DataSourceError for the exact same unreachable-host case — i.e. a
+    less predictable exception type to catch here. Calling pyogrio
+    directly sidesteps that.
+
+    This is the same reason FlatGeobuf was chosen as the format for the
+    pre-processed extract in the first place (see this module's own
+    docstring and backend/data/raw/osm/processed/README.md): it supports
+    genuine bbox-filtered *partial* reads over HTTP via GDAL's /vsicurl/
+    range-request support, not just "download the whole file, then
+    filter" — verified live against a public FlatGeobuf test file
+    (flatgeobuf.org's own UScounties.fgb demo data) before relying on it
+    here. Downloading the whole ~1.9GB buildings.fgb on every cache-miss
+    request would defeat a large part of the point.
+    """
+    import pyogrio
+
+    try:
+        return pyogrio.read_dataframe(url, bbox=aoi.bbox_4326)
+    except pyogrio.errors.DataSourceError as exc:
+        raise DataSourceUnavailableError(f"osm: R2 fallback fetch failed: {exc}") from exc
 
 
 def _fetch_from_r2(aoi: AOI):
-    """Fetch the pre-processed Nepal buildings+roads extract from R2 and
-    clip to the AOI. Isolated as its own function so tests can mock it
-    without touching the network. Raises DataSourceUnavailableError if R2
-    isn't configured at all, or if the fetch itself fails — either way,
-    that's this function's contract: it either returns data, or raises
-    this one explicit error type.
+    """Fetch the pre-processed Nepal buildings+roads extract from R2,
+    bbox-filtered to the AOI. Isolated as its own function so tests can
+    mock it without touching the network. Raises
+    DataSourceUnavailableError if R2 isn't configured at all, or if the
+    fetch itself fails — either way, that's this function's contract: it
+    either returns data, or raises this one explicit error type.
     """
     if not config.OSM_R2_BUILDINGS_URL or not config.OSM_R2_ROADS_URL:
         raise DataSourceUnavailableError(
             "osm: no local *.osm.pbf found and R2 fallback is not configured "
             "(set OSM_R2_BUILDINGS_URL and OSM_R2_ROADS_URL)"
         )
-    try:
-        buildings = _read_remote_geojson(config.OSM_R2_BUILDINGS_URL)
-        roads = _read_remote_geojson(config.OSM_R2_ROADS_URL)
-    except (httpx.HTTPError, OSError) as exc:
-        raise DataSourceUnavailableError(f"osm: R2 fallback fetch failed: {exc}") from exc
-
-    aoi_box = box(*aoi.bbox_4326)
-    return buildings.clip(aoi_box), roads.clip(aoi_box)
+    buildings = _read_remote_fgb(config.OSM_R2_BUILDINGS_URL, aoi)
+    roads = _read_remote_fgb(config.OSM_R2_ROADS_URL, aoi)
+    return buildings, roads
 
 
 def _fetch_waterways_from_r2(aoi: AOI):
@@ -238,12 +253,7 @@ def _fetch_waterways_from_r2(aoi: AOI):
         raise DataSourceUnavailableError(
             "osm: no local *.osm.pbf found and R2 fallback is not configured (set OSM_R2_WATERWAYS_URL)"
         )
-    try:
-        waterways = _read_remote_geojson(config.OSM_R2_WATERWAYS_URL)
-    except (httpx.HTTPError, OSError) as exc:
-        raise DataSourceUnavailableError(f"osm: R2 fallback fetch failed: {exc}") from exc
-
-    return waterways.clip(box(*aoi.bbox_4326))
+    return _read_remote_fgb(config.OSM_R2_WATERWAYS_URL, aoi)
 
 
 def get_osm_features(aoi: AOI) -> OSMResult:
