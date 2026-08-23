@@ -180,6 +180,23 @@ export const CRITERIA = [
     ],
   },
   {
+    id: 'ndvi',
+    label: 'Vegetation (NDVI)',
+    cluster: 'Land Use',
+    type: 'continuous',
+    riskDirection: 'descending', // low NDVI (bare/built/water) -> high risk
+    unit: '',
+    description:
+      'Sentinel-2 vegetation greenness (−1 to 1) — denser vegetation slows runoff and stabilizes soil (lower risk); bare, built, or water surfaces (low/negative NDVI) shed water faster (higher risk).',
+    defaultReclassificationRules: [
+      { min: null, max: 0.1, risk_class: 5 }, // water / built / bare
+      { min: 0.1, max: 0.25, risk_class: 4 },
+      { min: 0.25, max: 0.4, risk_class: 3 },
+      { min: 0.4, max: 0.6, risk_class: 2 },
+      { min: 0.6, max: null, risk_class: 1 }, // dense, vigorous vegetation
+    ],
+  },
+  {
     id: 'dist_to_road',
     label: 'Distance to Road',
     cluster: 'Infrastructure',
