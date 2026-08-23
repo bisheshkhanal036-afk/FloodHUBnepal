@@ -1,6 +1,6 @@
 # SPEC — Flood Risk Mapping & Shelter Identification, Kathmandu Valley
 
-Status: **Backend (AHP engine, geospatial data layer with 10 registered
+Status: **Backend (AHP engine, geospatial data layer with 12 registered
 criterion sources, overlay engine, vulnerability-classification/reporting)
 and a working, redesigned frontend map UI implemented; shelter
 identification still pending** — see §5. This document defines
@@ -293,6 +293,7 @@ with zero changes to `sources.py` or any other `overlay/` file.
 | `building_density` | Local building-footprint coverage fraction (0-1) | Continuous | `app/data/density_raster.py` (reuses `get_osm_features(aoi).buildings` — no separate OSM query) |
 | `population_density` | Meta/CIESIN HRSL population density (people/km²) | Continuous | `app/data/population.py` |
 | `hand` | Height Above Nearest Drainage (m) — elevation above the nearest stream cell along the D8 flow path | Continuous | `app/data/hydrology.py` |
+| `soil_infiltration` | ISRIC SoilGrids topsoil (0-5cm) sand content (%), used as an infiltration-capacity proxy | Continuous | `app/data/soil.py` |
 
 **Distance rasters** (`distance_raster.py`): a generic
 `compute_distance_raster(features, grid)` rasterizes arbitrary vector
@@ -509,6 +510,83 @@ counts as a valid "nearest drainage" reference (e.g. falling back to
 the nearest unresolved pit as a degenerate local drainage point) — both
 real scientific-methodology choices, not bug fixes, left for a future
 phase if `hand`'s practical gap rate turns out to matter for real use.
+
+`soil_infiltration` (`app/data/soil.py`): topsoil (0-5cm) sand content
+(%) from **ISRIC SoilGrids 2.0**, local-check-first with a live cloud
+fallback against ISRIC's own public, unauthenticated hosting
+(`files.isric.org`) — same shape as `dem.py`/`worldcover.py`/
+`population.py`. Chosen over HYSOGs250m (the other live-fetchable
+soil-infiltration dataset investigated): a real CMR (Common Metadata
+Repository) granules-API check during evaluation confirmed HYSOGs250m's
+actual granule URLs (both HTTPS and S3) sit under NASA Earthdata's
+`/protected/` path, requiring Earthdata Login, while a live probe against
+SoilGrids' real VRT succeeded with zero credentials.
+
+Sand, not a derived USDA Hydrologic Soil Group, is what's used here:
+sandier (coarser) soil drains faster and infiltrates more, so higher
+sand content means lower flood risk (`frontend/src/config/criteria.js`'s
+`soil_infiltration` entry sets `riskDirection: 'descending'`) — the same
+directional reasoning a full Hydrologic Soil Group classification is
+ultimately built on, without that classification's extra machinery
+(needing clay content too, plus a USDA texture-triangle lookup).
+Flagged as a decision to confirm.
+
+**Two real, live-verified findings specific to this source, neither
+true of any other source in this registry:**
+
+- **Source CRS is not EPSG:4326.** Verified live during implementation:
+  `rasterio.open()` against the real `sand_0-5cm_mean.vrt` reports
+  Interrupted Goode Homolosine, a global projection in meters — unlike
+  every other cloud source here (DEM/WorldCover/Population), whose
+  windowed reads pass `aoi.bbox_4326` straight in as read-window bounds
+  because their sources' own transforms are already in that same
+  coordinate space. `soil.py`'s `_soilgrids_window_bounds` explicitly
+  reprojects the AOI bbox into the source's own CRS
+  (`rasterio.warp.transform_bounds`) before building the window;
+  skipping this would silently read the wrong patch of the globe rather
+  than raise an error (Homolosine coordinates numerically resemble
+  large UTM-like meter values). `grid.py`'s `reproject_to_grid` itself
+  needed no change — it already delegates to `rasterio.warp.reproject`,
+  which supports arbitrary source CRS via GDAL/PROJ regardless of what
+  that CRS is. Confirmed live that Nepal sits comfortably inside a
+  single uninterrupted Homolosine lobe (the projection's interruptions
+  are placed in oceans specifically to avoid cutting through populated
+  landmasses): a real window read over Kathmandu Valley came back
+  spatially coherent, not the scrambled values a seam-crossing read
+  would produce.
+- **A real per-pixel value-scaling factor, confirmed rather than
+  assumed.** SoilGrids' raw int16 raster value is not a percentage —
+  ISRIC's own published SoilGrids conversion-factor table gives sand's
+  mapped unit as g/kg, conversion factor 10, conventional unit g/100g
+  (%). `soil.py` divides by 10 before reprojection (`_scale_and_mask`),
+  so every value downstream of this module — reclassification
+  breakpoints, the criterion's displayed `%` unit — is already in the
+  conventional percentage, not SoilGrids' internal encoding. Source
+  nodata (`-32768`, verified live) is converted to `NaN` in that same
+  step *before* scaling, specifically to avoid a real class of bug the
+  test suite (`test_scale_and_mask_turns_source_nodata_into_nan_not_a_
+  scaled_sentinel`) exists to catch: dividing the raw `-32768` sentinel
+  by 10 first would silently produce a plausible-looking but wrong
+  `-3276.8%` instead of being recognized as nodata.
+
+**A known limitation, found live rather than assumed correct:** a tiny
+AOI (this project's own ~0.6km test fixture bbox, centered on Kathmandu
+Durbar Square) reads back as a 3×4-pixel window at SoilGrids' native
+250m resolution with **all 12 pixels genuinely nodata** — a real,
+small-scale gap in SoilGrids' own coverage at that exact spot, not a
+bug in this module (a wider window across the same valley, tried during
+the same live check, came back ~74% valid). Per this project's
+established `compute_risk_surface` rule (any nodata input pixel poisons
+that pixel's combined result), a user who draws a very small AOI that
+happens to fall in one of these gaps and selects `soil_infiltration`
+could see the risk surface come back fully nodata for that request —
+the same class of outcome `hand`'s edge/pit gaps above already document,
+not previously seen for any other source in this registry (none of
+which has SoilGrids' comparatively coarse 250m native resolution).
+Documented as a known limitation rather than mitigated (e.g. via a
+buffered read or a coarser fallback), matching the same "document
+first, decide on a fix only if it matters in practice" approach already
+taken for `hand`'s gaps. Flagged as a decision to confirm.
 
 ## 4. Local development
 
@@ -1384,6 +1462,56 @@ them.
     (confirmed 404), generating the report makes one appear and actually
     serves a real GeoTIFF, the UI renders a correct thumbnail/legend/
     working download link, zero console errors.
+- Backend + frontend: **new criterion source, `soil_infiltration`** —
+  the user asked for a next-steps brainstorm (more factors, among other
+  ideas), then specifically requested a live-fetchable soil-type/
+  infiltration-capacity source; researched and recommended **ISRIC
+  SoilGrids 2.0** over HYSOGs250m (a live CMR granules-API check found
+  HYSOGs250m's real URLs sit under NASA Earthdata's `/protected/` path,
+  requiring Earthdata Login, while a live probe against SoilGrids
+  succeeded with zero credentials), then the user said to use it and
+  update everything associated with adding a criterion. See §3.6's
+  `soil_infiltration` section for the full write-up, including two
+  findings specific to this source and not true of any other one in
+  this registry: its cloud source's CRS is Interrupted Goode Homolosine,
+  not EPSG:4326 (needing an explicit AOI-bbox reprojection into the
+  source CRS before windowing, unlike every other cloud source here),
+  and its raw int16 value needs a confirmed g/kg→% conversion (÷10, per
+  ISRIC's own published conversion-factor table) applied *before*
+  nodata-masking, not after (dividing the raw nodata sentinel first would
+  silently produce a wrong-but-plausible value instead of being
+  recognized as nodata). New `app/data/soil.py` (local-check-first, live
+  cloud fallback against ISRIC's own public unauthenticated hosting —
+  same shape as `dem.py`/`worldcover.py`/`population.py`), registered as
+  `soil_infiltration` in `overlay/sources.py` with zero changes to the
+  registry's own dispatch code. Frontend: `config/criteria.js` gained a
+  `soil_infiltration` entry (Land Use cluster, alongside
+  `worldcover_land_cover`/`ndvi` — surface-characteristic factors
+  affecting runoff, not topography or the channel network;
+  `riskDirection: 'descending'`, since higher sand content means faster
+  drainage and lower risk) — no new frontend component needed, the same
+  "just a registry + config entry" shape `hand`/`ndvi` already had. A
+  real, live-verified limitation found and documented (not silently
+  worked around): this project's own tiny ~0.6km test-fixture AOI
+  (Kathmandu Durbar Square) reads back as a 3×4-pixel window at
+  SoilGrids' native 250m resolution with **all 12 pixels genuinely
+  nodata** — confirmed as a real small-scale SoilGrids coverage gap at
+  that exact spot (a wider window across the same valley came back ~74%
+  valid), not a bug in this module; the live-network regression test
+  uses a wider bbox for this reason, and the gap itself is documented in
+  §3.6 as a known limitation a user could hit with a small enough AOI.
+  9 new backend tests (`_scale_and_mask`'s scaling and nodata-before-
+  scaling correctness, local-hit reprojection through the real
+  Homolosine CRS math, processed-cache reuse, cloud fallback both when
+  no local dir exists and when it exists but doesn't cover the AOI, the
+  shared GDAL retry-env usage, plus a `@pytest.mark.slow` live-network
+  test) — 310 backend tests passing total, zero regressions. Verified
+  live end to end: a real `resolve_criterion_raster` call against a real
+  ~560 km² Kathmandu Valley AOI produced a correctly-shaped, correctly-
+  reclassified `uint8` raster with a plausible class distribution
+  (~26% nodata, matching the coverage rate measured directly against the
+  raw source), and the frontend dev server serves the updated
+  `criteria.js` with the new entry present, zero errors.
 - Not yet implemented: AOI persistence, and shelter identification. The
   GeoTIFF file route is a simple
   direct-read endpoint, not a general static-asset server or CDN — fine

@@ -32,6 +32,7 @@ def test_all_eight_built_in_sources_are_registered():
         "drainage_density",
         "building_density",
         "hand",
+        "soil_infiltration",
     }
     assert expected <= set(registered_sources())
     assert expected <= set(SUPPORTED_SOURCES)

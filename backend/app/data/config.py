@@ -20,6 +20,26 @@ LOCAL_DEM_DIR = DATA_DIR / "raw" / "dem"
 LOCAL_WORLDCOVER_DIR = DATA_DIR / "raw" / "worldcover"
 LOCAL_POPULATION_DIR = DATA_DIR / "raw" / "population"
 LOCAL_NDVI_DIR = DATA_DIR / "raw" / "ndvi"
+LOCAL_SOIL_DIR = DATA_DIR / "raw" / "soil"
+
+# soil.py's cloud fallback: ISRIC SoilGrids 2.0's own public, unauthenticated
+# hosting (files.isric.org) -- unlike HYSOGs250m (NASA/ORNL DAAC), whose
+# real granule URLs (found via the CMR API, not its catalog page) turned
+# out to sit under /protected/ and require Earthdata Login, SoilGrids was
+# verified live during implementation to need no authentication at all: a
+# plain rasterio.open("/vsicurl/https://files.isric.org/...") against this
+# exact VRT succeeded with no credentials. One VRT per property per depth
+# interval; only the shallowest interval (0-5cm, topsoil) is used here,
+# matching this criterion's own "surface infiltration capacity" framing.
+# Live-verified via a real windowed read over Kathmandu Valley during
+# implementation: CRS is Interrupted Goode Homolosine (a global, non-EPSG:
+# 4326/non-UTM projection -- soil.py reprojects the AOI bbox into it
+# explicitly rather than assuming src CRS == EPSG:4326 the way dem.py/
+# worldcover.py/population.py do), dtype int16, nodata=-32768, native
+# resolution 250m.
+SOILGRIDS_SAND_VRT_URL = os.environ.get(
+    "SOILGRIDS_SAND_VRT_URL", "https://files.isric.org/soilgrids/latest/data/sand/sand_0-5cm_mean.vrt"
+)
 
 # NDVI (ndvi.py) is computed on the fly from Sentinel-2 L2A red/NIR bands,
 # discovered through Element 84's public Earth Search STAC API and read

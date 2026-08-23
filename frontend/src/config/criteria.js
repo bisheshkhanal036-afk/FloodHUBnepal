@@ -197,6 +197,33 @@ export const CRITERIA = [
     ],
   },
   {
+    id: 'soil_infiltration',
+    label: 'Soil Infiltration Capacity',
+    cluster: 'Land Use',
+    type: 'continuous',
+    riskDirection: 'descending', // low sand content (finer, less permeable soil) -> high risk
+    unit: '%',
+    description:
+      'ISRIC SoilGrids topsoil (0-5cm) sand content, used as an infiltration-capacity proxy — sandier soil drains faster, so risk decreases with sand content.',
+    // Placeholder equal-interval breakpoints over SoilGrids' real 0-100%
+    // sand-content range, the same "structurally reasonable, not
+    // literature-calibrated" pattern as every other criterion here.
+    // Values are a simple topsoil sand-content proxy for infiltration
+    // capacity, not a full USDA Hydrologic Soil Group (which would also
+    // need clay content and a texture-triangle lookup) -- flagged as a
+    // decision to confirm. Shares this file's Land Use cluster with
+    // worldcover_land_cover/ndvi (surface-characteristic factors
+    // affecting runoff, not topography or channel network) -- also
+    // flagged as a decision to confirm.
+    defaultReclassificationRules: [
+      { min: null, max: 20, risk_class: 5 },
+      { min: 20, max: 40, risk_class: 4 },
+      { min: 40, max: 60, risk_class: 3 },
+      { min: 60, max: 80, risk_class: 2 },
+      { min: 80, max: null, risk_class: 1 },
+    ],
+  },
+  {
     id: 'dist_to_road',
     label: 'Distance to Road',
     cluster: 'Infrastructure',

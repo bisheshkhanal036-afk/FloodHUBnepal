@@ -49,3 +49,12 @@ POPULATION_ATTRIBUTION = (
     "Meta and Center for International Earth Science Information Network - CIESIN - Columbia University. "
     "2022. High Resolution Settlement Layer (HRSL). Source imagery for HRSL © 2016 Maxar."
 )
+
+# ISRIC's own recommended citation for SoilGrids 2.0 (Poggio et al., 2021),
+# verified during implementation of soil.py. Data licensed CC BY 4.0.
+SOIL_ATTRIBUTION = (
+    "Poggio, L., de Sousa, L. M., Batjes, N. H., Heuvelink, G. B. M., Kempen, B., Ribeiro, E., and "
+    "Rossiter, D. (2021). SoilGrids 2.0: producing soil information for the globe with quantified "
+    "spatial uncertainty. SOIL, 7, 217-240. https://doi.org/10.5194/soil-7-217-2021. "
+    "© ISRIC — World Soil Information, licensed under CC BY 4.0."
+)

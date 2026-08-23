@@ -79,6 +79,7 @@ from app.data.hydrology import get_drainage_density, get_hand, get_twi
 from app.data.ndvi import get_ndvi
 from app.data.population import get_population
 from app.data.reclassify import apply_reclassification_cached
+from app.data.soil import get_soil_infiltration
 from app.data.worldcover import get_worldcover
 
 from .errors import OverlayValidationError
@@ -181,6 +182,11 @@ def _ndvi(aoi: AOI, **_kwargs):
     return r.ndvi, r.grid, r.nodata, r.attribution, None
 
 
+def _soil_infiltration(aoi: AOI, **_kwargs):
+    r = get_soil_infiltration(aoi)
+    return r.sand_pct, r.grid, r.nodata, r.attribution, None
+
+
 register_source("dem_elevation", _dem_elevation)
 register_source("dem_slope", _dem_slope)
 register_source("worldcover_land_cover", _worldcover_land_cover)
@@ -192,6 +198,7 @@ register_source("hand", _hand)
 register_source("building_density", _building_density)
 register_source("population_density", _population_density)
 register_source("ndvi", _ndvi)
+register_source("soil_infiltration", _soil_infiltration)
 
 # Snapshot at built-in-registration time, for display purposes only (e.g.
 # app/overlay/models.py's OverlayCriterionInput.source Field description)

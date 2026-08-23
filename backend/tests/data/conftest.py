@@ -42,6 +42,7 @@ def no_local_sources_by_default(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "LOCAL_DEM_DIR", tmp_path / "raw" / "dem")
     monkeypatch.setattr(config, "LOCAL_WORLDCOVER_DIR", tmp_path / "raw" / "worldcover")
     monkeypatch.setattr(config, "LOCAL_POPULATION_DIR", tmp_path / "raw" / "population")
+    monkeypatch.setattr(config, "LOCAL_SOIL_DIR", tmp_path / "raw" / "soil")
     monkeypatch.setattr(config, "LOCAL_OSM_DIR", tmp_path / "raw" / "osm")
     # LOCAL_OSM_PROCESSED_DIR is its own constant (computed once, from
     # the ORIGINAL LOCAL_OSM_DIR, at import time) -- monkeypatching
