@@ -744,6 +744,36 @@ input[type='radio'] {
   font-size: var(--text-xs);
 }
 
+/* Row wrapping a criterion's checkbox/label with its per-feature info
+   button, so the ⓘ sits at the end without being part of the clickable
+   label (clicking ⓘ opens the literature modal, never toggles the box). */
+.criteria-panel__row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.criteria-panel__row .criteria-panel__item {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.criteria-panel__info {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 0.2rem 0.25rem;
+  border-radius: var(--radius-full);
+}
+
+.criteria-panel__info:hover {
+  color: var(--color-primary);
+}
+
 .criteria-panel__classification {
   margin: 0.15rem 0 0.6rem 1.4rem;
   font-size: var(--text-sm);
@@ -1293,6 +1323,79 @@ input[type='radio'] {
 
 .modal__close:hover {
   color: var(--color-text);
+}
+
+/* Literature & methodology modal -- a wider shell for long-form,
+   multi-section cited content. */
+.modal--wide {
+  max-width: 56rem;
+}
+
+.literature {
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--color-text);
+}
+
+.literature h3 {
+  font-size: var(--text-md);
+  margin: var(--space-5) 0 var(--space-2);
+}
+
+.literature__intro h3 {
+  margin-top: 0;
+}
+
+.literature__cluster-title {
+  color: var(--color-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: var(--text-xs);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.3rem;
+}
+
+.literature__feature {
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+  scroll-margin-top: var(--space-3);
+}
+
+.literature__feature h4 {
+  font-size: var(--text-base);
+  margin-bottom: var(--space-2);
+}
+
+.literature__unit {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.literature p {
+  margin: 0 0 var(--space-2);
+}
+
+.literature__cited {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.literature__refs ol {
+  padding-left: 1.2rem;
+  margin: var(--space-2) 0 0;
+}
+
+.literature__refs li {
+  margin-bottom: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.literature__note {
+  margin-top: var(--space-3);
+  font-style: italic;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
 }
 
 /* ==========================================================================
