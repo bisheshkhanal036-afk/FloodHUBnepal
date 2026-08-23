@@ -1,8 +1,12 @@
-"""Shared DEM-conditioning + D8 flow-routing preprocessing for the two
-hydrologically-derived criterion sources (app/overlay/sources.py's `twi`
-and `drainage_density` registrations) — the only two sources in this
+"""Shared DEM-conditioning + D8 flow-routing preprocessing for the three
+hydrologically-derived criterion sources (app/overlay/sources.py's `twi`,
+`drainage_density`, and `hand` registrations) — the only sources in this
 layer that need more than a "fetch + resample" step before they're ready
-to reclassify.
+to reclassify. All three route through the same cached
+compute_flow_accumulation pipeline (sink-fill -> D8 flow direction ->
+flow accumulation, run once per AOI regardless of how many of the three
+are requested), so a real bug in that shared preprocessing can't be fixed
+for one source and left broken for the other two.
 
 Library choice — pysheds, not richdem (confirmed): both implement the
 same class of algorithm this module needs (fill_depressions ~ the
@@ -105,10 +109,19 @@ def _hydrology_cache_version(aoi: AOI) -> str:
 
 def _run_pysheds_pipeline(
     elevation: np.ndarray, grid: AOIGrid, dem_nodata: float, inside_mask: np.ndarray | None
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Sink-fills `elevation`, then computes D8 flow direction and flow
     accumulation on it. Returns (flow_accumulation, flow_direction,
-    valid_mask), all shape (grid.height, grid.width) plain numpy arrays.
+    valid_mask, elevation_conditioned), all shape (grid.height,
+    grid.width) plain numpy arrays. `elevation_conditioned` (the
+    pit-filled/depression-filled/flat-resolved DEM flow direction was
+    actually derived from -- `inflated` below) is returned so a later
+    consumer (HAND) can reuse the exact conditioned surface flow routing
+    already used, instead of conditioning the DEM a second time; using
+    the *unfilled* elevation for a height-above-drainage measurement
+    would be inconsistent with a flow network derived from the filled
+    one (e.g. a filled depression's cells could produce a HAND that
+    doesn't monotonically decrease along their own flow path).
 
     `inside_mask`, when given (a basin-derived AOI), marks every pixel
     OUTSIDE the true polygon boundary as nodata *before* conditioning —
@@ -154,7 +167,7 @@ def _run_pysheds_pipeline(
     unresolved = ~np.isin(fdir, _DIRMAP)
     valid = ~(invalid_input | unresolved)
 
-    return acc, fdir, valid
+    return acc, fdir, valid, np.asarray(inflated, dtype=np.float64)
 
 
 EDGE_RELIABILITY_WARNING = (
@@ -177,6 +190,7 @@ class FlowAccumulationResult:
         clipped_to_polygon: bool,
         attribution: str,
         warning: str | None = None,
+        elevation_conditioned: np.ndarray | None = None,
     ):
         self.flow_accumulation = flow_accumulation
         self.flow_direction = flow_direction
@@ -186,6 +200,13 @@ class FlowAccumulationResult:
         self.clipped_to_polygon = clipped_to_polygon
         self.attribution = attribution
         self.warning = warning
+        # The sink-filled/flat-resolved DEM flow_direction was actually
+        # derived from (see _run_pysheds_pipeline) -- optional (defaults
+        # None) purely so every existing TWI/drainage_density test fake
+        # that constructs this class without knowing about HAND keeps
+        # working unchanged; the real compute_flow_accumulation below
+        # always sets it. Only get_hand reads this field.
+        self.elevation_conditioned = elevation_conditioned
 
 
 def compute_flow_accumulation(aoi: AOI) -> FlowAccumulationResult:
@@ -210,7 +231,9 @@ def compute_flow_accumulation(aoi: AOI) -> FlowAccumulationResult:
     def _compute() -> FlowAccumulationResult:
         dem = get_dem(aoi)
         inside_mask = _polygon_inside_mask(aoi.polygon, dem.grid) if aoi.polygon is not None else None
-        flow_acc, flow_dir, valid = _run_pysheds_pipeline(dem.elevation_m, dem.grid, dem.nodata, inside_mask)
+        flow_acc, flow_dir, valid, elevation_conditioned = _run_pysheds_pipeline(
+            dem.elevation_m, dem.grid, dem.nodata, inside_mask
+        )
 
         clipped = aoi.polygon is not None
         warning = None if clipped else EDGE_RELIABILITY_WARNING
@@ -224,6 +247,7 @@ def compute_flow_accumulation(aoi: AOI) -> FlowAccumulationResult:
             clipped_to_polygon=clipped,
             attribution=DEM_ATTRIBUTION,
             warning=warning,
+            elevation_conditioned=elevation_conditioned,
         )
 
     return cached_or_compute("hydrology", aoi, _compute, version=_hydrology_cache_version(aoi))
@@ -371,3 +395,118 @@ def get_drainage_density(aoi: AOI) -> DrainageDensityResult:
         f"_r{config.DRAINAGE_DENSITY_WINDOW_RADIUS_M}"
     )
     return cached_or_compute("drainage_density", aoi, _compute, version=version)
+
+
+class HANDResult:
+    def __init__(self, hand: np.ndarray, grid: AOIGrid, nodata: float, attribution: str, warning: str | None = None):
+        self.hand = hand
+        self.grid = grid
+        self.nodata = nodata
+        self.attribution = attribution
+        self.warning = warning
+
+
+def _compute_hand_raster(
+    flow_direction: np.ndarray,
+    elevation_conditioned: np.ndarray,
+    stream_mask: np.ndarray,
+    grid: AOIGrid,
+    nodata_out: float,
+) -> np.ndarray:
+    """Height Above Nearest Drainage, via pysheds' own `compute_hand` --
+    picked over a hand-rolled flow-path descent because it does exactly
+    that (traces each pixel down its D8 flow-direction path to the
+    nearest cell marked in `stream_mask`, then returns the elevation
+    difference -- topological-nearest, not straight-line-nearest) using
+    the *same* `_DIRMAP`/Raster/ViewFinder conventions this module's own
+    _run_pysheds_pipeline already established, so there's no second,
+    possibly-inconsistent D8 convention introduced for this one source.
+
+    Takes plain numpy arrays and rebuilds the pysheds Raster/ViewFinder
+    wrappers pysheds' API wants -- this is NOT recomputing sink-fill or
+    flow direction (those already happened once, in
+    _run_pysheds_pipeline, and their *results* are what's passed in
+    here); it's just re-wrapping already-computed arrays in the
+    lightweight container type one specific pysheds call needs.
+    """
+    from pysheds.grid import Grid as PyshedsGrid
+    from pysheds.sview import Raster, ViewFinder
+
+    crs = pyproj.CRS.from_user_input(grid.crs)
+
+    fdir_viewfinder = ViewFinder(affine=grid.transform, shape=flow_direction.shape, nodata=0, crs=crs)
+    fdir_raster = Raster(flow_direction.astype(np.int64), viewfinder=fdir_viewfinder)
+
+    # HYDROLOGY_NODATA doubles as the conditioned-DEM's own nodata
+    # sentinel here -- not a coincidence: it's numerically identical to
+    # dem.py's DEM_OUTPUT_NODATA (-9999.0), the value elevation_conditioned
+    # actually carries at invalid/masked pixels (see dem.py, this
+    # module's own header comment on shared nodata sentinels).
+    dem_viewfinder = ViewFinder(affine=grid.transform, shape=elevation_conditioned.shape, nodata=HYDROLOGY_NODATA, crs=crs)
+    dem_raster = Raster(elevation_conditioned.astype(np.float64), viewfinder=dem_viewfinder)
+
+    mask_viewfinder = ViewFinder(affine=grid.transform, shape=stream_mask.shape, nodata=False, crs=crs)
+    mask_raster = Raster(stream_mask.astype(bool), viewfinder=mask_viewfinder)
+
+    pyshed_grid = PyshedsGrid(viewfinder=fdir_raster.viewfinder)
+    hand_raster = pyshed_grid.compute_hand(
+        fdir=fdir_raster,
+        dem=dem_raster,
+        mask=mask_raster,
+        dirmap=_DIRMAP,
+        nodata_out=nodata_out,
+        routing="d8",
+    )
+    return np.asarray(hand_raster, dtype=np.float64)
+
+
+def get_hand(aoi: AOI) -> HANDResult:
+    """Height Above Nearest Drainage: for each pixel, the elevation
+    difference to the nearest stream cell along its D8 flow path (NOT
+    straight-line nearest) -- low HAND means a pixel sits close to its
+    local drainage's own elevation, i.e. high flood susceptibility. That
+    inversion (low value -> high risk) is handled entirely at the
+    reclassification-rules level (frontend/src/config/criteria.js's
+    `hand` entry sets `riskDirection: 'descending'`, the same convention
+    `dem_elevation`/`dist_to_river` already use) -- this function always
+    returns plain HAND values in meters, never pre-inverted.
+
+    Reuses, rather than recomputes, every piece of the existing
+    hydrological pipeline: compute_flow_accumulation's cached sink-fill +
+    D8 flow direction (same call TWI/drainage_density already make, and
+    a cache hit when either has already run for this AOI) supplies both
+    the flow-direction grid and the conditioned DEM; the "stream" mask is
+    flow_accumulation thresholded by config.DRAINAGE_DENSITY_THRESHOLD_CELLS
+    -- the exact same synthetic stream network drainage_density already
+    extracts, not a second one. This is a real, deliberate shared
+    dependency, not an oversight: HAND is only as meaningful as the
+    stream network it's measured against, and this project has exactly
+    one such network. Recalibrating that one threshold later (SPEC.md
+    already flags it as a placeholder, pending real Kathmandu Valley
+    stream-network calibration) improves drainage_density and HAND
+    together, and correctly invalidates both's caches at once (the
+    threshold is folded into both's cache version string below).
+
+    Same basin-polygon-vs-bbox handling as TWI/drainage_density: a
+    basin-derived AOI computes on the true-polygon-clipped, flow-routed
+    grid (hydrologically correct -- no external inflow); a plain bbox AOI
+    computes on the full rectangular grid and carries
+    EDGE_RELIABILITY_WARNING, propagated from compute_flow_accumulation
+    exactly like the other two sources, not a new warning of its own.
+    """
+
+    def _compute() -> HANDResult:
+        flow = compute_flow_accumulation(aoi)
+        stream_mask = flow.valid_mask & (flow.flow_accumulation >= config.DRAINAGE_DENSITY_THRESHOLD_CELLS)
+
+        hand = _compute_hand_raster(
+            flow.flow_direction, flow.elevation_conditioned, stream_mask, flow.grid, HYDROLOGY_NODATA
+        )
+
+        valid = flow.valid_mask & np.isfinite(hand) & (hand != HYDROLOGY_NODATA)
+        hand = np.where(valid, hand, HYDROLOGY_NODATA).astype(np.float32)
+
+        return HANDResult(hand=hand, grid=flow.grid, nodata=HYDROLOGY_NODATA, attribution=flow.attribution, warning=flow.warning)
+
+    version = f"{_hydrology_cache_version(aoi)}_t{config.DRAINAGE_DENSITY_THRESHOLD_CELLS}"
+    return cached_or_compute("hand", aoi, _compute, version=version)

@@ -75,7 +75,7 @@ from app.data.dem import get_dem
 from app.data.density_raster import get_building_density
 from app.data.distance_raster import get_distance_to_river, get_distance_to_road
 from app.data.grid import AOIGrid
-from app.data.hydrology import get_drainage_density, get_twi
+from app.data.hydrology import get_drainage_density, get_hand, get_twi
 from app.data.population import get_population
 from app.data.reclassify import apply_reclassification_cached
 from app.data.worldcover import get_worldcover
@@ -147,6 +147,11 @@ def _drainage_density(aoi: AOI):
     return r.drainage_density, r.grid, r.nodata, r.attribution, r.warning
 
 
+def _hand(aoi: AOI):
+    r = get_hand(aoi)
+    return r.hand, r.grid, r.nodata, r.attribution, r.warning
+
+
 def _building_density(aoi: AOI):
     r = get_building_density(aoi)
     return r.density, r.grid, r.nodata, r.attribution, None
@@ -164,6 +169,7 @@ register_source("dist_to_river", _dist_to_river)
 register_source("dist_to_road", _dist_to_road)
 register_source("twi", _twi)
 register_source("drainage_density", _drainage_density)
+register_source("hand", _hand)
 register_source("building_density", _building_density)
 register_source("population_density", _population_density)
 

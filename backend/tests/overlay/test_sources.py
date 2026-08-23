@@ -31,6 +31,7 @@ def test_all_eight_built_in_sources_are_registered():
         "twi",
         "drainage_density",
         "building_density",
+        "hand",
     }
     assert expected <= set(registered_sources())
     assert expected <= set(SUPPORTED_SOURCES)
@@ -166,6 +167,34 @@ def test_drainage_density_resolves_via_the_registry(test_aoi, monkeypatch):
     assert attribution == "fake drainage_density"
     assert warning is None
     assert (reclassified == 1).all()
+
+
+def test_hand_resolves_via_the_registry(test_aoi, monkeypatch):
+    """overlay/sources.py's `_hand` adapter (and, by extension, the rest
+    of the overlay engine -- resolve_criterion_raster, compute.py's
+    weighted-sum math, service.py's orchestration) consumes get_hand()
+    with zero changes of its own, the same registry-extensibility claim
+    every other source here already proves.
+    """
+    from app.data.grid import compute_aoi_grid
+    from app.data.hydrology import HANDResult
+
+    grid = compute_aoi_grid(test_aoi.bounds_utm)
+    fake = HANDResult(
+        hand=np.full((grid.height, grid.width), 1.0, dtype=np.float32),
+        grid=grid,
+        nodata=-9999.0,
+        attribution="fake hand",
+        warning="fake edge-reliability warning",
+    )
+    monkeypatch.setattr("app.overlay.sources.get_hand", lambda aoi: fake)
+
+    rules = [{"min": None, "max": None, "risk_class": 5}]
+    reclassified, _grid, attribution, warning = resolve_criterion_raster(test_aoi, "c6", "hand", rules)
+
+    assert attribution == "fake hand"
+    assert warning == "fake edge-reliability warning"
+    assert (reclassified == 5).all()
 
 
 def test_building_density_resolves_via_the_registry(test_aoi, monkeypatch):

@@ -23,12 +23,14 @@ from app.data.hydrology import (
     HYDROLOGY_NODATA,
     MIN_SLOPE_RADIANS,
     FlowAccumulationResult,
+    _compute_hand_raster,
     _hydrology_cache_version,
     _polygon_inside_mask,
     _run_pysheds_pipeline,
     compute_drainage_density_raster,
     compute_flow_accumulation,
     get_drainage_density,
+    get_hand,
     get_twi,
 )
 
@@ -71,7 +73,7 @@ def _small_grid(width=5, height=5) -> AOIGrid:
 
 def test_flow_accumulates_toward_the_valley_bottom_on_a_hand_verifiable_v_shaped_dem():
     grid = _small_grid()
-    acc, _fdir, valid = _run_pysheds_pipeline(_V_VALLEY_ELEVATION, grid, dem_nodata=-9999.0, inside_mask=None)
+    acc, _fdir, valid, _conditioned = _run_pysheds_pipeline(_V_VALLEY_ELEVATION, grid, dem_nodata=-9999.0, inside_mask=None)
 
     # Hand-verified: [1, 4, 9, 14, 25] down the valley-bottom column (2).
     centerline = acc[:, 2]
@@ -97,7 +99,7 @@ def test_flow_accumulates_toward_the_valley_bottom_on_a_hand_verifiable_v_shaped
 
 def test_edge_outlet_with_no_lower_neighbor_is_marked_invalid_not_fabricated():
     grid = _small_grid()
-    _acc, fdir, valid = _run_pysheds_pipeline(_V_VALLEY_ELEVATION, grid, dem_nodata=-9999.0, inside_mask=None)
+    _acc, fdir, valid, _conditioned = _run_pysheds_pipeline(_V_VALLEY_ELEVATION, grid, dem_nodata=-9999.0, inside_mask=None)
 
     # (4, 2) is the DEM's global minimum, sitting on the grid's own
     # southern edge -- there is genuinely no data beyond it to route
@@ -112,7 +114,7 @@ def test_own_nodata_pixel_is_invalid_and_does_not_receive_a_fabricated_direction
     elevation[1, 1] = -9999.0
     grid = _small_grid()
 
-    _acc, _fdir, valid = _run_pysheds_pipeline(elevation, grid, dem_nodata=-9999.0, inside_mask=None)
+    _acc, _fdir, valid, _conditioned = _run_pysheds_pipeline(elevation, grid, dem_nodata=-9999.0, inside_mask=None)
 
     assert valid[1, 1] == False  # noqa: E712
 
@@ -125,10 +127,10 @@ def test_polygon_clip_and_bbox_produce_different_flow_accumulation_near_the_boun
     inside_mask = np.ones((5, 5), dtype=bool)
     inside_mask[:, 0] = False  # exclude the westmost column -- "outside the true basin boundary"
 
-    acc_clipped, _fdir_c, valid_clipped = _run_pysheds_pipeline(
+    acc_clipped, _fdir_c, valid_clipped, _cond_c = _run_pysheds_pipeline(
         _V_VALLEY_ELEVATION, grid, dem_nodata=-9999.0, inside_mask=inside_mask
     )
-    acc_unclipped, _fdir_u, _valid_u = _run_pysheds_pipeline(
+    acc_unclipped, _fdir_u, _valid_u, _cond_u = _run_pysheds_pipeline(
         _V_VALLEY_ELEVATION, grid, dem_nodata=-9999.0, inside_mask=None
     )
 
@@ -417,3 +419,177 @@ def test_get_drainage_density_cache_busts_when_threshold_changes(monkeypatch):
     assert not np.array_equal(low_threshold.drainage_density, high_threshold.drainage_density)
     still_valid = high_threshold.drainage_density != HYDROLOGY_NODATA
     assert (high_threshold.drainage_density[still_valid] == 0.0).all()
+
+
+# --- HAND (Height Above Nearest Drainage) ---
+#
+# Every expected number below was hand-verified against a direct pysheds
+# `compute_hand` run on this exact V-shaped-valley DEM during
+# implementation (same methodology this file's own header comment
+# describes for the flow-accumulation numbers) -- not just asserted from
+# a first successful run. One real, load-bearing discovery from that
+# verification, not previously documented anywhere in this codebase:
+# pysheds' compute_hand cannot resolve the OUTER 1-PIXEL RING of any
+# finite grid (confirmed on grids from 5x5 up to 11x11) -- a border cell
+# never has a full D8 neighborhood to trace a path through, regardless of
+# how close it is to a stream cell, so it always comes back unresolved
+# (raw NaN from pysheds, remapped to HYDROLOGY_NODATA by get_hand). This
+# is a strictly worse edge effect than flow accumulation's own
+# "underestimated near the edges" (EDGE_RELIABILITY_WARNING) -- HAND's
+# edge pixels aren't underestimated, they're nodata outright -- but per
+# the explicit instruction to reuse that warning rather than invent a
+# second channel, get_hand still surfaces the same warning text/field on
+# a bbox AOI. Flagged as a decision to confirm.
+
+
+def test_compute_hand_raster_hand_verified_on_the_v_valley_dem():
+    grid = _small_grid()
+    acc, fdir, valid, conditioned = _run_pysheds_pipeline(_V_VALLEY_ELEVATION, grid, dem_nodata=-9999.0, inside_mask=None)
+    # Same threshold convention as drainage_density's own stream
+    # extraction (valid_mask & flow_accumulation >= threshold) -- (2, 2)
+    # and (3, 2) are the only two cells at/above it (acc centerline is
+    # [1, 4, 9, 14, 25]); (4, 2)'s acc=25 also clears it but that cell is
+    # the domain's unresolved pit (invalid), so it's correctly excluded
+    # from the stream mask, matching compute_drainage_density_raster's
+    # own `valid_mask & (...)` gate.
+    stream_mask = valid & (acc >= 9)
+    assert list(zip(*np.where(stream_mask))) == [(2, 2), (3, 2)]
+
+    hand = _compute_hand_raster(fdir, conditioned, stream_mask, grid, HYDROLOGY_NODATA)
+
+    # On the stream itself: HAND ~ 0.
+    assert hand[2, 2] == pytest.approx(0.0, abs=1e-6)
+    assert hand[3, 2] == pytest.approx(0.0, abs=1e-6)
+    # (1, 2): elevation 90, flows S directly into (2, 2) (elevation 80) --
+    # one hop, HAND = 90 - 80 = 10.
+    assert hand[1, 2] == pytest.approx(10.0, abs=1e-6)
+    # (1, 1): elevation 100, flows SE directly into (2, 2) (elevation
+    # 80) -- one diagonal hop, HAND = 100 - 80 = 20. High above the
+    # stream, and hand-verified via a different (diagonal) path than
+    # (1, 2)'s, so this isn't just the same number twice by coincidence.
+    assert hand[1, 1] == pytest.approx(20.0, abs=1e-6)
+    # (2, 1): elevation 90, flows SE directly into (3, 2) (elevation 70)
+    # -- HAND = 90 - 70 = 20.
+    assert hand[2, 1] == pytest.approx(20.0, abs=1e-6)
+
+    # The outer ring (row 0, row 4, col 0, col 4) is unresolved --
+    # documented pysheds edge behavior, not a bug -- see this section's
+    # own header comment.
+    assert np.isnan(hand[0, :]).all()
+    assert np.isnan(hand[:, 0]).all()
+    assert np.isnan(hand[:, 4]).all()
+
+
+def test_get_hand_remaps_unresolved_edge_pixels_to_hydrology_nodata(monkeypatch):
+    grid = _small_grid()
+    monkeypatch.setattr("app.data.hydrology.get_dem", lambda aoi: _fake_dem_result(_V_VALLEY_ELEVATION, grid))
+    monkeypatch.setattr(config, "DRAINAGE_DENSITY_THRESHOLD_CELLS", 9)
+
+    result = get_hand(AOI(bbox_4326=TEST_AOI_BBOX_4326))
+
+    # The raw np.nan pysheds returns for an unresolved edge pixel must
+    # never leak into the public result -- only the project's own
+    # explicit sentinel.
+    assert not np.isnan(result.hand).any()
+    assert result.hand[0, 0] == HYDROLOGY_NODATA
+    assert result.hand[2, 2] == pytest.approx(0.0, abs=1e-6)  # on the stream
+    assert result.hand[1, 1] == pytest.approx(20.0, abs=1e-6)  # hand-verified above
+    assert result.nodata == HYDROLOGY_NODATA
+
+
+def test_get_hand_reuses_the_cached_flow_accumulation_not_a_duplicate_sink_fill(monkeypatch):
+    """The whole point of HAND consuming compute_flow_accumulation's
+    result object rather than re-deriving flow direction/the stream
+    network itself: computing another hydrology source for the same AOI
+    first (warming the per-AOI cache), then get_hand, must run the
+    actual pysheds sink-fill/flow-direction pipeline exactly once total
+    -- not once per source.
+    """
+    grid = _small_grid()
+    monkeypatch.setattr("app.data.hydrology.get_dem", lambda aoi: _fake_dem_result(_V_VALLEY_ELEVATION, grid))
+    monkeypatch.setattr(config, "DRAINAGE_DENSITY_THRESHOLD_CELLS", 9)
+
+    calls = []
+    real_pipeline = _run_pysheds_pipeline
+
+    def counting_pipeline(*args, **kwargs):
+        calls.append(1)
+        return real_pipeline(*args, **kwargs)
+
+    monkeypatch.setattr("app.data.hydrology._run_pysheds_pipeline", counting_pipeline)
+
+    aoi = AOI(bbox_4326=TEST_AOI_BBOX_4326)
+    get_drainage_density(aoi)
+    get_hand(aoi)
+
+    assert len(calls) == 1
+
+
+def test_get_hand_bbox_aoi_carries_edge_reliability_warning_polygon_aoi_does_not(monkeypatch):
+    grid = _small_grid()
+    monkeypatch.setattr("app.data.hydrology.get_dem", lambda aoi: _fake_dem_result(_V_VALLEY_ELEVATION, grid))
+    monkeypatch.setattr(config, "DRAINAGE_DENSITY_THRESHOLD_CELLS", 9)
+
+    bbox_result = get_hand(AOI(bbox_4326=TEST_AOI_BBOX_4326))
+    polygon_result = get_hand(AOI(bbox_4326=TEST_AOI_BBOX_4326, polygon=box(*TEST_AOI_BBOX_4326)))
+
+    # attribution is always the plain, unmodified citation on both paths
+    # -- same convention as every other hydrology source.
+    assert bbox_result.attribution == DEM_ATTRIBUTION
+    assert polygon_result.attribution == DEM_ATTRIBUTION
+
+    assert bbox_result.warning is not None
+    assert "edges" in bbox_result.warning.lower()
+    assert polygon_result.warning is None
+
+
+def test_get_hand_propagates_a_fake_flow_accumulation_warning(monkeypatch):
+    """Narrower companion to the bbox-vs-polygon test above: proves
+    get_hand's warning comes from compute_flow_accumulation's own result
+    (whatever it is), not re-derived independently -- by faking a
+    FlowAccumulationResult with an arbitrary warning string and confirming
+    it passes straight through unchanged.
+    """
+    grid = _small_grid()
+    fake_flow = FlowAccumulationResult(
+        flow_accumulation=np.full((5, 5), 20.0),
+        flow_direction=np.full((5, 5), 4, dtype=np.int64),
+        grid=grid,
+        nodata=HYDROLOGY_NODATA,
+        valid_mask=np.ones((5, 5), dtype=bool),
+        clipped_to_polygon=False,
+        attribution="fake",
+        warning="fake edge-reliability warning",
+        elevation_conditioned=_V_VALLEY_ELEVATION.copy(),
+    )
+    monkeypatch.setattr("app.data.hydrology.compute_flow_accumulation", lambda aoi: fake_flow)
+    monkeypatch.setattr(config, "DRAINAGE_DENSITY_THRESHOLD_CELLS", 5)
+
+    result = get_hand(AOI(bbox_4326=TEST_AOI_BBOX_4326))
+
+    assert result.warning == "fake edge-reliability warning"
+
+
+def test_get_hand_cache_busts_when_drainage_threshold_changes(monkeypatch):
+    """HAND shares drainage_density's stream-network threshold (see this
+    section's own header comment) -- recalibrating it later must
+    invalidate HAND's cache too, exactly like drainage_density's own
+    equivalent test.
+    """
+    grid = _small_grid()
+    monkeypatch.setattr("app.data.hydrology.get_dem", lambda aoi: _fake_dem_result(_V_VALLEY_ELEVATION, grid))
+    aoi = AOI(bbox_4326=TEST_AOI_BBOX_4326)
+
+    monkeypatch.setattr(config, "DRAINAGE_DENSITY_THRESHOLD_CELLS", 9)
+    low_threshold = get_hand(aoi)
+
+    monkeypatch.setattr(config, "DRAINAGE_DENSITY_THRESHOLD_CELLS", 10_000)
+    high_threshold = get_hand(aoi)
+
+    # An unreachably high threshold means no cell is ever a "stream" ->
+    # every resolvable pixel's HAND collapses to nodata (no drainage to
+    # measure height above). If this came back identical to
+    # low_threshold's result, the cache would have wrongly reused the
+    # earlier computation despite the config change.
+    assert not np.array_equal(low_threshold.hand, high_threshold.hand)
+    assert (high_threshold.hand == HYDROLOGY_NODATA).all()

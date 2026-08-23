@@ -1,8 +1,9 @@
 # SPEC — Flood Risk Mapping & Shelter Identification, Kathmandu Valley
 
-Status: **Backend (AHP engine, geospatial data layer, overlay engine) and a
-working frontend map UI implemented; vulnerability classification and
-shelter identification still pending** — see §5. This document defines
+Status: **Backend (AHP engine, geospatial data layer with 10 registered
+criterion sources, overlay engine, vulnerability-classification/reporting)
+and a working, redesigned frontend map UI implemented; shelter
+identification still pending** — see §5. This document defines
 the shared data contracts and project-wide conventions that every phase
 (backend, frontend, analysis pipeline) must follow.
 
@@ -277,6 +278,8 @@ with zero changes to `sources.py` or any other `overlay/` file.
 | `twi` | Topographic Wetness Index | Continuous | `app/data/hydrology.py` |
 | `drainage_density` | Local drainage density (km stream / km² window) | Continuous | `app/data/hydrology.py` |
 | `building_density` | Local building-footprint coverage fraction (0-1) | Continuous | `app/data/density_raster.py` (reuses `get_osm_features(aoi).buildings` — no separate OSM query) |
+| `population_density` | Meta/CIESIN HRSL population density (people/km²) | Continuous | `app/data/population.py` |
+| `hand` | Height Above Nearest Drainage (m) — elevation above the nearest stream cell along the D8 flow path | Continuous | `app/data/hydrology.py` |
 
 **Distance rasters** (`distance_raster.py`): a generic
 `compute_distance_raster(features, grid)` rasterizes arbitrary vector
@@ -337,8 +340,8 @@ response time inherits that on a cache miss, which is well beyond what
 "a few seconds" implies; the frontend's compute-in-progress message
 says so explicitly when a road/river-distance criterion is selected.
 
-**Hydrology** (`hydrology.py`): `twi` and `drainage_density` both build
-on a shared DEM sink-fill + D8 flow-direction + flow-accumulation
+**Hydrology** (`hydrology.py`): `twi`, `drainage_density`, and `hand` all
+build on a shared DEM sink-fill + D8 flow-direction + flow-accumulation
 pipeline (`compute_flow_accumulation`), using **pysheds** (not
 richdem — richdem's only PyPI wheels are Linux/macOS-only, which would
 break local testing on a plain Windows environment outside Docker, as
@@ -387,8 +390,8 @@ separate, never-conflated per-source fields: `attribution` (deduplicated
 citation strings, unchanged by this phase) and `source_warnings` (a list
 of `{criterion_id, message}`, one entry per criterion whose registered
 source function returned a non-`None` warning — empty when nothing has
-anything to flag). Only `twi`/`drainage_density` on a plain bbox AOI
-ever populate it today, but the field itself is generic — any future
+anything to flag). Only `twi`/`drainage_density`/`hand` on a plain bbox
+AOI ever populate it today, but the field itself is generic — any future
 source can use it the same way, with no special-casing anywhere in the
 overlay engine beyond the registry's own 5-tuple contract.
 
@@ -403,6 +406,42 @@ than a single catchment-wide scalar, so it can serve as a pixel-weighted
 AHP criterion like every other source here. Both parameters are
 env-overridable and folded into the cache version, so recalibrating
 either one never needs a code change or silently reuses a stale result.
+
+`hand` (Height Above Nearest Drainage): for each pixel, the elevation
+difference to the nearest stream cell along its D8 flow path (not
+straight-line nearest) — computed via **pysheds' own `compute_hand`**
+(chosen over a hand-rolled flow-path descent because it reuses the exact
+`_DIRMAP`/Raster/ViewFinder conventions `_run_pysheds_pipeline` already
+established, with no second D8 implementation introduced), fed the same
+conditioned (sink-filled) DEM flow direction was itself derived from —
+deliberately *not* the unfilled elevation `twi`'s slope term uses, since
+a flow network derived from the filled DEM needs a height measurement
+consistent with that same filled surface. Shares `drainage_density`'s
+`config.DRAINAGE_DENSITY_THRESHOLD_CELLS` stream-network threshold (the
+same synthetic stream network both are measured against, not a second
+one) and is folded into the same cache-version string, so recalibrating
+that one threshold correctly invalidates both. Low HAND means a pixel
+sits near its local drainage's own elevation — high flood susceptibility
+— handled entirely at the reclassification-rules level
+(`frontend/src/config/criteria.js`'s `hand` entry sets
+`riskDirection: 'descending'`, the same convention `dem_elevation`/
+`dist_to_river` already use), never inverted inside this module itself.
+
+A real finding from hand-verifying this against actual pysheds output
+(not assumed, and not previously documented anywhere in this codebase):
+**pysheds' `compute_hand` cannot resolve the outer 1-pixel ring of any
+finite grid** — a border cell never has a full D8 neighborhood to trace
+a path through, regardless of how close it is to a stream, so it always
+comes back unresolved (confirmed on synthetic grids from 5×5 to 11×11).
+This is a *stricter* edge effect than flow accumulation's own "may be
+underestimated near the edges" (`EDGE_RELIABILITY_WARNING`) — `hand`'s
+edge pixels aren't underestimated, they're nodata outright — but per an
+explicit decision to reuse the existing warning rather than add a second
+channel, a plain bbox AOI's `hand` result still surfaces that same
+warning text/field, not a HAND-specific one. Verified live end to end
+against the real running backend over a real ~30 km² Kathmandu AOI:
+90% valid-pixel coverage, values in the expected `[0, 1]` normalized
+range after reclassification.
 
 ## 4. Local development
 
@@ -1072,13 +1111,93 @@ them.
   new `test_progress_stream.py`, and the actual HTTP streaming response
   in `test_router.py`) — 281 backend tests passing total, zero
   regressions.
+- Frontend: **visual redesign — "midnight precision instrument"**
+  (Linear-referenced), a presentation-layer pass per this project's own
+  established discipline ("a design pass only, no data flow/state/API
+  changes" — see the earlier visual-identity redesign phase, above).
+  `AppStateContext.jsx`'s state shape, `api/client.js`, and every backend
+  file are untouched except one deliberate one-line change:
+  `initialTheme()` now defaults to dark for a first-time visitor
+  (matching a "dark-first" product decision) rather than following the
+  OS's `prefers-color-scheme`, still fully overridable via the existing
+  toggle and persisted the same way as before. `index.css`'s token
+  system was rewritten around a dark-as-default palette (near-black
+  canvas, hairline-border elevation instead of shadows, a single teal-
+  cyan accent per view — terracotta demoted to a rare highlight rather
+  than a second competing interactive color), a light theme rebuilt
+  under the same structural rules, and a new `--font-mono` token
+  (JetBrains Mono) for tabular/technical data — filling a gap the
+  previous session's own handoff document had flagged. `Sidebar.jsx`'s
+  plain numbered cards became a connected step-rail (new
+  `StepSection.jsx`: numbered marker + connecting line, complete/active/
+  locked states, click-to-collapse) — every reachable step defaults
+  *open*, not auto-collapsing on completion: an early version collapsed
+  a step the instant it became "complete," which for the Criteria step
+  meant the checkbox list vanished after just one checkbox was checked
+  (the same threshold that unlocks Weighting) — caught via testing, not
+  assumed. `MapView.jsx` gained two genuinely new map controls previously
+  absent (a live coordinate/zoom readout and MapLibre's own
+  `ScaleControl`) alongside restyled zoom/basemap/attribution chrome.
+  `ResultPanel.jsx`'s risk-ramp legend was redrawn as a smooth gradient
+  with tick labels (was a 5-banded flex bar); `ReportPanel.jsx`'s stat
+  cards moved to a thin-accent-rule/mono-numeral treatment and its zonal
+  table gained per-hazard-class color swatches, reusing the existing
+  `riskValueToRgb` function rather than introducing a new color source.
+  Verified end to end via Playwright-in-Docker against the real running
+  app: the full AOI → criteria → AHP weighting → compute → report flow,
+  both themes, real backend data, zero console errors. Backend test
+  suite unaffected (281 passed, unchanged, since nothing backend-side
+  was touched).
+- Backend: **10th criterion source, `hand`** (Height Above Nearest
+  Drainage) — `app/data/hydrology.py`, registered via the existing
+  pluggable `register_source()` mechanism with zero changes to
+  `overlay/compute.py`, `service.py`, `router.py`, or `ahp/`. Computed
+  via **pysheds' own `compute_hand`** (not a hand-rolled flow-path
+  descent — it matched the existing `_DIRMAP`/Raster/ViewFinder
+  conventions `_run_pysheds_pipeline` already established cleanly enough
+  that reimplementing it would only add a second, possibly-inconsistent
+  D8 convention), reusing rather than recomputing every piece of the
+  existing hydrological pipeline: `_run_pysheds_pipeline` now also
+  returns the conditioned (sink-filled) DEM (`FlowAccumulationResult`
+  gained an `elevation_conditioned` field, default `None` so every
+  existing TWI/drainage_density test fake keeps working unchanged), and
+  `get_hand` reuses `compute_flow_accumulation`'s cached flow-direction
+  grid, conditioned DEM, and — deliberately — `drainage_density`'s own
+  `config.DRAINAGE_DENSITY_THRESHOLD_CELLS` stream-network threshold
+  (the same synthetic stream network both measure against, a real shared
+  dependency, not a coincidence: HAND is only as meaningful as the
+  stream network it's measured against, and this project has exactly
+  one). A real, previously-undocumented finding from hand-verifying this
+  against actual pysheds output: **the outer 1-pixel ring of any grid
+  can never resolve** (no full D8 neighborhood to trace through,
+  confirmed on synthetic grids from 5×5 to 11×11) — stricter than flow
+  accumulation's own "may be underestimated near the edges"
+  (`EDGE_RELIABILITY_WARNING`, reused verbatim for `hand` rather than a
+  new warning channel, per an explicit decision to confirm — its wording
+  slightly undersells HAND's actual edge behavior, which is nodata
+  outright, not underestimated). Low HAND means high risk; that
+  inversion is handled entirely at the reclassification-rules level
+  (`frontend/src/config/criteria.js`'s `hand` entry, `riskDirection:
+  'descending'`, Hydrological cluster, placeholder equal-interval breaks
+  in the same not-yet-calibrated spirit as `drainage_density`'s own).
+  8 new tests in `tests/data/test_hydrology.py` (hand-verified elevation-
+  above-stream values on the existing V-shaped-valley DEM, including an
+  on-stream pixel at ~0 and two off-stream pixels via different flow
+  paths; the edge-unresolvability behavior; shared-preprocessing reuse,
+  proven by counting real pipeline invocations across two sources for
+  the same AOI; basin-vs-bbox warning propagation; cache-busting on
+  threshold change) plus a new registry-consumption test in
+  `tests/overlay/test_sources.py` — 288 backend tests passing total
+  (281 + 7 net new), zero regressions. Also verified live end to end
+  against the real running backend over a real ~30 km² Kathmandu AOI
+  (90% valid-pixel coverage, values in the expected range).
 - Not yet implemented: AOI persistence, and shelter identification. The
   GeoTIFF file route is a simple
   direct-read endpoint, not a general static-asset server or CDN — fine
   for local dev and this phase's needs, but worth revisiting if the
   cache grows large or needs to be served from object storage in a real
-  deployment. The `drainage_density` stream-extraction threshold and
-  moving-window radius are structurally-reasonable placeholders, not
+  deployment. The `drainage_density`/`hand` stream-extraction threshold
+  and moving-window radius are structurally-reasonable placeholders, not
   literature-calibrated values (§3.6) — pending real calibration against
   a known Kathmandu Valley stream network. The frontend's bundle
   (~1.1MB main chunk, mostly MapLibre GL + geotiff.js) isn't code-split

@@ -88,6 +88,36 @@ export const CRITERIA = [
     ],
   },
   {
+    id: 'hand',
+    label: 'Height Above Nearest Drainage (HAND)',
+    cluster: 'Hydrological',
+    type: 'continuous',
+    riskDirection: 'descending', // low value (close to drainage level) -> high risk
+    unit: 'm',
+    description:
+      'Elevation above the nearest stream cell along the D8 flow path (not straight-line distance) — ground close to its local drainage floods first, so risk decreases with HAND.',
+    // Placeholder equal-interval breakpoints, the same "structurally
+    // reasonable, not literature-calibrated" pattern as every other
+    // criterion here (SPEC.md already documents this for
+    // drainage_density/population_density) -- picked from the rough
+    // range HAND-based flood-susceptibility studies commonly use (e.g.
+    // Nobre et al. 2011, Zheng et al. 2018 typically treat single-digit-
+    // metre HAND as flood-prone), not derived from any Kathmandu-Valley-
+    // specific analysis. Flagged as a decision to confirm. Shares
+    // backend/app/data/config.py's DRAINAGE_DENSITY_THRESHOLD_CELLS with
+    // drainage_density (same synthetic stream network both measure
+    // against) -- recalibrating that one threshold later changes both
+    // criteria's underlying values together, though not these display
+    // breakpoints, which are independent of it.
+    defaultReclassificationRules: [
+      { min: null, max: 2, risk_class: 5 },
+      { min: 2, max: 5, risk_class: 4 },
+      { min: 5, max: 10, risk_class: 3 },
+      { min: 10, max: 20, risk_class: 2 },
+      { min: 20, max: null, risk_class: 1 },
+    ],
+  },
+  {
     id: 'dist_to_river',
     label: 'Distance to River',
     cluster: 'Hydrological',
