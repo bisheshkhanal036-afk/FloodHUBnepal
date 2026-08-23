@@ -19,6 +19,30 @@ Source nodata is NaN (read from the dataset, not assumed — same "never
 silently assume" rule nodata.py's own docstring describes for
 DEM/WorldCover).
 
+HRSL's nodata means CONFIRMED ZERO, not "unknown" -- a real bug this
+module used to have, found live: the raw source's nodata rate is ~48-50%
+even deep inside central Kathmandu's built-up core, in a fine speckled
+(not clustered/regional) pattern -- verified by inspecting the raw
+source directly, before any reprojection in this pipeline, ruling out a
+resampling artifact as the cause. That rate/pattern is HRSL's OWN design,
+not degraded coverage: HRSL assigns a population value only to pixels
+its underlying settlement classifier detected as built-up, deliberately
+leaving non-settlement pixels (roads, gaps, unbuilt land -- entirely
+normal at 30m resolution even in a dense city) without a value, rather
+than assigning them 0 explicitly (Yetman, HRSL technical presentation,
+IUSSP: "zeroes indicate not-settled areas" in HRSL's own binary
+settlement-classification step; the population layer follows the same
+settled/not-settled distinction). Nepal is always within HRSL's real
+global coverage, so for this app's purposes every nodata pixel
+legitimately means zero people there, not an information gap.
+`_count_to_density` therefore treats source nodata as count=0 -- NOT as
+a value to propagate as nodata into the output. Before this fix, every
+nodata pixel poisoned the density field, which then poisoned the FINAL
+risk surface at that pixel (compute_risk_surface's any_nodata rule) --
+using population_density as a criterion left the risk surface riddled
+with a ~50%, speckled hole pattern, live-confirmed as the actual root
+cause of a "gaps in the risk surface" report.
+
 Count, not density, matters here: a count is an EXTENSIVE quantity (it
 scales with the area it was counted over), unlike elevation/slope/
 distance, which are intensive. Bilinear-resampling a raw count directly
@@ -78,6 +102,12 @@ def _count_to_density(array: np.ndarray, transform, crs, nodata: float) -> np.nd
     a given pixel falls on. See this module's own docstring for why this
     conversion has to happen before reprojection, not after.
 
+    `nodata` pixels are treated as a CONFIRMED ZERO count, not an
+    unknown/missing value — see this module's own docstring ("HRSL's
+    nodata means zero, not unknown") for why. The output never carries a
+    nodata sentinel: every pixel gets a real density value (0 or
+    positive).
+
     `crs.is_geographic` (True for the S3/local HRSL source, EPSG:4326)
     means transform.a/transform.e are pixel width/height in DEGREES, so
     each row's area needs its own cos(latitude) correction for the
@@ -87,6 +117,7 @@ def _count_to_density(array: np.ndarray, transform, crs, nodata: float) -> np.nd
     size by construction, straight from the transform.
     """
     nodata_mask = np.isnan(array) if np.isnan(nodata) else (array == nodata)
+    count = np.where(nodata_mask, 0.0, array)
 
     # Coerce to a real rasterio CRS object -- callers (including this
     # module's own _fetch_population_from_s3/_read_local_window) always
@@ -108,8 +139,7 @@ def _count_to_density(array: np.ndarray, transform, crs, nodata: float) -> np.nd
         pixel_area_m2 = abs(transform.a * transform.e)
         area_km2 = pixel_area_m2 / 1e6  # a scalar: every pixel is the same true size already
 
-    density = array / area_km2
-    return np.where(nodata_mask, nodata, density)
+    return (count / area_km2).astype(np.float64)
 
 
 class PopulationResult:
@@ -171,9 +201,18 @@ def get_population(aoi: AOI) -> PopulationResult:
         density_native = _count_to_density(array, transform, crs, src_nodata)
 
         grid = compute_aoi_grid(aoi.bounds_utm)
+        # src_nodata=None, not src_nodata (still NaN): density_native no
+        # longer carries any nodata sentinel at all -- _count_to_density
+        # already converted every source-nodata pixel to a real count=0
+        # (see this module's own docstring for why that's the correct
+        # reading of HRSL's nodata, not a missing value), so there is
+        # nothing left for reproject_to_grid to treat as nodata here.
+        # dst_nodata is kept (not removed) for the one case that's still
+        # genuinely nodata: an output grid cell falling outside the
+        # actual read window's real footprint entirely.
         density_resampled = reproject_to_grid(
             density_native, transform, crs, grid,
-            kind="continuous", src_nodata=src_nodata, dst_nodata=POPULATION_OUTPUT_NODATA, dtype=np.float32,
+            kind="continuous", src_nodata=None, dst_nodata=POPULATION_OUTPUT_NODATA, dtype=np.float32,
         )
         nodata = require_defined_nodata(POPULATION_OUTPUT_NODATA, "population")
 

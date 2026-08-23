@@ -17,38 +17,131 @@ import { useAppState } from '../state/AppStateContext'
 const KATHMANDU_CENTER = [85.324, 27.7172]
 const DEFAULT_ZOOM = 11
 
-// Two free, no-API-key raster basemaps for night mode: OSM's own
-// standard ("Carto" light) tile set, and CARTO's free "Dark Matter"
-// tiles (rendered from OSM data too, no key/signup required, verified
-// live) for dark mode -- OSM itself doesn't publish an official dark
-// style. Both attributions are shown together regardless of which is
-// currently active, simplest way to always satisfy both licenses'
-// attribution requirement without wiring a second dynamic control.
-const LIGHT_TILES = [
-  'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
-  'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
-  'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
-]
-const DARK_TILES = [
-  'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-  'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-  'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-  'https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-]
-const BASEMAP_ATTRIBUTION = '© OpenStreetMap contributors © CARTO'
+// 5 free, no-API-key raster basemaps -- every one of these was verified
+// live during implementation (a real tile fetch returning a genuine
+// 256x256 image, not an error page with a 200 status) before being added
+// here, the same diligence this project already applied to the original
+// OSM/CARTO-dark pair. Each has its own required attribution text (they
+// differ -- Esri's and OpenTopoMap's licenses require different credit
+// lines than OSM/CARTO's), shown via the source's own `attribution`
+// field, which MapLibre's AttributionControl picks up automatically from
+// whichever raster source is actually part of the map at the time --
+// see the basemap-switching effect below for why the source is fully
+// replaced (not just re-pointed via setTiles) when the style changes,
+// specifically so that attribution swap actually happens.
+const BASEMAPS = {
+  street: {
+    label: 'Street',
+    tiles: [
+      'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    ],
+    attribution: '© OpenStreetMap contributors',
+  },
+  light: {
+    label: 'Light',
+    tiles: [
+      'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+      'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+      'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+      'https://d.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+    ],
+    attribution: '© OpenStreetMap contributors © CARTO',
+  },
+  dark: {
+    label: 'Dark',
+    tiles: [
+      'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+      'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+      'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+      'https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+    ],
+    attribution: '© OpenStreetMap contributors © CARTO',
+  },
+  satellite: {
+    label: 'Satellite',
+    // Esri's own tile path order is z/row/col (i.e. {z}/{y}/{x} in
+    // MapLibre's placeholder convention, not the usual {z}/{x}/{y}) --
+    // verified live; using the standard order 404s.
+    tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+    attribution: 'Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+  },
+  topo: {
+    label: 'Topographic',
+    tiles: [
+      'https://a.tile.opentopomap.org/{z}/{x}/{y}.png',
+      'https://b.tile.opentopomap.org/{z}/{x}/{y}.png',
+      'https://c.tile.opentopomap.org/{z}/{x}/{y}.png',
+    ],
+    attribution: 'Map data: © OpenStreetMap contributors, SRTM | Map style: © OpenTopoMap (CC-BY-SA)',
+  },
+}
+const BASEMAP_SOURCE = 'basemap'
+const BASEMAP_LAYER = 'basemap'
 
-function basemapStyle(theme) {
+function basemapMapStyle(styleKey) {
+  const basemap = BASEMAPS[styleKey]
   return {
     version: 8,
     sources: {
-      osm: {
-        type: 'raster',
-        tiles: theme === 'dark' ? DARK_TILES : LIGHT_TILES,
-        tileSize: 256,
-        attribution: BASEMAP_ATTRIBUTION,
-      },
+      [BASEMAP_SOURCE]: { type: 'raster', tiles: basemap.tiles, tileSize: 256, attribution: basemap.attribution },
     },
-    layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+    layers: [{ id: BASEMAP_LAYER, type: 'raster', source: BASEMAP_SOURCE }],
+  }
+}
+
+// A plain MapLibre IControl (framework-agnostic DOM, per MapLibre's own
+// control API -- there's no React-component control type), not a React
+// component: it's added once in the map-init effect below, same as the
+// native NavigationControl beside it, and drives state purely one-way
+// (dispatching actions) since nothing else in the app can change
+// basemapStyle/basemapVisible for it to need to sync back FROM.
+class BasemapControl {
+  constructor(dispatch, getState) {
+    this._dispatch = dispatch
+    this._getState = getState
+  }
+
+  onAdd() {
+    const container = document.createElement('div')
+    container.className = 'maplibregl-ctrl maplibregl-ctrl-group basemap-control'
+
+    const select = document.createElement('select')
+    select.className = 'basemap-control__select'
+    for (const [key, basemap] of Object.entries(BASEMAPS)) {
+      const option = document.createElement('option')
+      option.value = key
+      option.textContent = basemap.label
+      select.appendChild(option)
+    }
+    select.value = this._getState().basemapStyle
+    select.addEventListener('change', () => this._dispatch({ type: 'SET_BASEMAP_STYLE', style: select.value }))
+
+    const toggleButton = document.createElement('button')
+    toggleButton.type = 'button'
+    toggleButton.className = 'basemap-control__toggle'
+    toggleButton.title = 'Show/hide basemap'
+    const syncToggleLabel = () => {
+      toggleButton.textContent = this._getState().basemapVisible ? '🗺️' : '⬜'
+    }
+    syncToggleLabel()
+    toggleButton.addEventListener('click', () => {
+      this._dispatch({ type: 'TOGGLE_BASEMAP_VISIBLE' })
+      // No state to read synchronously right after dispatch (React
+      // state updates aren't immediate) -- flip the label optimistically
+      // to match what the dispatch is about to produce.
+      toggleButton.textContent = toggleButton.textContent === '🗺️' ? '⬜' : '🗺️'
+    })
+
+    container.appendChild(select)
+    container.appendChild(toggleButton)
+    this._container = container
+    return container
+  }
+
+  onRemove() {
+    this._container?.parentNode?.removeChild(this._container)
   }
 }
 
@@ -67,12 +160,13 @@ export default function MapView() {
   useEffect(() => {
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: basemapStyle(stateRef.current.theme),
+      style: basemapMapStyle(stateRef.current.basemapStyle),
       center: KATHMANDU_CENTER,
       zoom: DEFAULT_ZOOM,
     })
     mapRef.current = map
     map.addControl(new maplibregl.NavigationControl(), 'top-right')
+    map.addControl(new BasemapControl(dispatch, () => stateRef.current), 'top-left')
 
     map.on('load', () => {
       map.addSource(DRAW_PREVIEW_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
@@ -99,14 +193,44 @@ export default function MapView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- init once; handlers read stateRef for live state
   }, [])
 
-  // --- night mode: swap basemap tiles live, no full style/map reload ---
+  // --- basemap style: fully remove + re-add the source/layer, not just
+  // re-point the same source's tiles -- MapLibre's AttributionControl
+  // tracks attribution per the sources actually present on the map, so
+  // switching providers (each with its own required credit line) needs
+  // a real source swap, not a setTiles() on a source whose `attribution`
+  // metadata would otherwise stay pinned to whichever provider was first
+  // loaded. ---
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-    const apply = () => map.getSource('osm')?.setTiles(state.theme === 'dark' ? DARK_TILES : LIGHT_TILES)
+    const apply = () => {
+      if (map.getLayer(BASEMAP_LAYER)) map.removeLayer(BASEMAP_LAYER)
+      if (map.getSource(BASEMAP_SOURCE)) map.removeSource(BASEMAP_SOURCE)
+      const basemap = BASEMAPS[state.basemapStyle]
+      map.addSource(BASEMAP_SOURCE, {
+        type: 'raster', tiles: basemap.tiles, tileSize: 256, attribution: basemap.attribution,
+      })
+      // Re-inserted as the bottom-most layer (before the first existing
+      // layer, if any) so it never ends up drawn on top of the AOI/
+      // basins/risk-surface layers that were added after the map's
+      // initial load.
+      const firstLayerId = map.getStyle().layers.find((l) => l.id !== BASEMAP_LAYER)?.id
+      map.addLayer({ id: BASEMAP_LAYER, type: 'raster', source: BASEMAP_SOURCE }, firstLayerId)
+      map.setLayoutProperty(BASEMAP_LAYER, 'visibility', state.basemapVisible ? 'visible' : 'none')
+    }
     if (map.isStyleLoaded()) apply()
     else map.once('load', apply)
-  }, [state.theme])
+  }, [state.basemapStyle])
+
+  // --- basemap visibility toggle -- a separate, cheap layout-property
+  // flip, no source/layer churn (unlike the style-switch effect above). ---
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const apply = () => map.setLayoutProperty(BASEMAP_LAYER, 'visibility', state.basemapVisible ? 'visible' : 'none')
+    if (map.isStyleLoaded() && map.getLayer(BASEMAP_LAYER)) apply()
+    else map.once('load', apply)
+  }, [state.basemapVisible])
 
   // --- draw mode: disable/enable normal map dragging so drag = draw, not pan ---
   useEffect(() => {

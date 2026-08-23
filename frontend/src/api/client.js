@@ -61,6 +61,62 @@ export function computeOverlay(payload) {
   return requestJson('/api/overlay/compute', { method: 'POST', body: JSON.stringify(payload) })
 }
 
+/**
+ * POST /api/overlay/compute/stream -- same computation as computeOverlay,
+ * but consumes real Server-Sent Events as the backend actually does the
+ * work (see backend/app/overlay/progress_stream.py's own docstring: this
+ * is genuine incremental progress, not a fabricated/animated bar).
+ * `onProgress(message)` fires for each progress event; the returned
+ * promise resolves with the same result shape computeOverlay's does, or
+ * rejects with an ApiError matching parseErrorDetail's shape (so
+ * existing error-rendering code doesn't need to know this used a
+ * different transport than computeOverlay).
+ *
+ * No EventSource here: the browser's native SSE client only supports
+ * GET with no custom body, and this needs a POST with a JSON payload --
+ * a plain fetch() + manually reading/parsing the streamed response body
+ * is the standard way to do SSE-over-POST, and keeps this file's own
+ * "thin wrappers, no new dependency" convention (see this file's header
+ * comment) rather than adding an SSE library for one endpoint.
+ */
+export async function computeOverlayStream(payload, onProgress) {
+  const response = await request('/api/overlay/compute/stream', { method: 'POST', body: JSON.stringify(payload) })
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+
+    // SSE frames are separated by a blank line ("\n\n") -- split off
+    // every COMPLETE frame currently in the buffer, leaving any trailing
+    // partial frame (a chunk boundary can land mid-frame) for the next read.
+    const frames = buffer.split('\n\n')
+    buffer = frames.pop()
+
+    for (const frame of frames) {
+      const line = frame.split('\n').find((l) => l.startsWith('data: '))
+      if (!line) continue
+      const event = JSON.parse(line.slice('data: '.length))
+
+      if (event.type === 'progress') {
+        onProgress(event.message)
+      } else if (event.type === 'done') {
+        return event.result
+      } else if (event.type === 'error') {
+        throw new ApiError(event.message, { status: response.status, code: event.error })
+      }
+    }
+  }
+
+  // The stream ended without ever sending a "done"/"error" terminal
+  // event -- a connection drop, not a clean completion. Never silently
+  // report success for this.
+  throw new ApiError('The compute stream ended unexpectedly before finishing.', { status: response.status })
+}
+
 /** Fetches the computed risk surface GeoTIFF's raw bytes from data_url. */
 export async function fetchRiskSurfaceBytes(dataUrl) {
   const response = await request(dataUrl)
@@ -70,4 +126,14 @@ export async function fetchRiskSurfaceBytes(dataUrl) {
 /** POST /api/overlay/criteria/breaks -- equal-interval/quantile/Jenks candidate reclassification breaks for one criterion over one AOI. */
 export function computeCriterionBreaks(payload) {
   return requestJson('/api/overlay/criteria/breaks', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+/** POST /api/overlay/report -- the vulnerability-classification/computation report. See backend/app/overlay/models.py's VulnerabilityReportRequest/Response. */
+export function generateReport(payload) {
+  return requestJson('/api/overlay/report', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+/** Absolute, downloadable URL for a backend-relative data_url (risk_surface/hazard_classes GeoTIFFs) -- a plain `<a href>` needs the full origin, unlike fetchRiskSurfaceBytes's own internal fetch(). */
+export function absoluteDataUrl(relativeUrl) {
+  return `${API_BASE_URL}${relativeUrl}`
 }

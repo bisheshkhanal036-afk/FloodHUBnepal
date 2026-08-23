@@ -67,28 +67,35 @@ def test_count_to_density_area_shrinks_at_higher_latitude():
     assert high_lat_density > low_lat_density
 
 
-def test_count_to_density_preserves_nan_nodata():
+def test_count_to_density_treats_nan_nodata_as_a_confirmed_zero_count():
+    """The real bug found live in this session: HRSL's own nodata means
+    "not a detected settlement" (a real, confirmed zero), not "unknown" --
+    treating it as unknown and propagating it as output nodata poisoned
+    the final risk surface with a ~50% speckled hole pattern wherever
+    population_density was used as a criterion. See this module's own
+    docstring for the live evidence (checked the raw source directly,
+    before any reprojection) and the HRSL documentation citation.
+    """
     transform = Affine(HRSL_PIXEL_DEG, 0, 85.30, 0, -HRSL_PIXEL_DEG, 27.72)
     array = np.array([[100.0, np.nan]])
 
     result = _count_to_density(array, transform, GEOGRAPHIC_CRS, nodata=np.nan)
 
-    assert np.isnan(result[0, 1])
+    assert not np.isnan(result[0, 1])
+    assert result[0, 1] == 0.0  # a real, confirmed zero density -- not nodata, not NaN
     assert not np.isnan(result[0, 0])
 
 
-def test_count_to_density_preserves_a_numeric_nodata_sentinel_exactly():
-    """A numeric sentinel (unlike NaN) would silently become a bogus
-    non-sentinel value if divided by area along with everything else
-    (-1 / area != -1) -- this must restore the exact original sentinel
-    at nodata pixels, not whatever the division happened to produce.
+def test_count_to_density_treats_a_numeric_nodata_sentinel_as_a_confirmed_zero_count_too():
+    """Same "nodata means zero" rule regardless of which sentinel value
+    the source happens to use for it -- not special-cased to NaN alone.
     """
     transform = Affine(HRSL_PIXEL_DEG, 0, 85.30, 0, -HRSL_PIXEL_DEG, 27.72)
     array = np.array([[100.0, -1.0]])
 
     result = _count_to_density(array, transform, GEOGRAPHIC_CRS, nodata=-1.0)
 
-    assert result[0, 1] == -1.0
+    assert result[0, 1] == 0.0
 
 
 def test_count_to_density_uses_flat_pixel_area_for_a_projected_crs():

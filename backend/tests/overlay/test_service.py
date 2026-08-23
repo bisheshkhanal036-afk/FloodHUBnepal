@@ -67,6 +67,73 @@ def test_successful_compute_returns_cache_key_grid_and_attribution(test_aoi, mon
     assert Path(result.data_url).exists()
 
 
+def test_on_progress_is_called_for_each_criterion_and_at_the_end(test_aoi, monkeypatch):
+    calls = []
+    _fake_resolve(monkeypatch, calls)
+    criteria = [
+        OverlayCriterionRequest(id="a", source="dem_elevation", reclassification_rules=[]),
+        OverlayCriterionRequest(id="b", source="dem_slope", reclassification_rules=[]),
+    ]
+    messages = []
+
+    compute_overlay(test_aoi, criteria, {"a": 0.5, "b": 0.5}, complete=True, on_progress=messages.append)
+
+    assert any("a" in m and "1/2" in m for m in messages)
+    assert any("b" in m and "2/2" in m for m in messages)
+    assert any("Combining 2 criteria" in m for m in messages)
+    assert messages[-1] == "Done."
+
+
+def test_on_progress_defaults_to_none_and_is_never_required(test_aoi, monkeypatch):
+    """Every existing caller (report.py included) doesn't pass on_progress
+    at all -- must behave identically to before this parameter existed.
+    """
+    calls = []
+    _fake_resolve(monkeypatch, calls)
+    criteria = [OverlayCriterionRequest(id="a", source="dem_elevation", reclassification_rules=[])]
+
+    result = compute_overlay(test_aoi, criteria, {"a": 1.0}, complete=True)  # no on_progress
+
+    assert len(result.cache_key) == 64
+
+
+def test_on_progress_mentions_masking_only_for_a_polygon_aoi(monkeypatch):
+    calls = []
+    _fake_resolve(monkeypatch, calls)
+    criteria = [OverlayCriterionRequest(id="a", source="dem_elevation", reclassification_rules=[])]
+
+    from shapely.geometry import shape
+
+    bbox = (85.30, 27.70, 85.32, 27.72)
+    triangle = {"type": "Polygon", "coordinates": [[[85.30, 27.70], [85.32, 27.70], [85.30, 27.72], [85.30, 27.70]]]}
+    from app.data.aoi import AOI
+
+    with_polygon = AOI(bbox_4326=bbox, polygon=shape(triangle))
+    bbox_only = AOI(bbox_4326=bbox)
+
+    messages_with_polygon = []
+    compute_overlay(with_polygon, criteria, {"a": 1.0}, complete=True, on_progress=messages_with_polygon.append)
+    messages_bbox_only = []
+    compute_overlay(bbox_only, criteria, {"a": 1.0}, complete=True, on_progress=messages_bbox_only.append)
+
+    assert any("Masking" in m for m in messages_with_polygon)
+    assert not any("Masking" in m for m in messages_bbox_only)
+
+
+def test_on_progress_skips_per_criterion_messages_on_a_full_cache_hit(test_aoi, monkeypatch):
+    calls = []
+    _fake_resolve(monkeypatch, calls)
+    criteria = [OverlayCriterionRequest(id="a", source="dem_elevation", reclassification_rules=[])]
+    compute_overlay(test_aoi, criteria, {"a": 1.0}, complete=True)  # warm the cache, no on_progress needed
+
+    messages = []
+    compute_overlay(test_aoi, criteria, {"a": 1.0}, complete=True, on_progress=messages.append)
+
+    assert not any("Resolving" in m for m in messages)  # _compute() never ran the second time
+    assert messages[0] == "Checking cache…"
+    assert messages[-1] == "Done."
+
+
 def test_source_warnings_are_collected_per_criterion(test_aoi, monkeypatch):
     """A source that flags a warning (e.g. hydrology.py's twi/
     drainage_density on a plain bbox AOI) must surface it on

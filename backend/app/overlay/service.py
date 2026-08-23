@@ -7,6 +7,7 @@ the API response's `data_url`.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -64,6 +65,7 @@ def compute_overlay(
     criteria: list[OverlayCriterionRequest],
     final_weights: dict[str, float],
     complete: bool,
+    on_progress: Callable[[str], None] | None = None,
 ) -> OverlayResult:
     """The full request-to-response pipeline for POST /api/overlay/compute.
 
@@ -73,6 +75,22 @@ def compute_overlay(
     still independently re-checks the actual weight sum too, so a caller
     that bypasses this `complete` flag (e.g. calling compute_risk_surface
     directly) doesn't lose that protection.
+
+    `on_progress`, if given, is called synchronously with a short
+    human-readable message at each meaningful step (before/after
+    resolving each criterion, before combining, before masking, before
+    writing the GeoTIFF) — purely additive, default None means exactly
+    the same behavior as before this parameter existed (every existing
+    caller, including report.py's own compute_overlay call, passes
+    nothing and is unaffected). Exists for POST /api/overlay/compute/
+    stream (router.py) to surface real progress to the frontend during
+    this call — not a fabricated/animated progress bar, an actual
+    callback fired from inside this exact function as it does the real
+    work, since a plain request/response cycle has no other way to
+    report incremental state mid-request. See progress_stream.py for how
+    that callback gets bridged out to an SSE response (this function
+    itself has and needs no knowledge of streaming/threading — it just
+    calls a plain function).
     """
     if not complete:
         raise OverlayValidationError(
@@ -94,11 +112,16 @@ def compute_overlay(
     ]
     cache_key = compute_cache_key(aoi, criteria_set)
 
+    def _notify(message: str) -> None:
+        if on_progress is not None:
+            on_progress(message)
+
     def _compute() -> tuple[RiskSurfaceResult, list[str], list[SourceWarning]]:
         rasters: list[CriterionRaster] = []
         attributions: set[str] = set()
         source_warnings: list[SourceWarning] = []
-        for criterion in criteria:
+        for i, criterion in enumerate(criteria, start=1):
+            _notify(f"Resolving {criterion.id} ({i}/{len(criteria)}, source: {criterion.source})…")
             reclassified, grid, attribution, warning = resolve_criterion_raster(
                 aoi, criterion.id, criterion.source, criterion.reclassification_rules
             )
@@ -106,7 +129,9 @@ def compute_overlay(
             attributions.add(attribution)
             if warning:
                 source_warnings.append(SourceWarning(criterion_id=criterion.id, message=warning))
+            _notify(f"{criterion.id} resolved")
 
+        _notify(f"Combining {len(criteria)} criteria into the risk surface…")
         risk_surface_result = compute_risk_surface(rasters, final_weights)
         # A basin selection's AOI carries its true polygon shape, not
         # just its bounding rectangle -- without this, the result always
@@ -115,17 +140,21 @@ def compute_overlay(
         # docstring). A plain drawn-bbox AOI has no polygon, so this is a
         # no-op for that case, exactly as before.
         if aoi.polygon is not None:
+            _notify("Masking to the basin's true shape…")
             risk_surface_result = mask_risk_surface_to_polygon(risk_surface_result, aoi.polygon_utm)
         return risk_surface_result, sorted(attributions), source_warnings
 
+    _notify("Checking cache…")
     risk_surface_result, attribution, source_warnings = cached_or_compute(
         "risk_surface", aoi, _compute, version=cache_key
     )
 
     tif_path = _risk_surface_tif_path(cache_key)
     if not tif_path.exists():
+        _notify("Writing the GeoTIFF…")
         write_risk_surface_geotiff(tif_path, risk_surface_result.risk_surface, risk_surface_result.grid, risk_surface_result.nodata)
 
+    _notify("Done.")
     return OverlayResult(
         cache_key=cache_key,
         risk_surface=risk_surface_result,

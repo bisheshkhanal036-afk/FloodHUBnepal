@@ -37,7 +37,15 @@ def isolated_cache_dir(tmp_path, monkeypatch):
 def no_local_sources_by_default(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "LOCAL_DEM_DIR", tmp_path / "raw" / "dem")
     monkeypatch.setattr(config, "LOCAL_WORLDCOVER_DIR", tmp_path / "raw" / "worldcover")
+    monkeypatch.setattr(config, "LOCAL_POPULATION_DIR", tmp_path / "raw" / "population")
     monkeypatch.setattr(config, "LOCAL_OSM_DIR", tmp_path / "raw" / "osm")
+    # Computed once from the ORIGINAL LOCAL_OSM_DIR at import time, so
+    # monkeypatching LOCAL_OSM_DIR alone doesn't move it -- same gap
+    # tests/data/conftest.py had until it was caught there; report.py's
+    # tests call get_osm_features directly (not through resolve_
+    # criterion_raster, unlike this file's other overlay tests), so this
+    # suite needs the same isolation tests/data/ already has.
+    monkeypatch.setattr(config, "LOCAL_OSM_PROCESSED_DIR", tmp_path / "raw" / "osm" / "processed")
     monkeypatch.setattr(config, "OSM_R2_BUILDINGS_URL", None)
     monkeypatch.setattr(config, "OSM_R2_ROADS_URL", None)
     monkeypatch.setattr(config, "OSM_R2_WATERWAYS_URL", None)

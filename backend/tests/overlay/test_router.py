@@ -109,6 +109,51 @@ def test_compute_endpoint_rejects_unrecognized_source(monkeypatch):
     assert response.status_code == 422
 
 
+# --- POST /api/overlay/compute/stream ---
+
+
+def _parse_sse_body(text):
+    import json
+
+    events = []
+    for block in text.strip().split("\n\n"):
+        if not block:
+            continue
+        assert block.startswith("data: ")
+        events.append(json.loads(block[len("data: ") :]))
+    return events
+
+
+def test_compute_stream_endpoint_returns_sse_content_type_and_a_done_event(monkeypatch):
+    _fake_resolve(monkeypatch)
+
+    response = client.post("/api/overlay/compute/stream", json=_payload({"a": 1.0}))
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    events = _parse_sse_body(response.text)
+    assert events[-1]["type"] == "done"
+    assert len(events[-1]["result"]["cache_key"]) == 64
+    assert any(e["type"] == "progress" for e in events)
+
+
+def test_compute_stream_endpoint_returns_an_error_event_not_an_http_error_status(monkeypatch):
+    """An SSE response's HTTP status is always 200 by the time streaming
+    starts -- a request-level problem (here, an unrecognized source)
+    still comes back as HTTP 200 with an in-band "error" event, unlike
+    POST /compute's own 422 for the exact same bad payload.
+    """
+    payload = _payload({"a": 1.0})
+    payload["criteria"][0]["source"] = "not_a_real_source"
+
+    response = client.post("/api/overlay/compute/stream", json=payload)
+
+    assert response.status_code == 200
+    events = _parse_sse_body(response.text)
+    assert events[-1]["type"] == "error"
+    assert events[-1]["error"] == "overlay_validation_error"
+
+
 # --- GET /api/overlay/risk_surface/{cache_key}.tif ---
 
 

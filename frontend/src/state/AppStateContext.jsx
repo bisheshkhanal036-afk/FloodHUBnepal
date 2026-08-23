@@ -25,8 +25,19 @@ function initialTheme() {
 }
 
 function initialState() {
+  const theme = initialTheme()
   return {
-    theme: initialTheme(),
+    theme,
+
+    // Independent of `theme` (the app chrome's own light/dark CSS) --
+    // the map's basemap is its own choice among several free, no-key
+    // raster tile providers (see components/MapView.jsx's BASEMAPS).
+    // Defaulted to match the initial theme purely so the first paint
+    // looks coherent (a dark sidebar over a bright OSM map would look
+    // like a bug on first load), not because the two are coupled after
+    // that -- the user can pick any basemap regardless of app theme.
+    basemapStyle: theme === 'dark' ? 'dark' : 'street',
+    basemapVisible: true,
 
     aoiMode: 'draw',
     aoi: null, // { bbox: [minx,miny,maxx,maxy], polygon: geom|null, source: 'draw'|'basin', basinId?, label? }
@@ -60,7 +71,16 @@ function initialState() {
     // reset rather than a partial one).
     classification: {},
 
-    overlay: { status: 'idle', result: null, error: null, criteriaUsed: null, weightsUsed: null },
+    overlay: { status: 'idle', result: null, error: null, criteriaUsed: null, weightsUsed: null, progressLog: [] },
+
+    // The vulnerability-classification/computation report (POST /api/
+    // overlay/report) -- a separate, heavier, optional follow-up to a
+    // successful compute, not part of the core AOI->criteria->weighting
+    // ->compute flow, so it gets its own status slice rather than being
+    // folded into `overlay`. Reset whenever a new compute starts
+    // (OVERLAY_LOADING) -- any existing report describes a result that's
+    // about to be superseded, so it can't stay displayed as current.
+    report: { status: 'idle', result: null, error: null },
   }
 }
 
@@ -107,6 +127,12 @@ function reducer(state, action) {
       return { ...state, theme: action.theme }
     }
 
+    case 'SET_BASEMAP_STYLE':
+      return { ...state, basemapStyle: action.style }
+
+    case 'TOGGLE_BASEMAP_VISIBLE':
+      return { ...state, basemapVisible: !state.basemapVisible }
+
     case 'SET_AOI_MODE':
       return { ...state, aoiMode: action.mode }
 
@@ -116,7 +142,7 @@ function reducer(state, action) {
         aoi: action.aoi,
         areaWarning: null,
         classification: resetClassificationForCheckedCriteria(state.criteriaEnabled),
-        overlay: { status: 'idle', result: null, error: null, criteriaUsed: null, weightsUsed: null },
+        overlay: { status: 'idle', result: null, error: null, criteriaUsed: null, weightsUsed: null, progressLog: [] },
       }
 
     case 'CLEAR_AOI':
@@ -125,7 +151,7 @@ function reducer(state, action) {
         aoi: null,
         selectedBasinId: null,
         classification: {},
-        overlay: { status: 'idle', result: null, error: null, criteriaUsed: null, weightsUsed: null },
+        overlay: { status: 'idle', result: null, error: null, criteriaUsed: null, weightsUsed: null, progressLog: [] },
       }
 
     case 'SET_AREA_WARNING':
@@ -158,7 +184,7 @@ function reducer(state, action) {
         ahpMatrices: resyncWithinClusterMatrices(state.ahpMatrices, criteriaEnabled),
         manualWeights: resyncManualWeights(state.manualWeights, criteriaEnabled),
         classification,
-        overlay: { status: 'idle', result: null, error: null, criteriaUsed: null, weightsUsed: null },
+        overlay: { status: 'idle', result: null, error: null, criteriaUsed: null, weightsUsed: null, progressLog: [] },
       }
     }
 
@@ -274,7 +300,20 @@ function reducer(state, action) {
       return { ...state, ahp: { status: 'error', result: null, error: action.error } }
 
     case 'OVERLAY_LOADING':
-      return { ...state, overlay: { status: 'loading', result: null, error: null, criteriaUsed: null, weightsUsed: null } }
+      return {
+        ...state,
+        overlay: { status: 'loading', result: null, error: null, criteriaUsed: null, weightsUsed: null, progressLog: [] },
+        report: { status: 'idle', result: null, error: null },
+      }
+    // Real, backend-sent progress messages (POST /api/overlay/compute/
+    // stream -- see api/client.js's computeOverlayStream and backend/
+    // app/overlay/progress_stream.py's own docstring for why this is
+    // genuine incremental progress, not an animated/fabricated bar).
+    // Appended one at a time as each SSE event arrives, kept (not
+    // cleared) through LOADED/ERROR below so the finished log stays
+    // visible -- only OVERLAY_LOADING resets it, for the next compute.
+    case 'OVERLAY_PROGRESS':
+      return { ...state, overlay: { ...state.overlay, progressLog: [...state.overlay.progressLog, action.message] } }
     case 'OVERLAY_LOADED':
       // criteriaUsed/weightsUsed are a snapshot of exactly what was sent
       // to POST /api/overlay/compute for *this* result (ComputePanel
@@ -290,10 +329,24 @@ function reducer(state, action) {
           error: null,
           criteriaUsed: action.criteriaUsed,
           weightsUsed: action.weightsUsed,
+          progressLog: state.overlay.progressLog,
         },
       }
     case 'OVERLAY_ERROR':
-      return { ...state, overlay: { status: 'error', result: null, error: action.error, criteriaUsed: null, weightsUsed: null } }
+      return {
+        ...state,
+        overlay: {
+          status: 'error', result: null, error: action.error, criteriaUsed: null, weightsUsed: null,
+          progressLog: state.overlay.progressLog,
+        },
+      }
+
+    case 'REPORT_LOADING':
+      return { ...state, report: { status: 'loading', result: null, error: null } }
+    case 'REPORT_LOADED':
+      return { ...state, report: { status: 'loaded', result: action.result, error: null } }
+    case 'REPORT_ERROR':
+      return { ...state, report: { status: 'error', result: null, error: action.error } }
 
     default:
       return state

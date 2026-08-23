@@ -12,6 +12,7 @@ import Logo from './Logo'
 import WeightingPanel from './WeightingPanel'
 import ComputePanel from './ComputePanel'
 import ResultPanel from './ResultPanel'
+import ReportPanel from './ReportPanel'
 
 export default function Sidebar({ onBackToLanding }) {
   const { state, dispatch } = useAppState()
@@ -76,6 +77,13 @@ export default function Sidebar({ onBackToLanding }) {
           <h3>4. Compute</h3>
           <ComputePanel />
           <ResultPanel />
+        </section>
+      )}
+
+      {state.overlay.status === 'loaded' && (
+        <section className="sidebar__section">
+          <h3>5. Vulnerability report</h3>
+          <ReportPanel />
         </section>
       )}
     </aside>

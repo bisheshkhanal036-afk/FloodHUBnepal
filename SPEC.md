@@ -783,9 +783,297 @@ them.
   on (not yet wired into any live API response — currently internal to
   compute.py/service.py's own hashing — updated for documentation
   accuracy regardless).
-- Not yet implemented: AOI persistence, vulnerability classification
-  (discrete display classes derived from the continuous risk surface),
-  and shelter identification. The GeoTIFF file route is a simple
+- Backend: **vulnerability classification + computation reporting**,
+  hazard-zone exposure interpretation (buildings classified by which
+  discrete 1-5 hazard class they fall in — matching the Siraha/Lee et
+  al. approach; NOT a separate building-quality/susceptibility
+  dimension). Four new small modules under `app/overlay/`, each one
+  part of the pipeline:
+  - `hazard_classes.py`: inverts risk_surface's own R_norm = (R-1)/(5-1)
+    formula (R in [1,5], the un-normalized weighted-sum score) back into
+    discrete classes 1-5, ROUND-NEAREST (not floor — floor would
+    systematically bias every pixel down by up to just-under-1 whole
+    class). Labels: 1=Very Low … 5=Very High. This is a
+    re-discretization of a continuous COMPOSITE score blended across
+    however many criteria contributed at that pixel, not "recovering" a
+    single lost per-pixel class — standard practice for this kind of
+    report, documented explicitly so it's never mistaken for the latter.
+  - `building_classification.py`: tags each OSM building with the
+    hazard class its footprint falls in, via MAJORITY-OVERLAP (not
+    centroid) — a large/elongated building can genuinely straddle a
+    class boundary at this project's 10m resolution, and centroid
+    sampling would report whichever class happens to contain one
+    arbitrary point. Implemented as ONE labeled rasterize pass (every
+    building's footprint burned into a single "which building owns this
+    pixel" raster at once) + one vectorized groupby-mode, not a per-
+    building rasterize loop — verified live over a real ~28 km² AOI
+    (87,402 real buildings) without becoming the bottleneck. Ties
+    resolve to the higher class (never understate risk); a footprint
+    too small to rasterize to any pixel falls back to a direct centroid
+    sample rather than going unclassified.
+  - `zonal_stats.py`: per-hazard-class area/population/building-count.
+    Population is Σ(density × pixel_area_km²) over each class's pixels
+    — NOT a raw Σ(density) — the same count-vs-density unit correction
+    established for population.py earlier this phase, one layer up.
+  - `report.py`: assembles the full report — AOI (bbox/polygon/area_km²/
+    basin id+support_status if supplied), the actual submitted criteria
+    (id/source/reclassification_rules, fully generic over however many
+    were requested — never a fixed/assumed set), weighting (method +
+    the real AHP pairwise-matrix breakdown when applicable), the Part 3
+    zonal table, and headline figures (totals, and the count/% in
+    hazard classes 4-5 specifically). A criterion's display `name` and
+    `cluster` aren't backend concepts at all (frontend/src/config/
+    criteria.js is the only place either currently lives) — `name` is
+    an optional pass-through on the report request, defaulting to the
+    criterion's own id; `cluster` is derived from the AHP breakdown's
+    own within_cluster_comparisons when weighting.method='ahp' (the
+    only place the backend can know it), null under equal weighting.
+  - **Exposed as `POST /api/overlay/report`, a separate endpoint, NOT a
+    bare `GET` by cache_key** — the weighting section (AHP pairwise
+    matrices, consistency ratios) genuinely isn't derivable from
+    cache_key alone, since the base overlay engine (`compute_overlay`)
+    only ever receives the final flat weights, never AHP-level detail;
+    this is a real architectural fact, not a style preference. Reuses
+    `compute_overlay`'s own risk-surface cache untouched (a report
+    request for already-computed params is a cache hit there, not a
+    recompute); the heavier new work (hazard classes, building spatial
+    join, zonal stats) is cached separately under the SAME cache_key.
+    **New cross-phase dependency, confirmed as a deliberate architectural
+    decision, not silent drift**: Phase 1 (AHP) and Phase 2/3 (data
+    layer/overlay) had been kept strictly decoupled until now (the base
+    overlay engine only ever received AHP's *output* — flat
+    `final_weights` — never anything upstream of it). This feature
+    breaks that: `overlay/models.py` imports AHP's Pydantic shapes
+    (`PairwiseMatrixInput`, `PairwiseResultOut`), and — the part that
+    actually matters here, not just borrowed type definitions —
+    `overlay/report.py` imports and calls `app.ahp.hierarchy.
+    compute_hierarchy` directly, i.e. **the overlay layer now depends on
+    AHP's actual computation**, not merely its data shapes. Accepted
+    because the alternative (re-deriving eigenvector weights/consistency
+    ratios independently inside `overlay/`) would risk the two
+    implementations silently diverging over time; reusing the one real
+    implementation guarantees they can't. A future refactor that further
+    separates these phases needs to account for this dependency
+    explicitly, not rediscover it.
+  - **A cheap, deliberate consistency check between `final_weights` and
+    the recomputed AHP breakdown**, added after review: nothing
+    otherwise forces the two to agree — a caller could submit stale
+    `final_weights` alongside freshly edited pairwise matrices, and the
+    report displays both. `report._weighting_consistency_warning`
+    compares `final_weights` against `compute_hierarchy`'s own
+    freshly-recomputed `final_weights` (tolerance `1e-6`, matching this
+    codebase's existing floating-point-equality convention —
+    `compute.py`'s `_WEIGHT_SUM_TOLERANCE`, `ahp/constants.py`'s
+    `VALIDATION_TOLERANCE`) and flags either a numeric discrepancy or a
+    mismatched criterion-id set. Never raises and never changes the
+    computed risk surface (still computed from `final_weights` exactly
+    as submitted, same trust model `POST /compute` already has) — surfaced
+    as `weighting.consistency_warning` (`null` when they agree, or under
+    equal weighting, where there's nothing to cross-check) purely so a
+    silent mismatch can never quietly undermine the report's own
+    credibility. **Renormalizes the recomputed AHP weights before
+    comparing** — caught while wiring up the frontend, not in the
+    original design: `frontend/src/state/AppStateContext.jsx`'s
+    `useFinalWeights` (AHP mode) renormalizes `compute_hierarchy`'s raw
+    per-criterion weights over just the currently-*selected* criteria
+    whenever some canonical cluster has none selected (a normal,
+    explicitly-supported case, not an edge case — see this file's own
+    note on Exposure sometimes being empty) before ever submitting to
+    `POST /compute`, since an incomplete AHP hierarchy's raw weights
+    don't sum to 1 on their own and `compute_risk_surface` always
+    requires exactly that. Comparing this endpoint's own fresh
+    `compute_hierarchy` recompute against `final_weights` *without* the
+    same renormalization would have flagged that everyday case as a
+    false "mismatch" on every partial-cluster-coverage request — the
+    single most common real usage pattern, not a rare one. Fixed by
+    renormalizing the recomputed weights over their own total before
+    comparing (a no-op when every cluster is already covered, since that
+    total is already ~1) — verified live end to end via the actual
+    frontend flow after the fix, not just in tests.
+  - **`GET /api/overlay/hazard_classes/{cache_key}.tif`**: the discrete
+    1-5 hazard-class raster as a standalone downloadable GeoTIFF — often
+    what a user actually wants for GIS use, more than the continuous
+    surface. Deliberately NOT tied to POST /report at all: derived and
+    materialized lazily on first request straight from the already-
+    materialized risk_surface .tif for that cache_key (no AOI needed,
+    no recompute) — reachable immediately after a plain POST /compute,
+    whose own response now also advertises this URL
+    (`hazard_classes_data_url`) alongside the existing risk-surface one.
+  - Verified live end to end against the real running backend, not just
+    tests: a real 2-criterion report over a real ~28 km² AOI (48,139 of
+    87,402 real buildings classified — the rest correctly unclassified
+    where population_density itself has real coverage gaps, propagating
+    through risk_surface's own any-nodata-poisons-the-pixel rule), 5
+    zonal classes with real area/population/building figures, and the
+    hazard-class GeoTIFF downloading correctly from that same run.
+  - 41 new tests (hazard-class bucketing incl. the round-vs-floor
+    boundary case; zonal-stats density×area math incl. the "would have
+    been off by ~10,000x" regression case; building classification's
+    majority-vs-centroid disagreement case, hand-constructed so the two
+    rules provably give different answers, plus a genuine tie and both
+    small-footprint/outside-AOI fallbacks; report assembly in both
+    equal- and AHP-weighting modes; the final_weights-vs-recomputed-AHP
+    consistency check's match/diverge/mismatched-criteria cases; a full
+    real-fixtures integration test through Phase 1-4). 270 backend tests
+    passing total, zero regressions. Also fixed while in this area: `tests/overlay/
+    conftest.py` had the same `LOCAL_OSM_PROCESSED_DIR`/
+    `LOCAL_POPULATION_DIR` test-isolation gap `tests/data/conftest.py`
+    was caught and fixed for earlier this phase — report.py calls
+    `get_osm_features`/`get_population` directly (not through
+    resolve_criterion_raster, unlike every other test in this suite),
+    so it needed the same isolation.
+- Frontend: exposed the vulnerability-classification/report feature —
+  two pieces, both gated on a successful compute (`state.overlay.status
+  === 'loaded'`), added in the same pass at the user's request after an
+  initial backend-only implementation left nothing in the UI to trigger
+  either endpoint.
+  - `ResultPanel.jsx`: "Download risk surface (.tif)" / "Download hazard
+    classes (.tif)" links, straight from the existing compute
+    response's `data_url`/`hazard_classes_data_url` (`api/client.js`'s
+    new `absoluteDataUrl` — a plain `<a href>` needs the full backend
+    origin, unlike `fetchRiskSurfaceBytes`'s own internal `fetch()`; a
+    cross-origin anchor click is a normal top-level navigation, not a
+    script-initiated read, so the backend's `Content-Disposition:
+    attachment` header triggers a real download with no CORS
+    involvement either way).
+  - New `ReportPanel.jsx`, a new "5. Vulnerability report" sidebar
+    section: a "Generate report" button that assembles `POST
+    /api/overlay/report`'s request from state already captured at
+    compute time (`criteriaUsed`/`weightsUsed` — the exact snapshot
+    `ResultPanel` already reads, so the report can never describe a
+    different result than what's on screen) plus what only the frontend
+    knows and the backend has no registry for: each criterion's display
+    `name` (`config/criteria.js`), the weighting `method` (`equal` |
+    `ahp` | `manual` — see below), the raw AHP pairwise matrices
+    (`state.ahpMatrices`, already the exact shape the endpoint expects)
+    when relevant, and `hybas_id`/`support_status` for a basin-derived
+    AOI (looked up from the already-loaded basins GeoJSON by id, not
+    tracked as its own state field). Renders the zonal-stats table,
+    high-risk headline figures, the weighting breakdown (surfacing
+    `consistency_warning` as a visible inline warning when present), and
+    its own copy of the two download links (the report's own
+    `risk_surface_data_url`/`hazard_classes_data_url`, not assumed
+    identical to `ResultPanel`'s — same cache_key in practice, but
+    fetched independently rather than threaded through as a prop).
+    Individual buildings from the report's GeoJSON are NOT rendered on
+    the map (a real AOI can return tens of thousands — verified live
+    earlier in this phase, 87,402 for one ~28 km² test case — a map
+    overlay at that scale is its own real feature, not a natural
+    extension of this pass).
+  - **`ReportWeightingInput.method` widened to accept `"manual"`**,
+    alongside the `"equal"`/`"ahp"` the brief named explicitly — the
+    frontend has a third weighting mode (raw typed weights, normalized;
+    `state.weightMode === 'manual'`), and mislabeling it as `"equal"` in
+    the request would misrepresent how the weights were actually
+    produced in the report meant to explain exactly that.
+  - Verified live end to end through the real running app (not just a
+    backend curl check): drew an AOI, selected a criterion, computed,
+    confirmed both `ResultPanel` download links work, generated a
+    report, and confirmed every section renders correctly — headline
+    stats, the 5-row zonal table, "Method: equal" with no
+    `consistency_warning` shown (correctly, since equal weighting has
+    nothing to cross-check) — with zero browser console errors
+    throughout.
+- Backend: **fixed a real bug — `population_density` left a ~50%,
+  speckled gap pattern in the risk surface**, reported live and traced
+  to root cause. Not a reprojection/resampling artifact (checked the
+  raw HRSL source directly, before any reprojection in this pipeline —
+  the same ~48-50% nodata rate was already there, even deep in central
+  Kathmandu's built-up core). The actual cause: HRSL's own data model
+  assigns a population value ONLY to pixels its settlement classifier
+  detected as built-up, deliberately leaving non-settlement pixels
+  (roads, gaps, unbuilt land — entirely normal at 30m resolution even
+  in a dense city) without a value, rather than an explicit 0 (Yetman,
+  HRSL technical presentation, IUSSP — CIESIN/Meta's own documentation:
+  "zeroes indicate not-settled areas" in HRSL's settlement-classification
+  step). This pipeline was treating that nodata as "unknown", which
+  then poisoned the FINAL risk surface at that pixel
+  (compute_risk_surface's any-nodata-poisons-the-pixel rule) — using
+  population_density as a criterion meant roughly half of any AOI got
+  no risk score at all. Fixed in `population.py`'s `_count_to_density`:
+  HRSL nodata now becomes a confirmed density of 0 (Nepal is always
+  within HRSL's real global coverage, so this reading is correct here),
+  not a value propagated as output nodata. Verified live, before/after,
+  against the real bucket over the same AOI: risk-surface nodata dropped
+  from 49.97% to 3.18% (the residual is genuine reprojection-edge
+  nodata — grid cells outside the actual read window's real footprint —
+  a different, legitimate case, untouched by this fix). 2 existing
+  `_count_to_density` tests updated to assert the new (correct)
+  zero-not-nodata behavior; 271 backend tests passing, zero regressions.
+- Frontend: **basemap toggle + 3 additional free basemaps**. New
+  `MapView.jsx` `BasemapControl` (a plain MapLibre `IControl`, top-left,
+  next to the existing zoom control) — a dropdown among 5 providers
+  (Street/OSM, Light/CARTO Positron, Dark/CARTO Dark Matter, Satellite/
+  Esri World Imagery, Topographic/OpenTopoMap) plus a show/hide toggle
+  for the basemap layer entirely (useful to see just the risk-surface/
+  AOI/basin layers without street-map clutter underneath). Independent
+  of the app's own light/dark theme now (previously the map's tiles
+  were tied 1:1 to `state.theme`) — `state.basemapStyle`/
+  `basemapVisible` are their own state, defaulted from the initial
+  theme purely so first paint looks coherent, not coupled after that.
+  Every new provider was verified live before being added (a real tile
+  fetch confirmed as a genuine 256x256 image, not an error page with a
+  200 status — the same diligence this project's original OSM/CARTO
+  pair already had) — CARTO Voyager and Esri's own topographic style
+  were also verified live but left out as redundant with Street and
+  OpenTopoMap respectively, to keep the picker to a genuinely
+  differentiated set rather than every option merely because it's free.
+  Switching providers fully removes+re-adds the raster source/layer
+  (not just `setTiles()` on one persistent source) specifically so
+  MapLibre's `AttributionControl` picks up each provider's own required
+  credit line — Esri's and OpenTopoMap's licenses require different
+  attribution text than OSM/CARTO's, verified live that the displayed
+  attribution actually changes per provider, not just the tiles.
+- Backend + frontend: **real compute progress**, not a fabricated/
+  animated bar. `POST /api/overlay/compute` remains completely
+  unchanged (still a plain JSON request/response — any non-interactive
+  API caller, and `report.py`'s own internal reuse of `compute_overlay`,
+  are unaffected); a new sibling `POST /api/overlay/compute/stream`
+  streams real Server-Sent Events as `compute_overlay` actually does the
+  work. `compute_overlay` gained one additive parameter,
+  `on_progress: Callable[[str], None] | None = None` (default `None` —
+  every existing caller is byte-for-byte unaffected), called at each
+  meaningful step: cache check, before/after resolving each criterion
+  (`"Resolving {id} ({i}/{n}, source: {source})…"`), combining into the
+  risk surface, masking to a basin's true shape (only when the AOI has
+  a polygon), writing the GeoTIFF, and a final `"Done."`. New
+  `progress_stream.py` bridges that synchronous callback out to SSE: a
+  plain Python generator can't `yield` from a callback several calls
+  deep inside an already-executing frame, so `compute_overlay` runs in
+  a background thread (pushing messages onto a `queue.Queue`) while the
+  route handler's own generator polls that queue and yields each
+  message as it arrives — the route handler is already a plain
+  (non-`async`) `def`, which FastAPI runs in its own worker thread
+  automatically, so no asyncio-level bridging was needed on top of
+  that. Terminates in exactly one `{"type": "done", "result": ...}`
+  (same shape `POST /compute`'s own body has) or
+  `{"type": "error", "error": str, "message": str}` — an SSE response's
+  HTTP status is always 200 by the time streaming starts, so errors
+  (including a bare `except Exception`, deliberately never silently
+  swallowed) surface in-band rather than as a 4xx/5xx the way `POST
+  /compute` itself still does. Frontend: `api/client.js`'s new
+  `computeOverlayStream` (a plain `fetch()` + manual SSE-frame parsing —
+  the browser's native `EventSource` only supports GET with no body,
+  and this needs POST with a JSON payload; kept dependency-free rather
+  than pulling in an SSE library for one endpoint) replaces
+  `ComputePanel.jsx`'s use of the plain `computeOverlay`. Each progress
+  message is appended to a new `state.overlay.progressLog` (a new
+  `OVERLAY_PROGRESS` action; reset only on `OVERLAY_LOADING`, kept
+  through `LOADED`/`ERROR` so the finished log stays visible) and
+  rendered live as a checklist below the compute button, auto-scrolled
+  to the latest entry. Verified live end to end, not just in tests: a
+  real `curl --no-buffer` capture of the raw SSE bytes showed genuinely
+  time-spaced events (not all arriving in the same instant, which would
+  indicate silent buffering), and the real running frontend showed the
+  log populating and auto-scrolling correctly during a real compute.
+  9 new backend tests (the callback's own call sequence and cache-hit
+  short-circuit in `test_service.py`, the SSE event generator's success/
+  validation-error/data-source-error/unexpected-exception paths in the
+  new `test_progress_stream.py`, and the actual HTTP streaming response
+  in `test_router.py`) — 281 backend tests passing total, zero
+  regressions.
+- Not yet implemented: AOI persistence, and shelter identification. The
+  GeoTIFF file route is a simple
   direct-read endpoint, not a general static-asset server or CDN — fine
   for local dev and this phase's needs, but worth revisiting if the
   cache grows large or needs to be served from object storage in a real

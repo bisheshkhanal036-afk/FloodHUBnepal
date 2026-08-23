@@ -27,3 +27,27 @@ def write_risk_surface_geotiff(path: Path, array: np.ndarray, grid: AOIGrid, nod
         nodata=nodata,
     ) as dst:
         dst.write(array, 1)
+
+
+def write_hazard_class_geotiff(path: Path, array: np.ndarray, grid: AOIGrid, nodata: int) -> None:
+    """Same shape as write_risk_surface_geotiff, but uint8/single-integer-
+    band for the discrete 1-5 hazard-class raster (hazard_classes.py) --
+    a separate function (not a shared one parameterized by dtype) since
+    the two are conceptually different products a user downloads for
+    different reasons (continuous score vs. discrete GIS classes), and
+    keeping them as two small, obvious functions costs nothing.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=grid.height,
+        width=grid.width,
+        count=1,
+        dtype="uint8",
+        crs=grid.crs,
+        transform=grid.transform,
+        nodata=nodata,
+    ) as dst:
+        dst.write(array, 1)

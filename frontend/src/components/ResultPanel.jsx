@@ -6,6 +6,7 @@
 // reclassified), read from state.overlay.criteriaUsed/weightsUsed --
 // a snapshot of exactly what was submitted for *this* result, not the
 // live (possibly since-changed) criteria/weighting panels.
+import { absoluteDataUrl } from '../api/client'
 import { CRITERIA_BY_ID } from '../config/criteria'
 import { RISK_LEGEND_STOPS } from '../lib/colorRamp'
 import { useAppState } from '../state/AppStateContext'
@@ -36,6 +37,15 @@ export default function ResultPanel() {
           <span>0.0 (low risk)</span>
           <span>1.0 (high risk)</span>
         </div>
+      </div>
+
+      <div className="result-panel__downloads">
+        <a href={absoluteDataUrl(result.data_url)} className="result-panel__download-link">
+          Download risk surface (.tif)
+        </a>
+        <a href={absoluteDataUrl(result.hazard_classes_data_url)} className="result-panel__download-link">
+          Download hazard classes (.tif)
+        </a>
       </div>
 
       {result.source_warnings.length > 0 && (

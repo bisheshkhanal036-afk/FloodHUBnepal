@@ -11,7 +11,12 @@ ROUTER_PREFIX = "/api/overlay"
 # A FastAPI/Starlette path pattern (the literal {cache_key} is a path
 # parameter placeholder, not a Python format placeholder).
 RISK_SURFACE_PATH_PATTERN = "/risk_surface/{cache_key}.tif"
+HAZARD_CLASSES_PATH_PATTERN = "/hazard_classes/{cache_key}.tif"
 
 
 def risk_surface_url(cache_key: str) -> str:
     return f"{ROUTER_PREFIX}/risk_surface/{cache_key}.tif"
+
+
+def hazard_classes_url(cache_key: str) -> str:
+    return f"{ROUTER_PREFIX}/hazard_classes/{cache_key}.tif"
