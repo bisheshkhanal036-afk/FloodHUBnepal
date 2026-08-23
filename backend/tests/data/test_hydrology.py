@@ -421,6 +421,29 @@ def test_get_drainage_density_cache_busts_when_threshold_changes(monkeypatch):
     assert (high_threshold.drainage_density[still_valid] == 0.0).all()
 
 
+def test_get_drainage_density_threshold_cells_param_overrides_config_without_mutating_it(monkeypatch):
+    """The per-request override (POST /api/overlay/compute's
+    stream_threshold_cells, threaded down through sources.py) is a
+    function PARAMETER, not a config monkeypatch -- a separate code path
+    from the test above, and the one an actual frontend-driven request
+    exercises.
+    """
+    grid = _small_grid()
+    monkeypatch.setattr("app.data.hydrology.get_dem", lambda aoi: _fake_dem_result(_V_VALLEY_ELEVATION, grid))
+    monkeypatch.setattr(config, "DRAINAGE_DENSITY_THRESHOLD_CELLS", 5)
+    aoi = AOI(bbox_4326=TEST_AOI_BBOX_4326)
+
+    default = get_drainage_density(aoi)
+    overridden = get_drainage_density(aoi, threshold_cells=10_000)
+
+    assert not np.array_equal(default.drainage_density, overridden.drainage_density)
+    # The override must not leak back into the config default -- a later
+    # caller that doesn't pass threshold_cells must still get the
+    # config-driven result, not the last override anyone happened to pass.
+    assert get_drainage_density(aoi).drainage_density is not None
+    assert np.array_equal(get_drainage_density(aoi).drainage_density, default.drainage_density)
+
+
 # --- HAND (Height Above Nearest Drainage) ---
 #
 # Every expected number below was hand-verified against a direct pysheds
@@ -440,6 +463,21 @@ def test_get_drainage_density_cache_busts_when_threshold_changes(monkeypatch):
 # the explicit instruction to reuse that warning rather than invent a
 # second channel, get_hand still surfaces the same warning text/field on
 # a bbox AOI. Flagged as a decision to confirm.
+#
+# A SEPARATE, larger real-world finding (confirmed live against a real
+# ~1518x1550 Kathmandu Valley grid, not just these synthetic fixtures):
+# an internal pit conditioning didn't fully resolve -- not just the
+# outer edge -- also breaks HAND for its entire upstream contributing
+# area, since HAND needs a full downstream trace to succeed while flow
+# accumulation only needs a cell's own upstream sum. Measured live:
+# ~12% of a real AOI, vs. ~3% base-invalid from pits/edges alone. See
+# get_hand's own docstring for the full write-up, and
+# test_internal_unresolved_pit_propagates_nodata_upstream below for a
+# minimal, deterministic reproduction. Decision (confirmed): documented
+# as a known limitation, not fixed -- a fix would mean either changing
+# DEM conditioning (risking TWI/drainage_density's own results too) or
+# redefining what counts as a valid drainage reference, both real
+# methodology choices, not bug fixes.
 
 
 def test_compute_hand_raster_hand_verified_on_the_v_valley_dem():
@@ -593,3 +631,64 @@ def test_get_hand_cache_busts_when_drainage_threshold_changes(monkeypatch):
     # earlier computation despite the config change.
     assert not np.array_equal(low_threshold.hand, high_threshold.hand)
     assert (high_threshold.hand == HYDROLOGY_NODATA).all()
+
+
+def test_get_hand_threshold_cells_param_overrides_config_without_mutating_it(monkeypatch):
+    """Same per-request-override code path as
+    test_get_drainage_density_threshold_cells_param_overrides_config_
+    without_mutating_it, for get_hand -- the actual mechanism a real
+    POST /api/overlay/compute request with stream_threshold_cells set
+    exercises (a function parameter, not a config monkeypatch).
+    """
+    grid = _small_grid()
+    monkeypatch.setattr("app.data.hydrology.get_dem", lambda aoi: _fake_dem_result(_V_VALLEY_ELEVATION, grid))
+    monkeypatch.setattr(config, "DRAINAGE_DENSITY_THRESHOLD_CELLS", 9)
+    aoi = AOI(bbox_4326=TEST_AOI_BBOX_4326)
+
+    default = get_hand(aoi)
+    overridden = get_hand(aoi, threshold_cells=10_000)
+
+    assert not np.array_equal(default.hand, overridden.hand)
+    assert (overridden.hand == HYDROLOGY_NODATA).all()
+    # No leakage back into the config-driven default for a later plain call.
+    assert np.array_equal(get_hand(aoi).hand, default.hand)
+
+
+def test_internal_unresolved_pit_propagates_nodata_upstream(monkeypatch):
+    """A KNOWN, real-world limitation confirmed live against a real
+    Kathmandu Valley AOI (~1518x1550 pixels, ~12% of the grid affected --
+    see get_hand's own docstring for the full live-verification numbers),
+    reproduced here as a small, deterministic case: get_hand's outer-
+    1-pixel-ring unresolvability (the other documented edge case) is a
+    purely geometric effect present even with zero real depressions --
+    THIS is the separate, larger effect that only shows up with an
+    internal pit pysheds' conditioning didn't fully resolve. A hand-
+    crafted flow-direction grid stands in for what a real DEM's
+    conditioning occasionally leaves behind, so this test doesn't depend
+    on reproducing an actual unresolvable real-world DEM.
+
+    fdir=0 (pysheds' own "no resolved direction" sentinel, matching
+    flowdir()'s nodata_out=0) at (0, 1) simulates an internal pit NOT at
+    the domain edge. (0, 0) flows into it before ever reaching either
+    real stream cell -- its HAND must come back nodata too, not just the
+    pit cell's own.
+    """
+    grid = _small_grid()
+    fdir = np.zeros((5, 5), dtype=np.int64)  # 0 = unresolved everywhere by default
+    fdir[0, 0] = 1  # (0, 0) -> E -> (0, 1)
+    fdir[0, 1] = 0  # (0, 1): an internal, unresolved pit -- NOT the domain edge
+    fdir[2, 2] = 1  # (2, 2) -> E -> (2, 3): a clean, resolvable path to a real stream
+    elevation = np.full((5, 5), 100.0)
+    stream_mask = np.zeros((5, 5), dtype=bool)
+    stream_mask[2, 3] = True
+
+    hand = _compute_hand_raster(fdir, elevation, stream_mask, grid, HYDROLOGY_NODATA)
+
+    # The pit itself, and everything whose only path runs through it,
+    # come back unresolved (raw NaN at this level -- get_hand is what
+    # remaps to HYDROLOGY_NODATA, tested separately above).
+    assert np.isnan(hand[0, 1]), "the internal pit itself must be unresolved"
+    assert np.isnan(hand[0, 0]), "a cell whose path passes through an internal pit before any stream cell must also be unresolved"
+    # A cell with a clean path to a real stream resolves normally,
+    # proving the internal pit's effect doesn't leak into unrelated cells.
+    assert hand[2, 2] == pytest.approx(0.0, abs=1e-6)

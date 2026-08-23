@@ -143,7 +143,9 @@ def compute_cache_key(aoi: AOI, criteria_set: list[dict]) -> str:
     """SHA-256 hex digest of (AOI bbox + true polygon shape, when present
     + criteria_set), matching schemas/risk_surface.schema.json's
     `cache_key` description. `criteria_set` is
-    [{"criterion_id": str, "weight": float, "reclassification_rules": list[dict]}, ...].
+    [{"criterion_id": str, "weight": float, "reclassification_rules": list[dict],
+    "stream_threshold_cells": int | None}, ...] ("stream_threshold_cells" is optional
+    in the input dict -- read via `.get()` below, `None` when absent).
 
     Includes `aoi.polygon`'s WKT when set, not just `bbox_4326`: since
     compute_overlay now masks the final surface to the true polygon shape
@@ -168,6 +170,17 @@ def compute_cache_key(aoi: AOI, criteria_set: list[dict]) -> str:
     request's result for the second, computed under the wrong rules.
     Caught live: two manual test requests with different breakpoints for
     the same criterion produced an identical cache_key.
+
+    Also includes `stream_threshold_cells` (`c.get(...)`, `None` for
+    every criterion but `drainage_density`/`hand`, and for those two
+    whenever the caller doesn't override it) — the exact same class of
+    bug this function was already fixed for once: without this, two
+    requests for the same AOI/criterion/weight/reclassification_rules
+    but DIFFERENT stream thresholds would hash identically and silently
+    serve each other's cached raster, even though `get_drainage_density`/
+    `get_hand`'s own lower-level cache correctly distinguishes them (see
+    hydrology.py) — the exact scenario that bit reclassification_rules
+    before this same gap was closed for it.
     """
     normalized_criteria = sorted(
         (
@@ -175,6 +188,7 @@ def compute_cache_key(aoi: AOI, criteria_set: list[dict]) -> str:
                 "criterion_id": c["criterion_id"],
                 "weight": round(float(c["weight"]), 10),
                 "reclassification_rules_fingerprint": rules_fingerprint(c["reclassification_rules"]),
+                "stream_threshold_cells": c.get("stream_threshold_cells"),
             }
             for c in criteria_set
         ),

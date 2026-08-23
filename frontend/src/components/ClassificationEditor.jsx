@@ -31,28 +31,45 @@ export default function ClassificationEditor({ criterion }) {
   if (criterion.type === 'categorical') {
     return <CategoricalEditor criterion={criterion} entry={entry} dispatch={dispatch} />
   }
-  return <ContinuousEditor criterion={criterion} entry={entry} aoi={state.aoi} dispatch={dispatch} />
+  return (
+    <ContinuousEditor
+      criterion={criterion}
+      entry={entry}
+      aoi={state.aoi}
+      streamThresholdCells={state.streamThresholdCells}
+      dispatch={dispatch}
+    />
+  )
 }
 
-function ContinuousEditor({ criterion, entry, aoi, dispatch }) {
+function ContinuousEditor({ criterion, entry, aoi, streamThresholdCells, dispatch }) {
   const { method, breaks, fetch } = entry
 
   // Fetch candidate breaks once per (criterion, AOI) whenever a
   // non-manual method is selected and hasn't been fetched yet -- not on
   // every method switch, so flipping back and forth between e.g.
   // Quantile and Jenks after the first fetch is instant (the response
-  // already carries all 3 methods' breaks at once).
+  // already carries all 3 methods' breaks at once). For drainage_density/
+  // hand, a stream-threshold change resets fetch.status back to 'idle'
+  // (AppStateContext's SET_STREAM_THRESHOLD_CELLS reducer case) so this
+  // effect re-fires the same way an AOI change already does -- no
+  // separate streamThresholdCells dependency needed here, just always
+  // send its current value whenever a fetch does happen.
   useEffect(() => {
     if (method === 'manual' || fetch.status !== 'idle' || !aoi) return
     dispatch({ type: 'CLASSIFICATION_BREAKS_LOADING', id: criterion.id })
-    computeCriterionBreaks({ aoi: { bbox: aoi.bbox, polygon: aoi.polygon || null }, source: criterion.id })
+    computeCriterionBreaks({
+      aoi: { bbox: aoi.bbox, polygon: aoi.polygon || null },
+      source: criterion.id,
+      stream_threshold_cells: streamThresholdCells,
+    })
       .then((data) => {
         dispatch({ type: 'CLASSIFICATION_BREAKS_LOADED', id: criterion.id, data })
         dispatch({ type: 'SET_CLASSIFICATION_BREAKS', id: criterion.id, breaks: data[method] })
       })
       .catch((error) => dispatch({ type: 'CLASSIFICATION_BREAKS_ERROR', id: criterion.id, error }))
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-fetch only on method/aoi change, not on every breaks edit
-  }, [method, aoi, criterion.id])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-fetch only on method/aoi/fetch.status change, not on every breaks edit
+  }, [method, aoi, criterion.id, fetch.status])
 
   function selectMethod(newMethod) {
     dispatch({ type: 'SET_CLASSIFICATION_METHOD', id: criterion.id, method: newMethod })

@@ -83,6 +83,11 @@ from app.data.worldcover import get_worldcover
 
 from .errors import OverlayValidationError
 
+# In practice every registered fn is `(aoi, stream_threshold_cells=None,
+# **_kwargs) -> tuple[...]` (see _raw_layer_for_source's call site below)
+# -- approximated here as just `(AOI) -> tuple[...]` since Callable can't
+# express an optional-kwarg signature precisely without a Protocol, which
+# would be more ceremony than this internal registry type alias needs.
 SourceFn = Callable[[AOI], tuple[np.ndarray, AOIGrid, float, str, "str | None"]]
 
 _REGISTRY: dict[str, SourceFn] = {}
@@ -110,60 +115,68 @@ def registered_sources() -> tuple[str, ...]:
 # --- built-in sources: each a thin (AOI) -> (array, grid, nodata,
 # attribution, warning) adapter around an app/data/ function that does
 # the real work (its own local-check/cloud-fallback/preprocessing/
-# caching). Only twi/drainage_density ever have a non-None warning. ---
+# caching). Only twi/drainage_density/hand ever have a non-None warning.
+#
+# Every adapter accepts **_kwargs (ignored by all but _drainage_density/
+# _hand) so _raw_layer_for_source can call every registered source
+# uniformly with stream_threshold_cells, without the generic dispatch
+# needing to know which sources actually care about it -- the same
+# "adapters absorb source-specific complexity, the registry itself never
+# special-cases" property this module's own docstring already documents,
+# just extended to per-request parameters, not only per-AOI data. ---
 
 
-def _dem_elevation(aoi: AOI):
+def _dem_elevation(aoi: AOI, **_kwargs):
     dem = get_dem(aoi)
     return dem.elevation_m, dem.grid, dem.nodata, dem.attribution, None
 
 
-def _dem_slope(aoi: AOI):
+def _dem_slope(aoi: AOI, **_kwargs):
     dem = get_dem(aoi)
     return dem.slope_degrees, dem.grid, dem.nodata, dem.attribution, None
 
 
-def _worldcover_land_cover(aoi: AOI):
+def _worldcover_land_cover(aoi: AOI, **_kwargs):
     wc = get_worldcover(aoi)
     return wc.land_cover_class, wc.grid, wc.nodata, wc.attribution, None
 
 
-def _dist_to_river(aoi: AOI):
+def _dist_to_river(aoi: AOI, **_kwargs):
     r = get_distance_to_river(aoi)
     return r.distance_m, r.grid, r.nodata, r.attribution, None
 
 
-def _dist_to_road(aoi: AOI):
+def _dist_to_road(aoi: AOI, **_kwargs):
     r = get_distance_to_road(aoi)
     return r.distance_m, r.grid, r.nodata, r.attribution, None
 
 
-def _twi(aoi: AOI):
+def _twi(aoi: AOI, **_kwargs):
     r = get_twi(aoi)
     return r.twi, r.grid, r.nodata, r.attribution, r.warning
 
 
-def _drainage_density(aoi: AOI):
-    r = get_drainage_density(aoi)
+def _drainage_density(aoi: AOI, stream_threshold_cells: int | None = None, **_kwargs):
+    r = get_drainage_density(aoi, threshold_cells=stream_threshold_cells)
     return r.drainage_density, r.grid, r.nodata, r.attribution, r.warning
 
 
-def _hand(aoi: AOI):
-    r = get_hand(aoi)
+def _hand(aoi: AOI, stream_threshold_cells: int | None = None, **_kwargs):
+    r = get_hand(aoi, threshold_cells=stream_threshold_cells)
     return r.hand, r.grid, r.nodata, r.attribution, r.warning
 
 
-def _building_density(aoi: AOI):
+def _building_density(aoi: AOI, **_kwargs):
     r = get_building_density(aoi)
     return r.density, r.grid, r.nodata, r.attribution, None
 
 
-def _population_density(aoi: AOI):
+def _population_density(aoi: AOI, **_kwargs):
     r = get_population(aoi)
     return r.density, r.grid, r.nodata, r.attribution, None
 
 
-def _ndvi(aoi: AOI):
+def _ndvi(aoi: AOI, **_kwargs):
     r = get_ndvi(aoi)
     return r.ndvi, r.grid, r.nodata, r.attribution, None
 
@@ -189,9 +202,16 @@ register_source("ndvi", _ndvi)
 SUPPORTED_SOURCES: tuple[str, ...] = registered_sources()
 
 
-def _raw_layer_for_source(aoi: AOI, source: str) -> tuple[np.ndarray, AOIGrid, float, str, "str | None"]:
+def _raw_layer_for_source(
+    aoi: AOI, source: str, stream_threshold_cells: int | None = None
+) -> tuple[np.ndarray, AOIGrid, float, str, "str | None"]:
     """Returns (raw_array, grid, nodata, attribution, warning) for one
     registered `source` — the not-yet-reclassified physical layer.
+
+    `stream_threshold_cells` is passed to every adapter uniformly (each
+    one accepts and ignores it via **_kwargs except `drainage_density`/
+    `hand` — see their own adapters above) rather than special-cased
+    here by source name, keeping this dispatch itself generic.
     """
     try:
         fn = _REGISTRY[source]
@@ -199,18 +219,28 @@ def _raw_layer_for_source(aoi: AOI, source: str) -> tuple[np.ndarray, AOIGrid, f
         raise OverlayValidationError(
             f"unrecognized criterion source {source!r}; supported sources are {registered_sources()!r}"
         ) from None
-    return fn(aoi)
+    return fn(aoi, stream_threshold_cells=stream_threshold_cells)
 
 
 def resolve_criterion_raster(
-    aoi: AOI, criterion_id: str, source: str, reclassification_rules: list[dict]
+    aoi: AOI,
+    criterion_id: str,
+    source: str,
+    reclassification_rules: list[dict],
+    stream_threshold_cells: int | None = None,
 ) -> tuple[np.ndarray, AOIGrid, str, "str | None"]:
     """Fetch the raw physical layer for `source` (via whatever app/data/
     function is registered for it, which handles its own local-check/
     cloud-fallback and AOI-caching) and apply `reclassification_rules`
     (via Phase 2's cached reclassification). Returns (reclassified_array,
     grid, attribution, warning).
+
+    `stream_threshold_cells`: only meaningful for `drainage_density`/
+    `hand` (both measured against the same synthetic stream network,
+    see hydrology.py) — `None` (every other source, and these two when
+    the caller doesn't override it) falls back to
+    config.DRAINAGE_DENSITY_THRESHOLD_CELLS.
     """
-    raw, grid, nodata, attribution, warning = _raw_layer_for_source(aoi, source)
+    raw, grid, nodata, attribution, warning = _raw_layer_for_source(aoi, source, stream_threshold_cells)
     reclassified = apply_reclassification_cached(source, aoi, raw, reclassification_rules, nodata)
     return reclassified, grid, attribution, warning

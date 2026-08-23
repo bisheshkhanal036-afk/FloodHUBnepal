@@ -277,6 +277,16 @@ export const WORLDCOVER_LABELS = {
   100: 'Moss and lichen',
 }
 
+// drainage_density and hand are measured against the exact same
+// synthetic stream network (flow_accumulation thresholded by one shared
+// cell-count minimum — backend/app/data/config.py's
+// DRAINAGE_DENSITY_THRESHOLD_CELLS) -- the one place this list lives, so
+// CriteriaPanel (rendering the shared threshold control), ComputePanel
+// (attaching stream_threshold_cells to the right criteria), and
+// ClassificationEditor (refetching breaks previews when the threshold
+// changes) can never disagree about which criteria it applies to.
+export const STREAM_THRESHOLD_SOURCE_IDS = ['drainage_density', 'hand']
+
 export const CRITERIA_BY_ID = Object.fromEntries(CRITERIA.map((c) => [c.id, c]))
 
 export function criteriaByCluster() {

@@ -53,6 +53,13 @@ export default function ReportPanel() {
           source: c.source,
           reclassification_rules: c.reclassification_rules,
           name: CRITERIA_BY_ID[c.id]?.label,
+          // Carried over from the exact snapshot ComputePanel submitted --
+          // drainage_density/hand's shared stream-network override, when
+          // set, so the report's own risk-surface computation (reusing
+          // POST /compute's cache by identical inputs) actually hits that
+          // cache instead of silently falling back to the default
+          // threshold and computing something different.
+          stream_threshold_cells: c.stream_threshold_cells,
         })),
         final_weights: weightsUsed,
         complete: true,

@@ -18,7 +18,7 @@ GRID = AOIGrid(crs="EPSG:32645", resolution_m=10.0, origin_x=0.0, origin_y=0.0, 
 def _mock_source(monkeypatch, raw: np.ndarray, nodata):
     monkeypatch.setattr(
         "app.overlay.breaks._raw_layer_for_source",
-        lambda aoi, source: (raw, GRID, nodata, "fake attribution", None),
+        lambda aoi, source, stream_threshold_cells=None: (raw, GRID, nodata, "fake attribution", None),
     )
 
 
@@ -39,7 +39,7 @@ def test_quantile_matches_numpy_percentile_directly(test_aoi, monkeypatch):
     raw = values.reshape(10, 10)
     grid = AOIGrid(crs="EPSG:32645", resolution_m=10.0, origin_x=0.0, origin_y=0.0, width=10, height=10)
     monkeypatch.setattr(
-        "app.overlay.breaks._raw_layer_for_source", lambda aoi, source: (raw, grid, None, "fake", None)
+        "app.overlay.breaks._raw_layer_for_source", lambda aoi, source, stream_threshold_cells=None: (raw, grid, None, "fake", None)
     )
 
     result = compute_criterion_breaks(test_aoi, "fake_source")
@@ -68,7 +68,7 @@ def test_jenks_minimizes_within_class_variance_better_than_equal_interval(test_a
     raw = values.reshape(10, 10)
     grid = AOIGrid(crs="EPSG:32645", resolution_m=10.0, origin_x=0.0, origin_y=0.0, width=10, height=10)
     monkeypatch.setattr(
-        "app.overlay.breaks._raw_layer_for_source", lambda aoi, source: (raw, grid, None, "fake", None)
+        "app.overlay.breaks._raw_layer_for_source", lambda aoi, source, stream_threshold_cells=None: (raw, grid, None, "fake", None)
     )
 
     result = compute_criterion_breaks(test_aoi, "fake_source")
@@ -103,7 +103,7 @@ def test_jenks_samples_down_large_populations_deterministically(test_aoi, monkey
     raw = values.reshape(-1, 1)
     grid = AOIGrid(crs="EPSG:32645", resolution_m=10.0, origin_x=0.0, origin_y=0.0, width=1, height=values.size)
     monkeypatch.setattr(
-        "app.overlay.breaks._raw_layer_for_source", lambda aoi, source: (raw, grid, None, "fake", None)
+        "app.overlay.breaks._raw_layer_for_source", lambda aoi, source, stream_threshold_cells=None: (raw, grid, None, "fake", None)
     )
 
     first = compute_criterion_breaks(test_aoi, "fake_source")
@@ -140,3 +140,28 @@ def test_no_valid_pixels_raises_overlay_validation_error(test_aoi, monkeypatch):
 
     with pytest.raises(OverlayValidationError, match="no valid"):
         compute_criterion_breaks(test_aoi, "fake_source")
+
+
+def test_stream_threshold_cells_is_forwarded_to_raw_layer_for_source(test_aoi, monkeypatch):
+    """POST /api/overlay/criteria/breaks' stream_threshold_cells must
+    reach _raw_layer_for_source unchanged, so a caller previewing
+    drainage_density/hand breaks sees the distribution the SAME
+    threshold would actually produce in POST /compute, not always the
+    config default's -- proven here by a mock that returns genuinely
+    different raw values depending on what threshold it was called with.
+    """
+    seen = []
+
+    def fake_raw_layer(aoi, source, stream_threshold_cells=None):
+        seen.append(stream_threshold_cells)
+        value = 100.0 if stream_threshold_cells == 2000 else 10.0
+        return np.full((4, 4), value), GRID, None, "fake", None
+
+    monkeypatch.setattr("app.overlay.breaks._raw_layer_for_source", fake_raw_layer)
+
+    default_result = compute_criterion_breaks(test_aoi, "drainage_density")
+    overridden_result = compute_criterion_breaks(test_aoi, "drainage_density", stream_threshold_cells=2000)
+
+    assert seen == [None, 2000]
+    assert default_result["min"] == pytest.approx(10.0)
+    assert overridden_result["min"] == pytest.approx(100.0)

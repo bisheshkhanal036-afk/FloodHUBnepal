@@ -407,6 +407,30 @@ AHP criterion like every other source here. Both parameters are
 env-overridable and folded into the cache version, so recalibrating
 either one never needs a code change or silently reuses a stale result.
 
+**Per-request threshold override**: `config.DRAINAGE_DENSITY_THRESHOLD_
+CELLS`'s deployment-wide default can be overridden per request via
+`OverlayCriterionInput.stream_threshold_cells` (`POST /compute`,
+`/compute/stream`, `/report`) and `CriterionBreaksRequest.
+stream_threshold_cells` (`POST /criteria/breaks`) — a genuine
+scientific-parameter knob (see the frontend's own shared "Stream network
+threshold" control, below), not a config change. Threaded through
+`overlay/sources.py`'s registry as a keyword arg every adapter accepts
+(and all but `drainage_density`/`hand` ignore, via `**_kwargs`) rather
+than special-cased in the generic dispatch, exactly the "adapters absorb
+source-specific complexity, the registry never does" property this
+module's own docstring already establishes for per-AOI data — now
+extended to per-request parameters too. `get_drainage_density`/`get_hand`
+(hydrology.py) both gained an optional `threshold_cells` parameter,
+`None` meaning "use the config default" (every call site before this
+existed). **A real cache-key bug of the exact same class already fixed
+once for `reclassification_rules`** was caught and fixed while wiring
+this up: `overlay/compute.py`'s `compute_cache_key` only picked 3 known
+keys out of each criterion's dict, so a request with an overridden
+threshold and one without would have hashed identically and silently
+served each other's cached raster — `stream_threshold_cells` is now a
+4th key in that same normalization, covered by a dedicated regression
+test (`test_cache_key_changes_when_stream_threshold_cells_changes`).
+
 `hand` (Height Above Nearest Drainage): for each pixel, the elevation
 difference to the nearest stream cell along its D8 flow path (not
 straight-line nearest) — computed via **pysheds' own `compute_hand`**
@@ -442,6 +466,36 @@ warning text/field, not a HAND-specific one. Verified live end to end
 against the real running backend over a real ~30 km² Kathmandu AOI:
 90% valid-pixel coverage, values in the expected `[0, 1]` normalized
 range after reclassification.
+
+**A second, larger real-world finding**, surfaced when a user reported a
+visible branching gap pattern in a rendered `hand` risk surface over the
+full Kathmandu Valley (~1518×1550 pixels) and investigated live rather
+than guessed at: **an internal pit `fill_pits`/`fill_depressions`/
+`resolve_flats` didn't fully resolve — not only the outer edge — breaks
+HAND for its *entire upstream contributing area*, not just the pit cell
+itself.** This is a different mechanism from the edge-ring finding above
+(which is a purely geometric effect present even on a toy DEM with zero
+real depressions): flow accumulation only needs a cell's own upstream
+sum, unaffected by what happens further downstream, but HAND needs the
+*full* downstream trace to reach a real stream cell to succeed — a
+single unresolved pit anywhere along that trace poisons every cell
+upstream of it. Measured live on that real AOI: 209,211 of ~2.35M
+pixels (~12%) came back nodata despite being otherwise valid in
+`flow.valid_mask` (~3% base-invalid from pits/edges alone) — confirmed
+by sampling 15 such cells and manually tracing their D8 path
+step-by-step: every one terminated at an unresolved intermediate cell,
+never at the grid edge (1–38 steps each). Reproduced deterministically
+in `tests/data/test_hydrology.py`'s
+`test_internal_unresolved_pit_propagates_nodata_upstream` with a
+hand-crafted flow-direction grid (no need to reproduce an actual
+unresolvable real DEM). **Decision, confirmed**: documented as a known
+limitation rather than fixed — a fix would mean either improving DEM
+conditioning (risking a change to `twi`/`drainage_density`'s own
+results too, which reuse the same conditioned DEM) or redefining what
+counts as a valid "nearest drainage" reference (e.g. falling back to
+the nearest unresolved pit as a degenerate local drainage point) — both
+real scientific-methodology choices, not bug fixes, left for a future
+phase if `hand`'s practical gap rate turns out to matter for real use.
 
 ## 4. Local development
 
@@ -1191,6 +1245,67 @@ them.
   (281 + 7 net new), zero regressions. Also verified live end to end
   against the real running backend over a real ~30 km² Kathmandu AOI
   (90% valid-pixel coverage, values in the expected range).
+- Backend: **investigated and documented a second, larger `hand` gap
+  mechanism**, prompted by a user report of a visible branching gap
+  pattern in a rendered `hand` risk surface over the full Kathmandu
+  Valley — see §3.6's `hand` section for the full write-up. Distinct
+  from the outer-1-pixel-ring finding above (a purely geometric effect):
+  an internal pit DEM conditioning didn't fully resolve breaks HAND for
+  its entire upstream contributing area, not just itself, since HAND
+  needs a full downstream trace to succeed while flow accumulation only
+  needs a cell's own upstream sum. Measured live on the real ~1518×1550
+  grid: ~12% nodata (vs. ~3% base-invalid) — confirmed, not assumed, by
+  manually tracing 15 sampled gap cells' D8 paths step-by-step; every
+  one terminated at an unresolved intermediate cell, never the grid
+  edge. Reproduced deterministically with a new test,
+  `test_internal_unresolved_pit_propagates_nodata_upstream`. **Decision,
+  confirmed with the user**: documented as a known limitation, not
+  fixed — a fix would mean either changing DEM conditioning (risking
+  `twi`/`drainage_density`'s own results, which reuse the same
+  conditioned DEM) or redefining what counts as a valid drainage
+  reference, both real methodology choices for a future phase, not bug
+  fixes. One new deterministic regression test added for this specific
+  mechanism (`test_internal_unresolved_pit_propagates_nodata_upstream`)
+  — 8 tests now cover `hand` specifically, 289 backend tests passing
+  total, zero regressions.
+- Backend + frontend: **user-selectable stream-network threshold** — the
+  user, having just had `drainage_density`/`hand`'s shared synthetic
+  stream network explained, asked to make its threshold selectable from
+  the UI rather than a fixed deployment-wide env var. See §3.6's
+  `drainage_density` section for the full backend write-up (the new
+  `stream_threshold_cells` field threaded additively through
+  `overlay/models.py`/`service.py`/`sources.py`/`breaks.py`/
+  `hydrology.py`, and the cache-key bug this surfaced and fixed).
+  Frontend: **one shared control**, not per-criterion — `drainage_density`
+  and `hand` are measured against the exact same stream network, so
+  letting them diverge would be scientifically inconsistent between the
+  two results in a single compute (`state.streamThresholdCells`,
+  `config/criteria.js`'s new `STREAM_THRESHOLD_SOURCE_IDS` the one place
+  both `CriteriaPanel`/`ComputePanel`/`ClassificationEditor` read from).
+  `CriteriaPanel.jsx` renders it once, below the checkbox list, when
+  either criterion is checked, with a live "≈ X km² contributing area"
+  helper computed from the fixed 10m grid resolution.
+  `ClassificationEditor.jsx`'s "Customize breaks" preview re-fetches
+  automatically when the threshold changes (a new reducer case,
+  `SET_STREAM_THRESHOLD_CELLS`, resets just those two criteria's
+  breaks-fetch status back to `idle`, the same mechanism an AOI change
+  already relies on) — verified live the preview genuinely changes (e.g.
+  one real test AOI: data range 0.00–5.11, breaks ~[1.02, 2.04, 3.07,
+  4.09] at the default 500-cell threshold vs. 1.20–10.31, ~[3.02, 4.84,
+  6.67, 8.49] at 50 cells — a lower threshold picks up more/smaller
+  tributaries, correctly raising both ends of the range). **A real bug
+  caught during this same verification pass**: `ReportPanel.jsx` rebuilds
+  its own `criteria` array field-by-field from `criteriaUsed` rather than
+  spreading it, so `stream_threshold_cells` would have been silently
+  dropped from every report request — fixed before it shipped. 6 new
+  backend tests (cache-key, both hydrology functions' override behavior,
+  the breaks endpoint's forwarding, and the registry adapters' forwarding
+  including a check that unrelated sources ignore the extra kwarg
+  without error) — 295 backend tests passing total, zero regressions.
+  Verified live end to end via Playwright-in-Docker against the real
+  running app, not just in tests: the shared control renders/updates
+  correctly, and two full computes at different thresholds produced two
+  different `cache_key`s as expected.
 - Not yet implemented: AOI persistence, and shelter identification. The
   GeoTIFF file route is a simple
   direct-read endpoint, not a general static-asset server or CDN — fine

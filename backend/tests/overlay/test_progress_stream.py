@@ -20,7 +20,7 @@ GRID = AOIGrid(crs="EPSG:32645", resolution_m=10.0, origin_x=0.0, origin_y=0.0, 
 
 
 def _fake_resolve(monkeypatch, class_value=3):
-    def fake(aoi, criterion_id, source, rules):
+    def fake(aoi, criterion_id, source, rules, stream_threshold_cells=None):
         return np.full((2, 2), class_value, dtype=np.uint8), GRID, "Fake Source Attribution", None
 
     monkeypatch.setattr("app.overlay.service.resolve_criterion_raster", fake)
@@ -68,7 +68,7 @@ def test_stream_yields_an_error_event_for_a_known_validation_error(test_aoi, mon
 
 
 def test_stream_yields_an_error_event_for_a_data_source_unavailable_error(test_aoi, monkeypatch):
-    def failing_resolve(aoi, criterion_id, source, rules):
+    def failing_resolve(aoi, criterion_id, source, rules, stream_threshold_cells=None):
         raise DataSourceUnavailableError("simulated: no local pbf and R2 not configured")
 
     monkeypatch.setattr("app.overlay.service.resolve_criterion_raster", failing_resolve)
@@ -86,7 +86,7 @@ def test_stream_yields_an_error_event_for_a_data_source_unavailable_error(test_a
 
 
 def test_stream_yields_an_internal_error_event_for_an_unexpected_exception_not_swallowed(test_aoi, monkeypatch):
-    def broken_resolve(aoi, criterion_id, source, rules):
+    def broken_resolve(aoi, criterion_id, source, rules, stream_threshold_cells=None):
         raise RuntimeError("something genuinely unexpected")
 
     monkeypatch.setattr("app.overlay.service.resolve_criterion_raster", broken_resolve)

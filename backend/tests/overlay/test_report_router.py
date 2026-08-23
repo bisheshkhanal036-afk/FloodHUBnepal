@@ -23,7 +23,7 @@ GRID = AOIGrid(crs="EPSG:32645", resolution_m=10.0, origin_x=0.0, origin_y=0.0, 
 
 
 def _fake_dependencies(monkeypatch, class_value=3, density_value=50000.0, buildings=None):
-    def fake_resolve(aoi, criterion_id, source, rules):
+    def fake_resolve(aoi, criterion_id, source, rules, stream_threshold_cells=None):
         return np.full((2, 2), class_value, dtype=np.uint8), GRID, "Fake Source Attribution", None
 
     def fake_population(aoi):

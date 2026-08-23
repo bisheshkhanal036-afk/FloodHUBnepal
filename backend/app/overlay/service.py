@@ -28,6 +28,7 @@ class OverlayCriterionRequest:
     id: str
     source: str
     reclassification_rules: list[dict]
+    stream_threshold_cells: int | None = None
 
 
 @dataclass(frozen=True)
@@ -107,7 +108,12 @@ def compute_overlay(
         )
 
     criteria_set = [
-        {"criterion_id": c.id, "weight": final_weights[c.id], "reclassification_rules": c.reclassification_rules}
+        {
+            "criterion_id": c.id,
+            "weight": final_weights[c.id],
+            "reclassification_rules": c.reclassification_rules,
+            "stream_threshold_cells": c.stream_threshold_cells,
+        }
         for c in criteria
     ]
     cache_key = compute_cache_key(aoi, criteria_set)
@@ -123,7 +129,11 @@ def compute_overlay(
         for i, criterion in enumerate(criteria, start=1):
             _notify(f"Resolving {criterion.id} ({i}/{len(criteria)}, source: {criterion.source})…")
             reclassified, grid, attribution, warning = resolve_criterion_raster(
-                aoi, criterion.id, criterion.source, criterion.reclassification_rules
+                aoi,
+                criterion.id,
+                criterion.source,
+                criterion.reclassification_rules,
+                stream_threshold_cells=criterion.stream_threshold_cells,
             )
             rasters.append(CriterionRaster(criterion_id=criterion.id, reclassified=reclassified, grid=grid))
             attributions.add(attribution)

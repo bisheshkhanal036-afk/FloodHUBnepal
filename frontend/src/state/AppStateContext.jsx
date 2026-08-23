@@ -6,7 +6,13 @@
 // phase (vulnerability classification, shelter markers) can extend this
 // state rather than needing to restructure it.
 import { createContext, useContext, useEffect, useMemo, useReducer } from 'react'
-import { CANONICAL_CLUSTERS, CRITERIA, CRITERIA_BY_ID, criteriaByCluster } from '../config/criteria'
+import {
+  CANONICAL_CLUSTERS,
+  CRITERIA,
+  CRITERIA_BY_ID,
+  STREAM_THRESHOLD_SOURCE_IDS,
+  criteriaByCluster,
+} from '../config/criteria'
 import { identityMatrix, resizeMatrix } from '../lib/ahpMatrix'
 import { defaultClassificationEntry } from '../lib/classification'
 
@@ -51,6 +57,18 @@ function initialState() {
     selectedBasinId: null,
 
     criteriaEnabled: Object.fromEntries(CRITERIA.map((c) => [c.id, false])),
+
+    // Shared override for drainage_density/hand's synthetic stream-
+    // network threshold (backend/app/data/config.py's
+    // DRAINAGE_DENSITY_THRESHOLD_CELLS -- mirrored here as a UI default,
+    // same "mirror a backend constant with a comment" pattern lib/geo.js's
+    // AREA_CAP_KM2 already uses). ONE shared value, not per-criterion:
+    // drainage_density and hand are measured against the exact same
+    // stream network, so letting them diverge would be scientifically
+    // inconsistent between the two results in a single compute. See
+    // config/criteria.js's STREAM_THRESHOLD_SOURCE_IDS for which
+    // criteria this applies to.
+    streamThresholdCells: 500,
 
     weightMode: 'equal', // 'equal' | 'ahp' | 'manual'
     ahpMatrices: {
@@ -170,6 +188,28 @@ function reducer(state, action) {
 
     case 'SET_SELECTED_BASIN_ID':
       return { ...state, selectedBasinId: action.hybasId }
+
+    case 'SET_STREAM_THRESHOLD_CELLS': {
+      // A changed threshold makes any already-fetched (or in-flight)
+      // equal-interval/quantile/Jenks breaks for drainage_density/hand
+      // stale -- they were computed against the OLD threshold's value
+      // distribution. Reset just those two criteria's fetch state back
+      // to 'idle' (only if currently checked and classified at all) so
+      // ClassificationEditor's own effect re-fetches automatically, the
+      // same mechanism an AOI change already relies on
+      // (resetClassificationForCheckedCriteria) -- scoped to only the
+      // two affected criteria here, not every checked one, since nothing
+      // else depends on this threshold.
+      const classification = { ...state.classification }
+      for (const id of STREAM_THRESHOLD_SOURCE_IDS) {
+        if (!classification[id]) continue
+        classification[id] = {
+          ...classification[id],
+          fetch: { status: 'idle', min: null, max: null, equal_interval: null, quantile: null, jenks: null, error: null },
+        }
+      }
+      return { ...state, streamThresholdCells: action.cells, classification }
+    }
 
     case 'TOGGLE_CRITERION': {
       const nowChecked = !state.criteriaEnabled[action.id]

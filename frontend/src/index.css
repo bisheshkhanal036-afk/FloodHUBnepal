@@ -755,6 +755,51 @@ input[type='radio'] {
   font-weight: 500;
 }
 
+/* Shared by drainage_density/hand -- rendered once, not per-criterion,
+   since both are measured against the same stream network (see
+   config/criteria.js's STREAM_THRESHOLD_SOURCE_IDS). Styled like a
+   compact instrument-panel readout, not a form field buried in the
+   checkbox list. */
+.criteria-panel__stream-threshold {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.criteria-panel__stream-threshold h4 {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted);
+  margin: 0 0 0.3rem;
+  font-family: var(--font-body);
+  font-weight: 600;
+}
+
+.criteria-panel__stream-threshold-input {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.4rem 0;
+}
+
+.criteria-panel__stream-threshold-input input {
+  width: 6rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.criteria-panel__stream-threshold-input span {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.criteria-panel__stream-threshold-area {
+  font-family: var(--font-mono);
+}
+
 .classification-editor {
   margin-top: 0.4rem;
   padding: var(--space-3);

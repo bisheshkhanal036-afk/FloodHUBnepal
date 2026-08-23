@@ -32,12 +32,23 @@ class OverlayCriterionInput(BaseModel):
         ..., description=f"Which Phase 2 raster this criterion reclassifies. One of {SUPPORTED_SOURCES!r}."
     )
     reclassification_rules: list[ReclassificationRuleInput] = Field(..., min_length=1)
+    stream_threshold_cells: int | None = Field(
+        None,
+        ge=1,
+        description=(
+            "Only meaningful for source in {'drainage_density', 'hand'} -- both are measured "
+            "against the SAME synthetic stream network (flow_accumulation >= this many upstream "
+            "cells), so this is one shared override, not a per-source one. Ignored by every other "
+            "source. None (default) falls back to config.DRAINAGE_DENSITY_THRESHOLD_CELLS."
+        ),
+    )
 
     def to_domain(self) -> OverlayCriterionRequest:
         return OverlayCriterionRequest(
             id=self.id,
             source=self.source,
             reclassification_rules=[r.model_dump() for r in self.reclassification_rules],
+            stream_threshold_cells=self.stream_threshold_cells,
         )
 
 
@@ -65,6 +76,16 @@ class OverlayComputeRequest(BaseModel):
 class CriterionBreaksRequest(BaseModel):
     aoi: AOIInput = Field(..., description="Same AOI a POST /compute request for this criterion would use.")
     source: str = Field(..., description=f"Which criterion source to classify. One of {SUPPORTED_SOURCES!r}.")
+    stream_threshold_cells: int | None = Field(
+        None,
+        ge=1,
+        description=(
+            "Same meaning as OverlayCriterionInput.stream_threshold_cells -- pass the value a "
+            "POST /compute request would use for source in {'drainage_density', 'hand'} so the "
+            "returned candidate breaks reflect the actual value distribution that threshold "
+            "produces, not always the default's."
+        ),
+    )
 
 
 class CriterionBreaksResponse(BaseModel):

@@ -17,7 +17,7 @@ GRID = AOIGrid(crs="EPSG:32645", resolution_m=10.0, origin_x=0.0, origin_y=0.0, 
 
 
 def _fake_resolve(monkeypatch, class_value=3, attribution="Fake Source Attribution", warning=None):
-    def fake(aoi, criterion_id, source, rules):
+    def fake(aoi, criterion_id, source, rules, stream_threshold_cells=None):
         return np.full((2, 2), class_value, dtype=np.uint8), GRID, attribution, warning
 
     monkeypatch.setattr("app.overlay.service.resolve_criterion_raster", fake)
@@ -54,7 +54,7 @@ def test_compute_endpoint_returns_risk_surface_metadata(monkeypatch):
 
 
 def test_compute_endpoint_surfaces_source_warnings_per_criterion(monkeypatch):
-    def fake(aoi, criterion_id, source, rules):
+    def fake(aoi, criterion_id, source, rules, stream_threshold_cells=None):
         warning = "computed over a bbox, not a true watershed boundary" if criterion_id == "a" else None
         return np.full((2, 2), 3, dtype=np.uint8), GRID, "Fake Source Attribution", warning
 
@@ -199,7 +199,7 @@ def test_criteria_breaks_endpoint_returns_all_three_methods(monkeypatch):
     monkeypatch.setattr(
         overlay_router_module,
         "compute_criterion_breaks",
-        lambda aoi, source: {
+        lambda aoi, source, stream_threshold_cells=None: {
             "min": 1300.0,
             "max": 1600.0,
             "valid_pixel_count": 42,
@@ -242,7 +242,7 @@ def test_criteria_breaks_endpoint_surfaces_data_source_unavailable_as_503(monkey
     overlay_router_module = sys.modules["app.overlay.router"]
     from app.data.errors import DataSourceUnavailableError
 
-    def fake(aoi, source):
+    def fake(aoi, source, stream_threshold_cells=None):
         raise DataSourceUnavailableError("simulated: no local pbf and R2 not configured")
 
     monkeypatch.setattr(overlay_router_module, "compute_criterion_breaks", fake)

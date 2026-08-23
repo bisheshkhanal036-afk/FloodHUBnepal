@@ -11,7 +11,7 @@
 // event arrives.
 import { useEffect, useRef, useState } from 'react'
 import { computeOverlayStream } from '../api/client'
-import { CRITERIA_BY_ID } from '../config/criteria'
+import { CRITERIA_BY_ID, STREAM_THRESHOLD_SOURCE_IDS } from '../config/criteria'
 import { rulesForClassification } from '../lib/classification'
 import { useAppState, useFinalWeights, useSelectedCriteriaIds } from '../state/AppStateContext'
 
@@ -68,6 +68,11 @@ export default function ComputePanel() {
         id,
         source: id,
         reclassification_rules: rulesForClassification(CRITERIA_BY_ID[id], state.classification[id]),
+        // Only meaningful for drainage_density/hand (see config/criteria.js's
+        // STREAM_THRESHOLD_SOURCE_IDS) -- the backend ignores it for every
+        // other source, so it's simplest to just always attach the current
+        // shared value rather than conditionally including the key.
+        stream_threshold_cells: STREAM_THRESHOLD_SOURCE_IDS.includes(id) ? state.streamThresholdCells : undefined,
       }))
       const payload = {
         aoi: { bbox: state.aoi.bbox, polygon: state.aoi.polygon || null },

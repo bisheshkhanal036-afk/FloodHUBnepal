@@ -359,7 +359,7 @@ class DrainageDensityResult:
         self.warning = warning
 
 
-def get_drainage_density(aoi: AOI) -> DrainageDensityResult:
+def get_drainage_density(aoi: AOI, threshold_cells: int | None = None) -> DrainageDensityResult:
     """Cached wrapper around compute_drainage_density_raster, reading its
     threshold/window-radius parameters from config (dynamically, at call
     time — same convention overlay/service.py uses for
@@ -368,7 +368,16 @@ def get_drainage_density(aoi: AOI) -> DrainageDensityResult:
     cache version string, so recalibrating either one correctly
     invalidates any stale cached result rather than silently reusing a
     density raster computed under the old settings.
+
+    `threshold_cells`, when given, overrides `config.DRAINAGE_DENSITY_
+    THRESHOLD_CELLS` for this call only — the per-request override a
+    caller (POST /api/overlay/compute's `stream_threshold_cells`) can
+    supply, letting a user experiment with what counts as a "stream"
+    without touching the deployment-wide default. `None` (every call
+    site before this parameter existed) means "use the config default"
+    exactly as before.
     """
+    effective_threshold = config.DRAINAGE_DENSITY_THRESHOLD_CELLS if threshold_cells is None else threshold_cells
 
     def _compute() -> DrainageDensityResult:
         flow = compute_flow_accumulation(aoi)
@@ -376,7 +385,7 @@ def get_drainage_density(aoi: AOI) -> DrainageDensityResult:
             flow.flow_accumulation,
             flow.valid_mask,
             flow.grid.resolution_m,
-            config.DRAINAGE_DENSITY_THRESHOLD_CELLS,
+            effective_threshold,
             config.DRAINAGE_DENSITY_WINDOW_RADIUS_M,
         )
         density = np.where(flow.valid_mask, density, HYDROLOGY_NODATA).astype(np.float32)
@@ -391,7 +400,7 @@ def get_drainage_density(aoi: AOI) -> DrainageDensityResult:
 
     version = (
         f"{_hydrology_cache_version(aoi)}"
-        f"_t{config.DRAINAGE_DENSITY_THRESHOLD_CELLS}"
+        f"_t{effective_threshold}"
         f"_r{config.DRAINAGE_DENSITY_WINDOW_RADIUS_M}"
     )
     return cached_or_compute("drainage_density", aoi, _compute, version=version)
@@ -460,7 +469,7 @@ def _compute_hand_raster(
     return np.asarray(hand_raster, dtype=np.float64)
 
 
-def get_hand(aoi: AOI) -> HANDResult:
+def get_hand(aoi: AOI, threshold_cells: int | None = None) -> HANDResult:
     """Height Above Nearest Drainage: for each pixel, the elevation
     difference to the nearest stream cell along its D8 flow path (NOT
     straight-line nearest) -- low HAND means a pixel sits close to its
@@ -493,11 +502,47 @@ def get_hand(aoi: AOI) -> HANDResult:
     computes on the full rectangular grid and carries
     EDGE_RELIABILITY_WARNING, propagated from compute_flow_accumulation
     exactly like the other two sources, not a new warning of its own.
+
+    KNOWN LIMITATION, confirmed live against a real ~1518x1550 Kathmandu
+    Valley grid (not just the small synthetic test fixtures): pysheds'
+    compute_hand cannot resolve a cell whose downstream D8 path passes
+    through ANY unresolved cell before reaching a real stream cell --
+    not only the outer 1-pixel ring of the grid (a small, purely
+    geometric effect, present even on a toy DEM with zero real
+    depressions), but also a genuine, larger effect on real terrain:
+    fill_pits/fill_depressions/resolve_flats do not eliminate every
+    internal pit on a large, real DEM, and each surviving pit "poisons"
+    HAND for its entire upstream contributing area, not just itself --
+    since a cell's own flow accumulation only needs its own upstream
+    sum (unaffected), but HAND needs the FULL downstream trace to
+    succeed. Measured live: ~12% of a real Kathmandu Valley AOI (vs.
+    ~3% base-invalid from pits/edges alone) -- confirmed by sampling
+    nodata HAND cells that were otherwise valid in flow.valid_mask and
+    manually tracing their D8 path: every sampled cell terminated at an
+    unresolved intermediate cell, never at the grid edge. See
+    tests/data/test_hydrology.py's
+    test_internal_unresolved_pit_propagates_nodata_upstream test for a
+    minimal, deterministic reproduction of the exact mechanism. Not
+    fixed here (a decision, not an oversight -- discussed and confirmed
+    to document rather than change methodology, since a fix would mean
+    either better DEM conditioning, which risks changing TWI/
+    drainage_density's own results too, or redefining what counts as a
+    valid "nearest drainage" reference, a real scientific-methodology
+    choice rather than a bug fix).
+
+    `threshold_cells`, when given, overrides `config.DRAINAGE_DENSITY_
+    THRESHOLD_CELLS` for this call only — same override mechanism as
+    `get_drainage_density`'s own `threshold_cells` param, and load-
+    bearing that it stays the SAME value when both sources are requested
+    together: the caller (POST /api/overlay/compute's
+    `stream_threshold_cells`) is expected to pass one shared value to
+    both, not let them diverge onto two different stream networks.
     """
+    effective_threshold = config.DRAINAGE_DENSITY_THRESHOLD_CELLS if threshold_cells is None else threshold_cells
 
     def _compute() -> HANDResult:
         flow = compute_flow_accumulation(aoi)
-        stream_mask = flow.valid_mask & (flow.flow_accumulation >= config.DRAINAGE_DENSITY_THRESHOLD_CELLS)
+        stream_mask = flow.valid_mask & (flow.flow_accumulation >= effective_threshold)
 
         hand = _compute_hand_raster(
             flow.flow_direction, flow.elevation_conditioned, stream_mask, flow.grid, HYDROLOGY_NODATA
@@ -508,5 +553,5 @@ def get_hand(aoi: AOI) -> HANDResult:
 
         return HANDResult(hand=hand, grid=flow.grid, nodata=HYDROLOGY_NODATA, attribution=flow.attribution, warning=flow.warning)
 
-    version = f"{_hydrology_cache_version(aoi)}_t{config.DRAINAGE_DENSITY_THRESHOLD_CELLS}"
+    version = f"{_hydrology_cache_version(aoi)}_t{effective_threshold}"
     return cached_or_compute("hand", aoi, _compute, version=version)

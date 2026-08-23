@@ -79,7 +79,7 @@ def _jenks_breaks(values: np.ndarray) -> list[float]:
     return [float(v) for v in edges[1:-1]]
 
 
-def compute_criterion_breaks(aoi: AOI, source: str) -> dict:
+def compute_criterion_breaks(aoi: AOI, source: str, stream_threshold_cells: int | None = None) -> dict:
     """Returns {min, max, valid_pixel_count, equal_interval, quantile,
     jenks} for `source` over `aoi` — the last 3 are each a list of 4
     interior break values (5 classes need 4 interior edges; the outer
@@ -88,8 +88,14 @@ def compute_criterion_breaks(aoi: AOI, source: str) -> dict:
     _raw_layer_for_source, same as the overlay compute path) for an
     unrecognized source, and if the AOI has literally no valid pixels
     for this source at all.
+
+    `stream_threshold_cells`: same meaning as resolve_criterion_raster's
+    own param — only relevant for `drainage_density`/`hand`, so the
+    candidate breaks reflect the actual value distribution whatever
+    threshold a POST /compute request will use produces, not always the
+    config default's.
     """
-    raw, _grid, nodata, _attribution, _warning = _raw_layer_for_source(aoi, source)
+    raw, _grid, nodata, _attribution, _warning = _raw_layer_for_source(aoi, source, stream_threshold_cells)
     values = _valid_values(raw, nodata)
     if values.size == 0:
         raise OverlayValidationError(f"no valid (non-nodata) pixels for source {source!r} over this AOI")

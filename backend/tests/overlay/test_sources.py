@@ -46,7 +46,7 @@ def test_all_eight_built_in_sources_are_registered():
 # other overlay/ file to make this test pass. ---
 
 
-def _dummy_constant_source(aoi):
+def _dummy_constant_source(aoi, **_kwargs):
     from app.data.grid import compute_aoi_grid
 
     grid = compute_aoi_grid(aoi.bounds_utm)
@@ -159,7 +159,7 @@ def test_drainage_density_resolves_via_the_registry(test_aoi, monkeypatch):
         nodata=-9999.0,
         attribution="fake drainage_density",
     )
-    monkeypatch.setattr("app.overlay.sources.get_drainage_density", lambda aoi: fake)
+    monkeypatch.setattr("app.overlay.sources.get_drainage_density", lambda aoi, **kwargs: fake)
 
     rules = [{"min": None, "max": None, "risk_class": 1}]
     reclassified, _grid, attribution, warning = resolve_criterion_raster(test_aoi, "c4", "drainage_density", rules)
@@ -187,7 +187,7 @@ def test_hand_resolves_via_the_registry(test_aoi, monkeypatch):
         attribution="fake hand",
         warning="fake edge-reliability warning",
     )
-    monkeypatch.setattr("app.overlay.sources.get_hand", lambda aoi: fake)
+    monkeypatch.setattr("app.overlay.sources.get_hand", lambda aoi, **kwargs: fake)
 
     rules = [{"min": None, "max": None, "risk_class": 5}]
     reclassified, _grid, attribution, warning = resolve_criterion_raster(test_aoi, "c6", "hand", rules)
@@ -195,6 +195,68 @@ def test_hand_resolves_via_the_registry(test_aoi, monkeypatch):
     assert attribution == "fake hand"
     assert warning == "fake edge-reliability warning"
     assert (reclassified == 5).all()
+
+
+def test_resolve_criterion_raster_forwards_stream_threshold_cells_to_drainage_density_and_hand(test_aoi, monkeypatch):
+    """resolve_criterion_raster's stream_threshold_cells param (POST
+    /api/overlay/compute's per-request override) must reach
+    get_drainage_density/get_hand as their own threshold_cells kwarg --
+    proven with a spy rather than just asserting the adapters look
+    right, since a keyword-name typo wouldn't be caught by that alone.
+    """
+    from app.data.grid import compute_aoi_grid
+    from app.data.hydrology import DrainageDensityResult, HANDResult
+
+    grid = compute_aoi_grid(test_aoi.bounds_utm)
+    rules = [{"min": None, "max": None, "risk_class": 1}]
+    seen = {}
+
+    def fake_drainage_density(aoi, threshold_cells=None):
+        seen["drainage_density"] = threshold_cells
+        return DrainageDensityResult(
+            drainage_density=np.full((grid.height, grid.width), 1.0, dtype=np.float32),
+            grid=grid, nodata=-9999.0, attribution="fake",
+        )
+
+    def fake_hand(aoi, threshold_cells=None):
+        seen["hand"] = threshold_cells
+        return HANDResult(
+            hand=np.full((grid.height, grid.width), 1.0, dtype=np.float32), grid=grid, nodata=-9999.0, attribution="fake"
+        )
+
+    monkeypatch.setattr("app.overlay.sources.get_drainage_density", fake_drainage_density)
+    monkeypatch.setattr("app.overlay.sources.get_hand", fake_hand)
+
+    resolve_criterion_raster(test_aoi, "c", "drainage_density", rules, stream_threshold_cells=750)
+    resolve_criterion_raster(test_aoi, "c", "hand", rules, stream_threshold_cells=750)
+
+    assert seen == {"drainage_density": 750, "hand": 750}
+
+
+def test_resolve_criterion_raster_ignores_stream_threshold_cells_for_unrelated_sources(test_aoi, monkeypatch):
+    """Every other source's adapter absorbs the extra kwarg via **_kwargs
+    without error -- an unrelated source passed a threshold override
+    (e.g. because the frontend submits it whenever drainage_density/hand
+    is selected, alongside other checked criteria) must still resolve
+    normally, not raise a TypeError.
+    """
+    from app.data.dem import DEMResult
+    from app.data.grid import compute_aoi_grid
+
+    grid = compute_aoi_grid(test_aoi.bounds_utm)
+    fake = DEMResult(
+        elevation_m=np.full((grid.height, grid.width), 1500.0, dtype=np.float32),
+        slope_degrees=np.zeros((grid.height, grid.width), dtype=np.float32),
+        grid=grid, nodata=-9999.0, source_used="fake",
+    )
+    monkeypatch.setattr("app.overlay.sources.get_dem", lambda aoi: fake)
+
+    rules = [{"min": None, "max": None, "risk_class": 4}]
+    reclassified, _grid, _attribution, _warning = resolve_criterion_raster(
+        test_aoi, "c", "dem_elevation", rules, stream_threshold_cells=750
+    )
+
+    assert (reclassified == 4).all()
 
 
 def test_building_density_resolves_via_the_registry(test_aoi, monkeypatch):

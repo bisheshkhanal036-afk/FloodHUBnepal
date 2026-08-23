@@ -104,7 +104,7 @@ def criteria_breaks(payload: CriterionBreaksRequest) -> CriterionBreaksResponse:
     aoi = payload.aoi.to_domain()
 
     try:
-        result = compute_criterion_breaks(aoi, payload.source)
+        result = compute_criterion_breaks(aoi, payload.source, payload.stream_threshold_cells)
     except OverlayValidationError as exc:
         raise HTTPException(status_code=422, detail={"error": "overlay_validation_error", "message": str(exc)}) from exc
     except DataSourceUnavailableError as exc:

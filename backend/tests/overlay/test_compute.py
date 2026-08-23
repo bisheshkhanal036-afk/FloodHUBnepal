@@ -210,6 +210,39 @@ def test_cache_key_changes_when_reclassification_rules_change_even_with_same_id_
     assert compute_cache_key(aoi, criteria_set) != compute_cache_key(aoi, different_rules)
 
 
+def test_cache_key_changes_when_stream_threshold_cells_changes():
+    """The exact same class of bug the reclassification_rules test above
+    regression-tests, for the newer field: two requests for the same
+    criterion_id/weight/reclassification_rules but a different
+    stream_threshold_cells override (drainage_density/hand's shared
+    stream-network threshold, user-selectable from the frontend) must
+    not collide on the same cache_key either -- get_drainage_density/
+    get_hand's own lower-level cache already distinguishes them (see
+    hydrology.py), so a collision here would silently serve one
+    threshold's raster for a request that asked for a different one.
+    """
+    from app.data.aoi import AOI
+
+    aoi = AOI(bbox_4326=(85.30, 27.70, 85.32, 27.72))
+    rules = [{"min": None, "max": None, "risk_class": 3}]
+
+    default_threshold = [
+        {"criterion_id": "drainage_density", "weight": 1.0, "reclassification_rules": rules, "stream_threshold_cells": None}
+    ]
+    overridden_threshold = [
+        {"criterion_id": "drainage_density", "weight": 1.0, "reclassification_rules": rules, "stream_threshold_cells": 1000}
+    ]
+
+    assert compute_cache_key(aoi, default_threshold) != compute_cache_key(aoi, overridden_threshold)
+
+    # Omitting the key entirely (every existing caller before this field
+    # existed) must behave identically to explicitly passing None -- this
+    # field is additive, not a breaking change to compute_cache_key's own
+    # contract.
+    no_key_at_all = [{"criterion_id": "drainage_density", "weight": 1.0, "reclassification_rules": rules}]
+    assert compute_cache_key(aoi, default_threshold) == compute_cache_key(aoi, no_key_at_all)
+
+
 def test_cache_key_matches_schema_pattern():
     import re
 

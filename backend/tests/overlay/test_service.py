@@ -20,7 +20,7 @@ GRID = AOIGrid(crs="EPSG:32645", resolution_m=10.0, origin_x=0.0, origin_y=0.0, 
 
 
 def _fake_resolve(monkeypatch, calls, class_value=3, attribution="Fake Source Attribution", warning=None):
-    def fake(aoi, criterion_id, source, rules):
+    def fake(aoi, criterion_id, source, rules, stream_threshold_cells=None):
         calls.append((criterion_id, source))
         return np.full((2, 2), class_value, dtype=np.uint8), GRID, attribution, warning
 
@@ -142,7 +142,7 @@ def test_source_warnings_are_collected_per_criterion(test_aoi, monkeypatch):
     """
     calls = []
 
-    def fake(aoi, criterion_id, source, rules):
+    def fake(aoi, criterion_id, source, rules, stream_threshold_cells=None):
         calls.append((criterion_id, source))
         warning = "edge reliability warning" if criterion_id == "b" else None
         return np.full((2, 2), 3, dtype=np.uint8), GRID, "Fake Source Attribution", warning
@@ -203,7 +203,7 @@ def test_different_reclassification_rules_for_same_id_and_weight_gives_different
     """
     calls = []
 
-    def fake(aoi, criterion_id, source, rules):
+    def fake(aoi, criterion_id, source, rules, stream_threshold_cells=None):
         calls.append((criterion_id, rules))
         # A trivial "respond to the rules" stand-in for real reclassification:
         # different rules -> different risk class.
