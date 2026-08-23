@@ -205,6 +205,18 @@ export default function MapView() {
     map.addControl(new maplibregl.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-left')
     map.addControl(new CoordinateReadoutControl(), 'bottom-left')
 
+    // Cursor feedback: 'grab' when idle in pan mode, 'grabbing' while
+    // dragging the map, 'crosshair' in draw mode (set by the aoiMode
+    // effect). dragstart/dragend only fire when dragPan is enabled, i.e.
+    // never in draw mode, so no need to re-check the mode here.
+    map.getCanvas().style.cursor = stateRef.current.aoiMode === 'draw' ? 'crosshair' : 'grab'
+    map.on('dragstart', () => {
+      map.getCanvas().style.cursor = 'grabbing'
+    })
+    map.on('dragend', () => {
+      map.getCanvas().style.cursor = stateRef.current.aoiMode === 'draw' ? 'crosshair' : 'grab'
+    })
+
     map.on('load', () => {
       map.addSource(DRAW_PREVIEW_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
       map.addLayer({
@@ -273,6 +285,15 @@ export default function MapView() {
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
+    // The cursor is a plain DOM style on the canvas (which exists as soon
+    // as the map does), so set it unconditionally — NOT inside the
+    // isStyleLoaded()-guarded apply() below. isStyleLoaded() returns false
+    // whenever raster basemap tiles are mid-load, so a guarded set would
+    // often defer to a 'load' event that already fired and never run,
+    // leaving the cursor stuck. '+' crosshair while selecting an area;
+    // open-hand 'grab' while panning ('grabbing' during a drag comes from
+    // the dragstart/dragend handlers in the init effect).
+    map.getCanvas().style.cursor = state.aoiMode === 'draw' ? 'crosshair' : 'grab'
     const apply = () => {
       if (state.aoiMode === 'draw') map.dragPan.disable()
       else map.dragPan.enable()
@@ -339,7 +360,7 @@ export default function MapView() {
           if (stateRef.current.aoiMode === 'basin') map.getCanvas().style.cursor = 'pointer'
         })
         map.on('mouseleave', 'basins-fill', () => {
-          map.getCanvas().style.cursor = ''
+          map.getCanvas().style.cursor = stateRef.current.aoiMode === 'draw' ? 'crosshair' : 'grab'
         })
       }
     }

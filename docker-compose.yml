@@ -32,6 +32,14 @@ services:
       OSM_R2_BUILDINGS_URL: ${OSM_R2_BUILDINGS_URL:-}
       OSM_R2_ROADS_URL: ${OSM_R2_ROADS_URL:-}
       OSM_R2_WATERWAYS_URL: ${OSM_R2_WATERWAYS_URL:-}
+      # config.py caps live cloud raster reads (DEM/WorldCover/population)
+      # at a 30s HTTP timeout, which is too tight on a slow/variable
+      # connection to AWS and makes GDAL tile reads fail
+      # (TIFFReadEncodedTile) -> a 500 on compute. Raise the ceiling
+      # (config.py reads these from the env); a generous timeout just
+      # lets slow reads finish.
+      GDAL_HTTP_TIMEOUT: ${GDAL_HTTP_TIMEOUT:-300}
+      GDAL_HTTP_MAX_RETRY: ${GDAL_HTTP_MAX_RETRY:-5}
     volumes:
       - ./backend/app:/app/app
       - ./backend/tests:/app/tests
@@ -59,6 +67,10 @@ services:
     volumes:
       - ./frontend/src:/app/src
       - ./frontend/index.html:/app/index.html
+      # Mounted so Vite's dev config (esp. server.watch.usePolling, needed
+      # for HMR to see edits across the Windows->container bind mount) is
+      # the live host file, not the stale one baked into the image.
+      - ./frontend/vite.config.js:/app/vite.config.js
     ports:
       - "127.0.0.1:5173:5173"
     depends_on:

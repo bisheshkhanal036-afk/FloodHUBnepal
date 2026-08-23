@@ -25,6 +25,16 @@ WORLDCOVER_ATTRIBUTION = (
 
 OSM_ATTRIBUTION = "© OpenStreetMap contributors"
 
+# NDVI is derived on the fly from Sentinel-2 L2A surface-reflectance bands
+# (B08 NIR, B04 red), read from the public sentinel-cogs bucket indexed by
+# Element 84's Earth Search STAC. Copernicus Sentinel data carries a
+# standard attribution requirement for derived products.
+NDVI_ATTRIBUTION = (
+    "Contains modified Copernicus Sentinel-2 L2A data, processed by ESA; "
+    "accessed via Element 84 Earth Search (AWS Open Data). NDVI computed "
+    "from the near-infrared (B08) and red (B04) bands."
+)
+
 # The citation text published on the dataset's AWS Open Data Registry
 # listing (https://registry.opendata.aws/dataforgood-fb-hrsl/), verified
 # during implementation of population.py. That listing's suggested

@@ -9,7 +9,7 @@
 // api/client.js's own docstring for why this isn't a fabricated/
 // animated progress bar), rendered live below the button as each SSE
 // event arrives.
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { computeOverlayStream } from '../api/client'
 import { CRITERIA_BY_ID } from '../config/criteria'
 import { rulesForClassification } from '../lib/classification'
@@ -27,6 +27,10 @@ export default function ComputePanel() {
   const { state, dispatch } = useAppState()
   const selectedIds = useSelectedCriteriaIds()
   const progressLogRef = useRef(null)
+  // Total wall-clock time of the last compute, in seconds (client-measured:
+  // request start -> final result). Complements the per-step progress log
+  // with a single headline "how long did it take" number.
+  const [totalSec, setTotalSec] = useState(null)
 
   // Auto-scroll to the latest step, same as any live log/console tail --
   // .compute-progress is a fixed-height scrollable list (max-height in
@@ -57,6 +61,8 @@ export default function ComputePanel() {
   async function handleCompute() {
     if (disabled) return
     dispatch({ type: 'OVERLAY_LOADING' })
+    setTotalSec(null)
+    const startedAt = performance.now()
     try {
       const criteria = selectedIds.map((id) => ({
         id,
@@ -72,6 +78,7 @@ export default function ComputePanel() {
       const result = await computeOverlayStream(payload, (message) =>
         dispatch({ type: 'OVERLAY_PROGRESS', message })
       )
+      setTotalSec((performance.now() - startedAt) / 1000)
       dispatch({ type: 'OVERLAY_LOADED', result, criteriaUsed: criteria, weightsUsed: finalWeights })
     } catch (error) {
       dispatch({ type: 'OVERLAY_ERROR', error })
@@ -108,6 +115,9 @@ export default function ComputePanel() {
             )
           })}
         </ul>
+      )}
+      {state.overlay.status === 'loaded' && totalSec != null && (
+        <p className="compute-time">⏱ Computed in {totalSec.toFixed(1)} s</p>
       )}
     </div>
   )

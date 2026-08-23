@@ -19,6 +19,24 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", Path(__file__).resolve().parents[2] /
 LOCAL_DEM_DIR = DATA_DIR / "raw" / "dem"
 LOCAL_WORLDCOVER_DIR = DATA_DIR / "raw" / "worldcover"
 LOCAL_POPULATION_DIR = DATA_DIR / "raw" / "population"
+LOCAL_NDVI_DIR = DATA_DIR / "raw" / "ndvi"
+
+# NDVI (ndvi.py) is computed on the fly from Sentinel-2 L2A red/NIR bands,
+# discovered through Element 84's public Earth Search STAC API and read
+# from the public sentinel-cogs bucket — no auth, same "live cloud read"
+# pattern as dem.py/worldcover.py, and it obeys GDAL_HTTP_RETRY_ENV below
+# for the actual COG reads. All overridable so the STAC endpoint,
+# collection, or scene-selection window can change without a code edit.
+NDVI_STAC_SEARCH_URL = os.environ.get(
+    "NDVI_STAC_SEARCH_URL", "https://earth-search.aws.element84.com/v1/search"
+)
+NDVI_STAC_COLLECTION = os.environ.get("NDVI_STAC_COLLECTION", "sentinel-2-l2a")
+# Max scene cloud cover (%) to accept; the least-cloudy scene under this is
+# used. Relaxed automatically if nothing qualifies (see ndvi.py).
+NDVI_MAX_CLOUD_COVER = float(os.environ.get("NDVI_MAX_CLOUD_COVER", "20"))
+# Optional ISO date range "start/end" to restrict scene search (e.g. a dry
+# season). Empty = no date restriction (search all available scenes).
+NDVI_DATE_RANGE = os.environ.get("NDVI_DATE_RANGE", "")
 
 # A directory, not a fixed filename — mirrors LOCAL_DEM_DIR/LOCAL_
 # WORLDCOVER_DIR's own local_source.find_local_raster_covering_aoi

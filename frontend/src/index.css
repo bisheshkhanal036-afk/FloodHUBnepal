@@ -1003,6 +1003,13 @@ input[type='radio'] {
   font-weight: 600;
 }
 
+.compute-time {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-accent, var(--color-text));
+}
+
 .result-panel {
   margin-top: var(--space-4);
 }
