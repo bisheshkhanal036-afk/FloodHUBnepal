@@ -3,16 +3,21 @@ from __future__ import annotations
 import geopandas as gpd
 import numpy as np
 import pytest
-from shapely.geometry import Point
+from shapely.geometry import Point, box
 
 from app.ahp.errors import AHPConsistencyError
+from app.data import config
 from app.data.attribution import OSM_ATTRIBUTION
 from app.data.grid import AOIGrid
 from app.data.osm import OSMResult
 from app.data.population import PopulationResult
+from app.data.aoi import AOI
+from app.data.reclassify import RECLASSIFIED_NODATA
 from app.overlay.errors import OverlayValidationError
 from app.overlay.report import compute_vulnerability_report
 from app.overlay.service import OverlayCriterionRequest
+
+from .conftest import TEST_AOI_BBOX_4326
 
 GRID = AOIGrid(crs="EPSG:32645", resolution_m=10.0, origin_x=0.0, origin_y=0.0, width=2, height=2)
 
@@ -332,3 +337,86 @@ def test_headline_totals_and_high_risk_figures(test_aoi, monkeypatch):
     assert report.total_population > 0
     assert report.high_risk_population == pytest.approx(report.total_population)
     assert report.high_risk_population_pct == pytest.approx(100.0)
+
+
+# --- per-criterion raster snapshots ---
+
+
+def test_criterion_raster_is_materialized_by_generating_the_report(test_aoi, monkeypatch):
+    """The whole point of gating this behind POST /report: the file must
+    not exist before the report runs, and must exist (with the right
+    values) after -- report.py is the ONLY thing that ever writes it.
+    """
+    import rasterio
+
+    _fake_resolve(monkeypatch, class_value=4)
+    _fake_population(monkeypatch)
+    _fake_osm_features(monkeypatch, gpd.GeoDataFrame({"id": []}, geometry=[], crs="EPSG:32645"))
+    criteria = [OverlayCriterionRequest(id="elevation_criterion", source="dem_elevation", reclassification_rules=[])]
+
+    report = compute_vulnerability_report(test_aoi, criteria, {"elevation_criterion": 1.0}, complete=True)
+
+    tif_path = config.PROCESSED_CACHE_DIR / "criterion_rasters" / f"{report.cache_key}_elevation_criterion.tif"
+    assert tif_path.exists()
+    with rasterio.open(tif_path) as src:
+        array = src.read(1)
+        assert (array == 4).all()
+        assert src.nodata == RECLASSIFIED_NODATA
+
+    assert report.criteria[0].data_url == f"/api/overlay/criterion_raster/{report.cache_key}/elevation_criterion.tif"
+
+
+def test_criterion_raster_second_report_request_does_not_rewrite_the_file(test_aoi, monkeypatch):
+    _fake_resolve(monkeypatch)
+    _fake_population(monkeypatch)
+    _fake_osm_features(monkeypatch, gpd.GeoDataFrame({"id": []}, geometry=[], crs="EPSG:32645"))
+    criteria = [OverlayCriterionRequest(id="a", source="dem_elevation", reclassification_rules=[])]
+
+    from app.overlay.report import write_hazard_class_geotiff as real_write
+
+    write_calls = []
+
+    def counting_write(*args, **kwargs):
+        write_calls.append(1)
+        return real_write(*args, **kwargs)
+
+    monkeypatch.setattr("app.overlay.report.write_hazard_class_geotiff", counting_write)
+
+    compute_vulnerability_report(test_aoi, criteria, {"a": 1.0}, complete=True)
+    compute_vulnerability_report(test_aoi, criteria, {"a": 1.0}, complete=True)
+
+    assert len(write_calls) == 1
+
+
+def test_criterion_raster_is_masked_to_the_true_polygon_for_a_basin_aoi(monkeypatch):
+    """Same true-shape treatment the combined risk surface already gets
+    (mask_risk_surface_to_polygon) -- a basin AOI's per-criterion
+    snapshot must not silently stay a full rectangle while the combined
+    result it's meant to explain is already masked to the real shape.
+    """
+    import rasterio
+    from pyproj import Transformer
+    from shapely.ops import transform as shapely_transform
+
+    # GRID (2x2, 10m, origin (0,0), y decreasing downward) spans UTM
+    # x:[0,20], y:[-20,0]. A polygon covering only the right half
+    # (x >= 10) should mask out column 0, leaving column 1 untouched --
+    # same hand-checkable construction test_hydrology.py's own polygon
+    # test already uses.
+    to_wgs84 = Transformer.from_crs("EPSG:32645", "EPSG:4326", always_xy=True)
+    utm_right_half = box(10.0, -20.0, 20.0, 0.0)
+    polygon_4326 = shapely_transform(to_wgs84.transform, utm_right_half)
+
+    aoi = AOI(bbox_4326=TEST_AOI_BBOX_4326, polygon=polygon_4326)
+    _fake_resolve(monkeypatch, class_value=5)
+    _fake_population(monkeypatch)
+    _fake_osm_features(monkeypatch, gpd.GeoDataFrame({"id": []}, geometry=[], crs="EPSG:32645"))
+    criteria = [OverlayCriterionRequest(id="a", source="dem_elevation", reclassification_rules=[])]
+
+    report = compute_vulnerability_report(aoi, criteria, {"a": 1.0}, complete=True)
+
+    tif_path = config.PROCESSED_CACHE_DIR / "criterion_rasters" / f"{report.cache_key}_a.tif"
+    with rasterio.open(tif_path) as src:
+        array = src.read(1)
+    assert (array[:, 0] == RECLASSIFIED_NODATA).all(), "left column (outside the polygon) must be masked"
+    assert (array[:, 1] == 5).all(), "right column (inside the polygon) must be untouched"

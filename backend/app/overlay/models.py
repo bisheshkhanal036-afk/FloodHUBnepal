@@ -27,7 +27,19 @@ class ReclassificationRuleInput(BaseModel):
 
 
 class OverlayCriterionInput(BaseModel):
-    id: str = Field(..., description="Criterion id — must match a key in final_weights.")
+    # Constrained to a safe filename charset: `id` is used to build a
+    # per-criterion GeoTIFF filename (report.py's
+    # _criterion_raster_tif_path, added alongside per-criterion raster
+    # snapshots) -- the first place `id` (previously an arbitrary
+    # caller-chosen string) ever lands in a filesystem path, so this
+    # closes a real path-traversal surface rather than trusting every
+    # caller to send something safe. Doesn't change any real existing
+    # behavior: the frontend has only ever sent id == source (a fixed
+    # registry name, e.g. "drainage_density"), which already matches.
+    id: str = Field(
+        ..., pattern=r"^[A-Za-z0-9_-]+$", max_length=64,
+        description="Criterion id — must match a key in final_weights. Safe-filename charset only.",
+    )
     source: str = Field(
         ..., description=f"Which Phase 2 raster this criterion reclassifies. One of {SUPPORTED_SOURCES!r}."
     )
@@ -238,6 +250,14 @@ class CriterionReportOut(BaseModel):
         ),
     )
     reclassification_rules: list[dict] = Field(..., description="The actual breaks submitted in THIS request.")
+    data_url: str = Field(
+        ...,
+        description=(
+            "GET this path to fetch this criterion's own already-reclassified raster (1-5 GIS "
+            "classes, same convention as hazard_classes_data_url) as a standalone GeoTIFF -- "
+            "materialized as a side effect of generating THIS report, never by POST /compute alone."
+        ),
+    )
 
 
 class ZonalClassStatsOut(BaseModel):
@@ -329,7 +349,7 @@ class VulnerabilityReportResponse(BaseModel):
             criteria=[
                 CriterionReportOut(
                     id=c.id, name=c.name, source=c.source, cluster=c.cluster,
-                    reclassification_rules=c.reclassification_rules,
+                    reclassification_rules=c.reclassification_rules, data_url=c.data_url,
                 )
                 for c in report.criteria
             ],

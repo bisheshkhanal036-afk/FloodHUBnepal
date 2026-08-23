@@ -4,7 +4,6 @@
 // code lives here, kept separate from the panels so a future phase
 // (shelter markers, vulnerability classes) can add its own layers here
 // without touching the state/panel logic.
-import { fromArrayBuffer } from 'geotiff'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useEffect, useRef } from 'react'
@@ -12,6 +11,7 @@ import { fetchRiskSurfaceBytes, getBasinAOI } from '../api/client'
 import { riskValueToRgb, SUPPORT_STATUS_COLORS } from '../lib/colorRamp'
 import { AREA_CAP_KM2, approxBboxAreaKm2, bboxToPolygon, cornersToBbox } from '../lib/geo'
 import { gridCornersToWgs84 } from '../lib/proj'
+import { decodeGeoTiffToDataUrl } from '../lib/rasterPreview'
 import { useAppState } from '../state/AppStateContext'
 
 const KATHMANDU_CENTER = [85.324, 27.7172]
@@ -436,34 +436,13 @@ export default function MapView() {
     async function render() {
       const bytes = await fetchRiskSurfaceBytes(result.data_url)
       if (cancelled) return
-      const tiff = await fromArrayBuffer(bytes)
-      const image = await tiff.getImage()
-      const [raster] = await image.readRasters()
+      // No maxSize -- full-resolution decode, unlike CriterionSnapshot's
+      // thumbnails: every pixel needs to be geographically accurate here.
+      const { dataUrl } = await decodeGeoTiffToDataUrl(bytes, {
+        nodata: result.nodata_value,
+        colorFn: riskValueToRgb,
+      })
       if (cancelled) return
-
-      const { width, height } = result.grid
-      const canvas = document.createElement('canvas')
-      canvas.width = width
-      canvas.height = height
-      const ctx = canvas.getContext('2d')
-      const imageData = ctx.createImageData(width, height)
-      const nodata = result.nodata_value
-
-      for (let i = 0; i < raster.length; i++) {
-        const v = raster[i]
-        const o = i * 4
-        if (nodata !== null && v === nodata) {
-          imageData.data[o + 3] = 0
-          continue
-        }
-        const [r, g, b] = riskValueToRgb(v)
-        imageData.data[o] = r
-        imageData.data[o + 1] = g
-        imageData.data[o + 2] = b
-        imageData.data[o + 3] = 255
-      }
-      ctx.putImageData(imageData, 0, 0)
-      const dataUrl = canvas.toDataURL('image/png')
       const coordinates = gridCornersToWgs84(result.grid)
 
       const apply = () => {

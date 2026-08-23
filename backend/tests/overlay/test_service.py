@@ -67,6 +67,30 @@ def test_successful_compute_returns_cache_key_grid_and_attribution(test_aoi, mon
     assert Path(result.data_url).exists()
 
 
+def test_overlay_result_carries_each_criterions_own_raster_unmasked(test_aoi, monkeypatch):
+    """OverlayResult.criterion_rasters -- the field report.py's per-
+    criterion snapshot feature depends on -- must carry every requested
+    criterion's own already-reclassified raster (not just the combined
+    surface), matching the criteria list, and must NOT be polygon-masked
+    here (report.py applies its own masking when materializing a
+    snapshot; POST /compute itself never reads this field at all, so it
+    would be pointless work to mask it in service.py).
+    """
+    calls = []
+    _fake_resolve(monkeypatch, calls, class_value=3)
+    criteria = [
+        OverlayCriterionRequest(id="a", source="dem_elevation", reclassification_rules=[]),
+        OverlayCriterionRequest(id="b", source="worldcover_land_cover", reclassification_rules=[]),
+    ]
+
+    result = compute_overlay(test_aoi, criteria, {"a": 0.5, "b": 0.5}, complete=True)
+
+    assert [r.criterion_id for r in result.criterion_rasters] == ["a", "b"]
+    for r in result.criterion_rasters:
+        assert r.grid == GRID
+        assert (r.reclassified == 3).all()
+
+
 def test_on_progress_is_called_for_each_criterion_and_at_the_end(test_aoi, monkeypatch):
     calls = []
     _fake_resolve(monkeypatch, calls)

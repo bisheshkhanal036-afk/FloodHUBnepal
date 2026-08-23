@@ -109,6 +109,22 @@ def test_compute_endpoint_rejects_unrecognized_source(monkeypatch):
     assert response.status_code == 422
 
 
+def test_compute_endpoint_rejects_a_criterion_id_outside_the_safe_filename_charset():
+    """OverlayCriterionInput.id gained a charset constraint alongside
+    per-criterion raster snapshots (id is now used to build a filesystem
+    path in report.py) -- a path-traversal-shaped id must be rejected at
+    the request-validation boundary, well before it could ever reach a
+    file path.
+    """
+    payload = _payload({"a": 1.0})
+    payload["criteria"][0]["id"] = "../../etc/passwd"
+    payload["final_weights"] = {"../../etc/passwd": 1.0}
+
+    response = client.post("/api/overlay/compute", json=payload)
+
+    assert response.status_code == 422
+
+
 # --- POST /api/overlay/compute/stream ---
 
 

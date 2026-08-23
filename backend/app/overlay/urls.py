@@ -12,6 +12,7 @@ ROUTER_PREFIX = "/api/overlay"
 # parameter placeholder, not a Python format placeholder).
 RISK_SURFACE_PATH_PATTERN = "/risk_surface/{cache_key}.tif"
 HAZARD_CLASSES_PATH_PATTERN = "/hazard_classes/{cache_key}.tif"
+CRITERION_RASTER_PATH_PATTERN = "/criterion_raster/{cache_key}/{criterion_id}.tif"
 
 
 def risk_surface_url(cache_key: str) -> str:
@@ -20,3 +21,7 @@ def risk_surface_url(cache_key: str) -> str:
 
 def hazard_classes_url(cache_key: str) -> str:
     return f"{ROUTER_PREFIX}/hazard_classes/{cache_key}.tif"
+
+
+def criterion_raster_url(cache_key: str, criterion_id: str) -> str:
+    return f"{ROUTER_PREFIX}/criterion_raster/{cache_key}/{criterion_id}.tif"

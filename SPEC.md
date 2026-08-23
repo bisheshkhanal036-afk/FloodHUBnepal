@@ -198,6 +198,19 @@ real, computed score. A pixel is nodata in the output if *any*
 contributing criterion is nodata at that pixel (`reclassify.RECLASSIFIED_NODATA
 = 0`); it is never treated as zero-risk or silently dropped from the sum.
 
+**Per-criterion raster snapshots.** Each criterion's own already-
+reclassified raster (1-5, `RECLASSIFIED_NODATA`=0 — the same values the
+weighted sum above combines, before combining) is available as its own
+downloadable GeoTIFF too — `GET /api/overlay/criterion_raster/
+{cache_key}/{criterion_id}.tif` — but **only after `POST /api/overlay/
+report` has been generated for that `cache_key`**, by explicit design:
+`POST /compute`/`/compute/stream` never write these files, so the route
+404s until a report actually runs `report.py`'s
+`_materialize_criterion_rasters` as a side effect. See §5's own entry
+for the full reasoning (this was a deliberate scoping decision, not a
+limitation worth lifting later) and `backend/app/overlay/report.py`'s
+docstring for the mechanics.
+
 ### 3.5 Basin-based AOI selection — `backend/app/data/basins.py`, `backend/app/basins/`
 
 An **alternative** way to produce an AOI, alongside hand-drawing a bbox —
@@ -1306,6 +1319,71 @@ them.
   running app, not just in tests: the shared control renders/updates
   correctly, and two full computes at different thresholds produced two
   different `cache_key`s as expected.
+- Backend + frontend: **per-criterion raster snapshots**, unlocked by the
+  vulnerability report — the user wanted to see each individual
+  criterion's own raster, not just the combined weighted risk surface.
+  Initially proposed as "only frontend needs changes"; investigated and
+  reported back that the bytes don't exist anywhere the browser can
+  reach today (each criterion's reclassified raster is computed
+  in-memory inside `compute_overlay`'s per-criterion loop and discarded
+  once the combined surface is built), so a small backend addition was
+  necessary. Discussed the storage/latency tradeoffs with the user
+  before building anything; **explicit scoping decision from the user**:
+  snapshots are only available after generating the report, never after
+  a plain compute — which also resolves the storage-growth concern for
+  free, since report generation is already a deliberate, opt-in action.
+  See §3.4's own "Per-criterion raster snapshots" entry for the field-
+  level contract.
+  - Backend: `overlay/service.py`'s `OverlayResult` gained a
+    `criterion_rasters` field carrying what the per-criterion loop
+    already computes (no new computation, just no longer discarding it)
+    — `POST /compute`'s own response deliberately never reads it, so its
+    contract is byte-for-byte unchanged. `overlay/report.py`'s new
+    `_materialize_criterion_rasters` is the *only* place these ever get
+    written to disk (reusing the already-existing
+    `write_hazard_class_geotiff`, since a reclassified criterion raster
+    is byte-for-byte the same shape/dtype/nodata convention as a
+    hazard-class raster — no new writer needed), masked to a basin AOI's
+    true polygon shape via a new shared `_mask_array_to_polygon` helper
+    extracted from `mask_risk_surface_to_polygon`'s own core logic. New
+    route `GET /api/overlay/criterion_raster/{cache_key}/{criterion_id}
+    .tif` mirrors the existing risk_surface/hazard_classes routes
+    exactly, 404ing until a report exists for that `cache_key` — this is
+    what actually enforces "only after the report", not a UI-layer
+    convention. **A real path-traversal gap closed alongside this**:
+    `OverlayCriterionInput.id` (previously an arbitrary caller-chosen
+    string with no format constraint) is now restricted to a safe
+    filename charset, since this is the first feature to ever use `id`
+    to build a filesystem path — doesn't change any real existing
+    behavior, since the frontend has only ever sent `id == source`.
+    8 new backend tests (criterion_rasters population, materialization/
+    no-rewrite-on-second-request/polygon-masking in report.py, the new
+    route's 404-before/200-after/path-traversal-rejection behavior, the
+    `id` charset rejection) — 303 backend tests passing total, zero
+    regressions.
+  - Frontend: the GeoTIFF-decode-to-canvas-dataURL logic that used to
+    live only inline in `MapView.jsx`'s risk-surface layer was extracted
+    into a shared `lib/rasterPreview.js` (`decodeGeoTiffToDataUrl`),
+    parameterized by a color function and an optional downsample target
+    size — thumbnails decode via geotiff.js's own `readRasters({width,
+    height, resampleMethod: 'nearest'})` rather than full-resolution
+    decode + scale-down, `'nearest'` specifically (never bilinear) per
+    this project's own established categorical-data resampling rule
+    (§2.2), since these are discrete 1-5 classes. `MapView.jsx` itself
+    now calls this same helper for its own layer — pure de-duplication,
+    no behavior change. New `components/CriterionSnapshot.jsx` renders a
+    small colored thumbnail + 1-5 legend (reusing `colorRamp.js`'s
+    existing `riskValueToRgb((class - 1) / 4)` convention, the same one
+    the zonal-stats-table swatches already use — no new palette),
+    mounted lazily: only while its containing `<details>` is open, so a
+    report with many criteria never decodes rasters nobody looks at.
+    `ReportPanel.jsx`'s previously-flat per-criterion weight list became
+    expandable entries, each holding a snapshot and its own download
+    link. Verified live end to end via Playwright-in-Docker against the
+    real running app: a plain compute has no criterion-raster URL at all
+    (confirmed 404), generating the report makes one appear and actually
+    serves a real GeoTIFF, the UI renders a correct thumbnail/legend/
+    working download link, zero console errors.
 - Not yet implemented: AOI persistence, and shelter identification. The
   GeoTIFF file route is a simple
   direct-read endpoint, not a general static-asset server or CDN — fine

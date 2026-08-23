@@ -52,6 +52,15 @@ class OverlayResult:
     data_url: str
     attribution: list[str]
     source_warnings: list[SourceWarning]
+    # Each requested criterion's own already-reclassified raster (1-5,
+    # RECLASSIFIED_NODATA=0), the same ones combine_risk_surface used to
+    # build risk_surface above -- kept rather than discarded so
+    # report.py can materialize per-criterion GeoTIFF snapshots without
+    # re-resolving any criterion a second time. POST /compute's own
+    # response (OverlayComputeResponse.from_overlay_result) deliberately
+    # never reads this field -- see report.py's own docstring for why
+    # per-criterion snapshots are gated behind POST /report specifically.
+    criterion_rasters: list[CriterionRaster]
 
 
 def _risk_surface_tif_path(cache_key: str) -> Path:
@@ -122,7 +131,7 @@ def compute_overlay(
         if on_progress is not None:
             on_progress(message)
 
-    def _compute() -> tuple[RiskSurfaceResult, list[str], list[SourceWarning]]:
+    def _compute() -> tuple[RiskSurfaceResult, list[str], list[SourceWarning], list[CriterionRaster]]:
         rasters: list[CriterionRaster] = []
         attributions: set[str] = set()
         source_warnings: list[SourceWarning] = []
@@ -152,10 +161,15 @@ def compute_overlay(
         if aoi.polygon is not None:
             _notify("Masking to the basin's true shape…")
             risk_surface_result = mask_risk_surface_to_polygon(risk_surface_result, aoi.polygon_utm)
-        return risk_surface_result, sorted(attributions), source_warnings
+        # rasters returned unmasked (raw per-criterion grid) -- report.py
+        # applies its own polygon masking when materializing a snapshot,
+        # rather than baking that in here, since POST /compute itself
+        # never reads criterion_rasters at all (see OverlayResult's own
+        # docstring on the field).
+        return risk_surface_result, sorted(attributions), source_warnings, rasters
 
     _notify("Checking cache…")
-    risk_surface_result, attribution, source_warnings = cached_or_compute(
+    risk_surface_result, attribution, source_warnings, criterion_rasters = cached_or_compute(
         "risk_surface", aoi, _compute, version=cache_key
     )
 
@@ -171,4 +185,5 @@ def compute_overlay(
         data_url=str(tif_path),
         attribution=attribution,
         source_warnings=source_warnings,
+        criterion_rasters=criterion_rasters,
     )

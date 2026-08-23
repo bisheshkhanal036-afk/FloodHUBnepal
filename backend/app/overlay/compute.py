@@ -205,11 +205,42 @@ def compute_cache_key(aoi: AOI, criteria_set: list[dict]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _mask_array_to_polygon(array: np.ndarray, grid: AOIGrid, nodata, polygon_utm) -> np.ndarray:
+    """Sets every pixel whose cell center does not fall inside
+    `polygon_utm` (already reprojected to `grid`'s CRS — see
+    AOI.polygon_utm) to `nodata`, leaving everything inside untouched.
+    The shared core `mask_risk_surface_to_polygon` (below, for the
+    combined risk surface) and `report.py`'s per-criterion snapshot
+    masking both use — extracted here so a basin AOI's individual
+    criterion rasters can get the exact same true-shape treatment as the
+    combined surface, without duplicating the rasterize call.
+
+    `all_touched=False` (pixel center must fall inside the polygon):
+    matches this codebase's own established convention for "is this grid
+    cell inside this shape" (app/data/density_raster.py's coverage
+    rasterization uses the same setting for the same reason), as opposed
+    to the `all_touched=True` distance_raster.py uses for line-nearness,
+    a different question entirely.
+    """
+    from rasterio.features import rasterize
+
+    inside_mask = rasterize(
+        [(polygon_utm, 1)],
+        out_shape=(grid.height, grid.width),
+        transform=grid.transform,
+        fill=0,
+        all_touched=False,
+        dtype=np.uint8,
+    ).astype(bool)
+
+    return np.where(inside_mask, array, array.dtype.type(nodata))
+
+
 def mask_risk_surface_to_polygon(result: RiskSurfaceResult, polygon_utm) -> RiskSurfaceResult:
     """Sets every pixel of `result.risk_surface` whose cell does not fall
-    inside `polygon_utm` (already reprojected to `result.grid`'s CRS —
-    see AOI.polygon_utm) to RISK_SURFACE_NODATA, leaving everything
-    inside untouched.
+    inside `polygon_utm` to RISK_SURFACE_NODATA, leaving everything
+    inside untouched — see _mask_array_to_polygon for the shared masking
+    logic itself.
 
     Why: without this, a basin selection's risk surface always fills the
     AOI's full rectangular bounding envelope — every earlier stage
@@ -221,25 +252,6 @@ def mask_risk_surface_to_polygon(result: RiskSurfaceResult, polygon_utm) -> Risk
     selection's *result* follow the basin's real shape on the map,
     rather than always looking like a rectangle regardless of what was
     selected.
-
-    `all_touched=False` (pixel center must fall inside the polygon):
-    matches this codebase's own established convention for "is this grid
-    cell inside this shape" (app/data/density_raster.py's coverage
-    rasterization uses the same setting for the same reason), as opposed
-    to the `all_touched=True` distance_raster.py uses for line-nearness,
-    a different question entirely.
     """
-    from rasterio.features import rasterize
-
-    grid = result.grid
-    inside_mask = rasterize(
-        [(polygon_utm, 1)],
-        out_shape=(grid.height, grid.width),
-        transform=grid.transform,
-        fill=0,
-        all_touched=False,
-        dtype=np.uint8,
-    ).astype(bool)
-
-    masked = np.where(inside_mask, result.risk_surface, np.float32(result.nodata))
-    return RiskSurfaceResult(risk_surface=masked, grid=grid, nodata=result.nodata)
+    masked = _mask_array_to_polygon(result.risk_surface, result.grid, result.nodata, polygon_utm)
+    return RiskSurfaceResult(risk_surface=masked, grid=result.grid, nodata=result.nodata)

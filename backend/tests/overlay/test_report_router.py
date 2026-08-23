@@ -169,3 +169,53 @@ def test_hazard_classes_file_route_404s_for_a_cache_key_that_was_never_computed(
 def test_hazard_classes_file_route_422s_for_a_malformed_cache_key():
     response = client.get("/api/overlay/hazard_classes/not-a-valid-hash.tif")
     assert response.status_code == 422
+
+
+# --- per-criterion raster snapshots: only available after POST /report ---
+
+
+def test_criterion_raster_404s_after_a_plain_compute_before_any_report(monkeypatch):
+    """The core of the "only after the report" requirement, verified at
+    the HTTP boundary: a cache_key with a fully computed risk surface
+    (and even its hazard_classes derived) still 404s for a criterion
+    raster until POST /report has actually been called for it.
+    """
+    _fake_dependencies(monkeypatch)
+    compute_response = client.post(
+        "/api/overlay/compute",
+        json={
+            "aoi": {"bbox": [85.3050, 27.7020, 85.3110, 27.7080]},
+            "criteria": [{"id": "a", "source": "dem_elevation", "reclassification_rules": [{"min": 0, "max": None, "risk_class": 1}]}],
+            "final_weights": {"a": 1.0},
+            "complete": True,
+        },
+    )
+    cache_key = compute_response.json()["cache_key"]
+
+    response = client.get(f"/api/overlay/criterion_raster/{cache_key}/a.tif")
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["error"] == "criterion_raster_not_found"
+
+
+def test_criterion_raster_file_route_serves_the_geotiff_after_a_report(monkeypatch):
+    _fake_dependencies(monkeypatch)
+
+    report_response = client.post("/api/overlay/report", json=_report_payload())
+    body = report_response.json()
+    data_url = body["criteria"][0]["data_url"]
+    assert data_url == f"/api/overlay/criterion_raster/{body['cache_key']}/a.tif"
+
+    file_response = client.get(data_url)
+
+    assert file_response.status_code == 200
+    assert file_response.headers["content-type"] == "image/tiff"
+    assert file_response.content[:2] in (b"II", b"MM")
+
+
+def test_criterion_raster_file_route_422s_for_a_malformed_criterion_id():
+    response = client.get("/api/overlay/criterion_raster/" + "a" * 64 + "/../../etc.tif")
+    assert response.status_code in (404, 422)  # routing itself rejects a path-shaped segment; never a 200
+
+    response = client.get("/api/overlay/criterion_raster/" + "a" * 64 + "/not valid!.tif")
+    assert response.status_code == 422

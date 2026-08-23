@@ -1286,11 +1286,57 @@ input[type='radio'] {
   font-weight: 600;
 }
 
-.report-panel__weight-list {
-  margin: 0;
-  padding-left: 1.1rem;
+.report-panel__criteria {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.report-panel__criterion {
   font-size: var(--text-xs);
-  line-height: 1.6;
+}
+
+.report-panel__criterion summary {
+  cursor: pointer;
+  padding: 0.3rem 0;
+  color: var(--color-text);
+}
+
+.report-panel__criterion-detail {
+  margin: 0.3rem 0 0.6rem;
+  padding: var(--space-3);
+  background: var(--color-panel-alt);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.criterion-snapshot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.criterion-snapshot__image {
+  display: block;
+  width: 100%;
+  max-width: 220px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-strong);
+  /* Crisp pixel edges at this small a preview size -- a smoothed/
+     blurred discrete 1-5 class raster would misleadingly suggest
+     continuous values at class boundaries that don't exist. */
+  image-rendering: pixelated;
+}
+
+.criterion-snapshot__legend {
+  margin: 0;
+}
+
+.criterion-snapshot__legend .legend__swatch {
+  border-radius: 2px;
 }
 
 .attribution {

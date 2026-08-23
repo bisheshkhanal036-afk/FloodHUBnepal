@@ -28,7 +28,12 @@ from .models import (
 from .progress_stream import stream_compute_events
 from .report import compute_vulnerability_report
 from .service import compute_overlay
-from .urls import HAZARD_CLASSES_PATH_PATTERN, RISK_SURFACE_PATH_PATTERN, ROUTER_PREFIX
+from .urls import (
+    CRITERION_RASTER_PATH_PATTERN,
+    HAZARD_CLASSES_PATH_PATTERN,
+    RISK_SURFACE_PATH_PATTERN,
+    ROUTER_PREFIX,
+)
 
 router = APIRouter(prefix=ROUTER_PREFIX, tags=["overlay"])
 
@@ -169,6 +174,43 @@ def get_hazard_classes_file(cache_key: str = PathParam(..., pattern=r"^[a-f0-9]{
         materialize_hazard_classes_from_risk_surface_tif(risk_surface_path, hazard_path)
 
     return FileResponse(hazard_path, media_type="image/tiff", filename=f"{cache_key}_hazard_classes.tif")
+
+
+@router.get(CRITERION_RASTER_PATH_PATTERN)
+def get_criterion_raster_file(
+    cache_key: str = PathParam(..., pattern=r"^[a-f0-9]{64}$"),
+    criterion_id: str = PathParam(..., pattern=r"^[A-Za-z0-9_-]+$"),
+) -> FileResponse:
+    """Serve one criterion's own already-reclassified raster (1-5 GIS
+    classes, same convention as GET /hazard_classes/{cache_key}.tif) as a
+    standalone GeoTIFF.
+
+    Deliberately never triggers materialization itself, unlike GET
+    /hazard_classes — this route only ever reads a file that POST
+    /report already wrote as a side effect of generating a report for
+    this cache_key (see report._materialize_criterion_rasters). That's
+    what actually enforces "snapshots only after the report": a
+    cache_key with a computed risk surface but no report yet still 404s
+    here, by design, not merely because nothing happened to call this
+    route yet.
+
+    `criterion_id`'s pattern constraint mirrors OverlayCriterionInput's
+    own (models.py) as defense in depth against path traversal, even
+    though the write side already only ever accepts that same charset.
+    """
+    path = config.PROCESSED_CACHE_DIR / "criterion_rasters" / f"{cache_key}_{criterion_id}.tif"
+    if not path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": "criterion_raster_not_found",
+                "message": (
+                    f"no criterion raster cached for cache_key={cache_key!r}, criterion_id={criterion_id!r}; "
+                    f"generate the vulnerability report first via POST {ROUTER_PREFIX}/report"
+                ),
+            },
+        )
+    return FileResponse(path, media_type="image/tiff", filename=f"{cache_key}_{criterion_id}.tif")
 
 
 @router.post("/report", response_model=VulnerabilityReportResponse)

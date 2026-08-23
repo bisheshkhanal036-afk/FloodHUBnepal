@@ -4,10 +4,12 @@
 // weighting breakdown that produced the result. Gated on state.overlay
 // being loaded -- this is display for an EXISTING result, not a new
 // computation of its own.
+import { useState } from 'react'
 import { absoluteDataUrl, generateReport } from '../api/client'
 import { CRITERIA_BY_ID } from '../config/criteria'
 import { riskValueToCssColor } from '../lib/colorRamp'
 import { useAppState } from '../state/AppStateContext'
+import CriterionSnapshot from './CriterionSnapshot'
 
 /** state.ahpMatrices already has exactly the {items, matrix} shape POST /api/overlay/report's weighting.cluster_comparison/within_cluster_comparisons expects -- built directly from the pairwise-comparison UI, not re-derived here. */
 function buildWeightingPayload(state) {
@@ -38,6 +40,13 @@ function formatNumber(value) {
 
 export default function ReportPanel() {
   const { state, dispatch } = useAppState()
+  // Which criterion's snapshot <details> is open, by id -- CriterionSnapshot
+  // is only mounted (and only then fetches+decodes) while its own entry
+  // is open, so generating a report with many criteria never decodes
+  // rasters nobody actually looks at. Declared before the early return
+  // below (React's rule: hooks must run unconditionally on every render
+  // of this component instance).
+  const [openSnapshotId, setOpenSnapshotId] = useState(null)
   const { criteriaUsed, weightsUsed } = state.overlay
   if (state.overlay.status !== 'loaded' || !criteriaUsed || !weightsUsed) return null
 
@@ -163,14 +172,33 @@ export default function ReportPanel() {
             {result.weighting.consistency_warning && (
               <p className="field-warning">{result.weighting.consistency_warning}</p>
             )}
-            <ul className="report-panel__weight-list">
-              {result.criteria.map((c) => (
-                <li key={c.id}>
-                  {c.name}
-                  {c.cluster ? ` (${c.cluster})` : ''} — {((result.weighting.final_weights[c.id] || 0) * 100).toFixed(1)}%
-                </li>
-              ))}
-            </ul>
+            <div className="report-panel__criteria">
+              {result.criteria.map((c) => {
+                const isOpen = openSnapshotId === c.id
+                return (
+                  <details
+                    key={c.id}
+                    className="report-panel__criterion"
+                    open={isOpen}
+                    onToggle={(e) => setOpenSnapshotId(e.target.open ? c.id : null)}
+                  >
+                    <summary>
+                      {c.name}
+                      {c.cluster ? ` (${c.cluster})` : ''} —{' '}
+                      {((result.weighting.final_weights[c.id] || 0) * 100).toFixed(1)}%
+                    </summary>
+                    {isOpen && (
+                      <div className="report-panel__criterion-detail">
+                        <CriterionSnapshot dataUrl={c.data_url} />
+                        <a href={absoluteDataUrl(c.data_url)} className="result-panel__download-link">
+                          Download {c.name} (.tif)
+                        </a>
+                      </div>
+                    )}
+                  </details>
+                )
+              })}
+            </div>
           </div>
 
           {result.aoi.hybas_id && (

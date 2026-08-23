@@ -14,17 +14,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 
 from app.ahp.hierarchy import HierarchyResult, compute_hierarchy
+from app.data import config
 from app.data.aoi import AOI
 from app.data.cache import cached_or_compute
 from app.data.osm import get_osm_features
 from app.data.population import get_population
+from app.data.reclassify import RECLASSIFIED_NODATA
 
 from .building_classification import ClassifiedBuilding, classify_buildings
+from .compute import _mask_array_to_polygon
 from .errors import OverlayValidationError
+from .geotiff import write_hazard_class_geotiff
 from .hazard_classes import risk_surface_to_hazard_classes
-from .service import OverlayCriterionRequest, compute_overlay
+from .service import OverlayCriterionRequest, OverlayResult, compute_overlay
+from .urls import criterion_raster_url
 from .zonal_stats import ZonalClassStats, compute_zonal_stats
 
 # Hazard classes 4 (High) and 5 (Very High) -- the Siraha-style paper's
@@ -48,6 +54,13 @@ class CriterionReportInfo:
     source: str
     cluster: str | None
     reclassification_rules: list[dict]
+    # Per-criterion raster snapshot -- see _materialize_criterion_rasters.
+    # Deliberately only ever populated here, never on POST /compute's own
+    # response: "see the individual layers" is gated behind actually
+    # asking for the vulnerability report, by explicit user request, not
+    # just a UI-layer convention -- the file itself doesn't exist on disk
+    # until this function writes it.
+    data_url: str
 
 
 # Tolerance for the final_weights-vs-recomputed-AHP-breakdown consistency
@@ -186,6 +199,51 @@ def _weighting_consistency_warning(final_weights: dict[str, float], ahp: Hierarc
     return None
 
 
+def _criterion_raster_tif_path(cache_key: str, criterion_id: str) -> Path:
+    # config.PROCESSED_CACHE_DIR read dynamically at call time (not
+    # imported by value), same convention every other module in this
+    # feature already follows, so tests can monkeypatch it.
+    return config.PROCESSED_CACHE_DIR / "criterion_rasters" / f"{cache_key}_{criterion_id}.tif"
+
+
+def _materialize_criterion_rasters(overlay_result: OverlayResult, cache_key: str, aoi: AOI) -> dict[str, str]:
+    """Writes each of `overlay_result.criterion_rasters` to its own
+    GeoTIFF, if not already on disk, and returns {criterion_id:
+    data_url}. This is the ONLY place these files ever get written --
+    POST /compute never calls this -- which is what actually enforces
+    "snapshots only after the report", not a UI-layer convention: the
+    bytes simply don't exist until a report is generated for this
+    cache_key.
+
+    Reuses write_hazard_class_geotiff (overlay/geotiff.py) as-is rather
+    than a new writer: a reclassified criterion raster (uint8, values
+    1-5, RECLASSIFIED_NODATA=0) is byte-for-byte the same shape/dtype/
+    nodata convention as a hazard-class raster.
+
+    Masks to the AOI's true polygon shape when set (a basin selection),
+    via the same _mask_array_to_polygon core
+    mask_risk_surface_to_polygon already uses for the combined surface
+    -- otherwise a basin AOI's per-criterion snapshot would show the
+    full rectangular bounding envelope while the combined result (which
+    IS already masked) shows the real basin shape, an inconsistency a
+    user comparing the two side by side would notice immediately.
+
+    Same `if not path.exists(): write(...)` short-circuit service.py's
+    own risk-surface materialization already uses -- a second report
+    request for the same cache_key is a no-op here, not a rewrite.
+    """
+    urls: dict[str, str] = {}
+    for criterion_raster in overlay_result.criterion_rasters:
+        path = _criterion_raster_tif_path(cache_key, criterion_raster.criterion_id)
+        if not path.exists():
+            array = criterion_raster.reclassified
+            if aoi.polygon is not None:
+                array = _mask_array_to_polygon(array, criterion_raster.grid, RECLASSIFIED_NODATA, aoi.polygon_utm)
+            write_hazard_class_geotiff(path, array, criterion_raster.grid, RECLASSIFIED_NODATA)
+        urls[criterion_raster.criterion_id] = criterion_raster_url(cache_key, criterion_raster.criterion_id)
+    return urls
+
+
 def compute_vulnerability_report(
     aoi: AOI,
     criteria: list[OverlayCriterionRequest],
@@ -221,6 +279,7 @@ def compute_vulnerability_report(
     """
     overlay_result = compute_overlay(aoi, criteria, final_weights, complete)
     cache_key = overlay_result.cache_key
+    criterion_raster_urls = _materialize_criterion_rasters(overlay_result, cache_key, aoi)
 
     ahp_result: HierarchyResult | None = None
     if weighting_method == "ahp":
@@ -257,6 +316,7 @@ def compute_vulnerability_report(
             source=c.source,
             cluster=_cluster_for_criterion(c.id, ahp_result),
             reclassification_rules=c.reclassification_rules,
+            data_url=criterion_raster_urls[c.id],
         )
         for c in criteria
     ]
