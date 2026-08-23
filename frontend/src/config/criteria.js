@@ -10,15 +10,22 @@
 // methodological choices this project has never made before this phase
 // — flagged explicitly for review, see the accompanying message.
 //
-// `building_density` is Exposure's first criterion (what's at risk --
-// population, buildings, economic value): the other 7 are all terrain/
-// hydrology/land-cover/proximity factors describing the hazard itself,
-// not what it threatens. AHP mode's completeness check
+// `building_density` and `population_density` are Exposure's criteria
+// (what's at risk -- population, buildings, economic value): the other 7
+// are all terrain/hydrology/land-cover/proximity factors describing the
+// hazard itself, not what it threatens. AHP mode's completeness check
 // (state/AppStateContext.jsx's useFinalWeights) only requires every
 // currently *selected* criterion's own cluster to be resolved, not every
-// canonical cluster -- so before this addition, Exposure being
-// permanently empty never blocked computing; it just meant the model
-// had no real exposure signal at all.
+// canonical cluster -- so before building_density's addition, Exposure
+// being permanently empty never blocked computing; it just meant the
+// model had no real exposure signal at all.
+//
+// dist_to_river stays in Hydrological, not Exposure: it was already
+// there before this addition, and that's the methodologically correct
+// placement (proximity to the hazard's own source is a hydrological/
+// hazard-proximity factor, same category as drainage_density -- Exposure
+// is reserved for what's at risk, i.e. population/buildings, not the
+// hazard itself). Flagged as a decision to confirm.
 
 // Must exactly match backend/app/ahp/constants.py's CANONICAL_CLUSTERS —
 // order matters for the top-level 5x5 pairwise comparison, though the
@@ -173,6 +180,33 @@ export const CRITERIA = [
       { min: 0.3, max: 0.45, risk_class: 3 },
       { min: 0.45, max: 0.6, risk_class: 4 },
       { min: 0.6, max: null, risk_class: 5 },
+    ],
+  },
+  {
+    id: 'population_density',
+    label: 'Population Density',
+    cluster: 'Exposure',
+    type: 'continuous',
+    riskDirection: 'ascending', // high value -> high risk
+    unit: 'people/km²',
+    description:
+      'Meta/CIESIN HRSL population density (converted from per-pixel count to people/km² at native resolution before resampling — see SPEC.md §2.2) — denser population means more people exposed if flooded.',
+    // Placeholder equal-interval breakpoints, the same "structurally-
+    // reasonable, not literature-calibrated" placeholder pattern SPEC.md
+    // already documents for drainage_density -- picked from the real
+    // resampled density range seen in live testing over Kathmandu Valley
+    // (~25,000-121,000 people/km² for that AOI's dense urban core), not
+    // derived from any population-risk literature. Flagged as a decision
+    // to confirm. NOTE: this scale is specific to HRSL's people/km²
+    // density output, not a raw per-pixel count -- see backend/app/data/
+    // population.py's _count_to_density for why count had to be
+    // converted before these numbers were even meaningful to pick.
+    defaultReclassificationRules: [
+      { min: null, max: 30000, risk_class: 1 },
+      { min: 30000, max: 60000, risk_class: 2 },
+      { min: 60000, max: 90000, risk_class: 3 },
+      { min: 90000, max: 120000, risk_class: 4 },
+      { min: 120000, max: null, risk_class: 5 },
     ],
   },
 ]

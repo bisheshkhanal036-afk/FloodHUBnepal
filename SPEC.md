@@ -51,6 +51,24 @@ redefined independently.
     risk classes) → **nearest-neighbor** resampling only. Averaging across
     discrete category codes produces meaningless intermediate values and
     must never be used.
+  - **Count-type continuous data is NOT bilinear-resampled directly.**
+    Bilinear resampling is only correct for an *intensive* quantity (a
+    value that doesn't scale with pixel area — elevation, slope, a
+    distance) or an already-normalized density. A *count* (population
+    per source pixel, building count per cell, etc.) is *extensive* — it
+    scales with the area it was counted over — so resampling it directly
+    from a coarser native pixel onto this grid's finer 10m pixels
+    silently stops being a count at all: it neither reproduces the
+    original per-area count (dividing a 30m-pixel's count by 9 to spread
+    it over nine 10m pixels) nor conserves the total across the AOI.
+    The correct handling: convert count → density (people/km² or
+    equivalent) at the source's own native resolution FIRST, THEN
+    bilinear-resample that density field onto the common grid, exactly
+    like any other intensive continuous quantity. `population.py`'s
+    `_count_to_density` does this (dividing by each source row's true
+    geodetic pixel area, not a single fixed constant, since a WGS84
+    pixel's ground area shrinks with latitude) — the reference
+    implementation for any future count-type source.
 - `Criterion.resampling_method` in the schema records which of the two
   applies to a given input layer.
 
@@ -714,6 +732,26 @@ them.
   not a typo) — nothing under either directory was ever tracked despite
   the clear intent; rewritten as `dir/**` + an explicit directory-level
   `!dir/**/` re-include, which actually works.
+- Backend: **9th criterion source, `population_density`** —
+  `app/data/population.py`, Meta/CIESIN HRSL population, live windowed
+  S3 reads (`s3://dataforgood-fb-data/hrsl-cogs/hrsl_general/hrsl_general-
+  latest.vrt`, a single pre-built GDAL virtual-mosaic file — no manual
+  per-tile URL templating needed, unlike DEM/WorldCover), same local-
+  check-first/cloud-fallback shape as those two sources. Registered via
+  the existing `overlay/sources.py` registry mechanism, no changes to
+  overlay/compute.py's math or any other Phase 2 source module. Region
+  config (`config.POPULATION_S3_REGION_ENV`, `AWS_DEFAULT_REGION=us-
+  east-1`) included per explicit request, though live testing during
+  implementation showed the plain-HTTPS access pattern used here (same
+  as DEM/WorldCover) actually worked without it. Frontend: added to
+  `criteria.js`'s Exposure cluster alongside `building_density`
+  (Exposure's first occupant, from an earlier phase); `dist_to_river`
+  confirmed already correctly in Hydrological, not moved. This is also
+  the source that prompted the count-vs-density resampling rule now
+  documented in §2.2 above — HRSL's per-pixel value is a population
+  COUNT, not a density, and an early version of this source bilinear-
+  resampled it directly (wrong per that rule, caught and fixed before
+  first commit — see `population.py`'s `_count_to_density`).
 - Not yet implemented: AOI persistence, vulnerability classification
   (discrete display classes derived from the continuous risk surface),
   and shelter identification. The GeoTIFF file route is a simple

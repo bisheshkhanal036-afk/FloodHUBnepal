@@ -18,6 +18,7 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", Path(__file__).resolve().parents[2] /
 
 LOCAL_DEM_DIR = DATA_DIR / "raw" / "dem"
 LOCAL_WORLDCOVER_DIR = DATA_DIR / "raw" / "worldcover"
+LOCAL_POPULATION_DIR = DATA_DIR / "raw" / "population"
 
 # A directory, not a fixed filename — mirrors LOCAL_DEM_DIR/LOCAL_
 # WORLDCOVER_DIR's own local_source.find_local_raster_covering_aoi
@@ -158,4 +159,21 @@ GDAL_HTTP_RETRY_ENV = {
     "GDAL_HTTP_MAX_RETRY": int(os.environ.get("GDAL_HTTP_MAX_RETRY", "3")),
     "GDAL_HTTP_RETRY_DELAY": float(os.environ.get("GDAL_HTTP_RETRY_DELAY", "1.0")),
     "GDAL_HTTP_TIMEOUT": int(os.environ.get("GDAL_HTTP_TIMEOUT", "30")),
+}
+
+# population.py's S3 bucket (s3://dataforgood-fb-data) is hosted in
+# us-east-1, not whatever region GDAL/the AWS SDK would otherwise infer
+# by default -- unlike the Copernicus DEM/WorldCover buckets, which this
+# project accesses without ever needing to set a region at all. Included
+# defensively per the brief's explicit instruction; live testing during
+# implementation (a real windowed read over Kathmandu Valley) actually
+# succeeded via plain rasterio.open() over this exact bucket/VRT with NO
+# region config set at all -- the same plain-HTTPS-via-GDAL's-generic-
+# vsicurl-handler access pattern DEM/WorldCover already use, which
+# appears to sidestep AWS SDK-style region resolution entirely (that
+# only applies to /vsis3/-style access, which none of these three
+# sources use). Kept anyway since it's harmless and this is what was
+# asked for -- flagged as a "decision to confirm" either way.
+POPULATION_S3_REGION_ENV = {
+    "AWS_DEFAULT_REGION": os.environ.get("POPULATION_S3_REGION", "us-east-1"),
 }

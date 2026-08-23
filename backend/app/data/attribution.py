@@ -24,3 +24,18 @@ WORLDCOVER_ATTRIBUTION = (
 )
 
 OSM_ATTRIBUTION = "© OpenStreetMap contributors"
+
+# The citation text published on the dataset's AWS Open Data Registry
+# listing (https://registry.opendata.aws/dataforgood-fb-hrsl/), verified
+# during implementation of population.py. That listing's suggested
+# format wraps this in "...was accessed on [DATE] from
+# https://registry.opendata.aws/dataforgood-fb-hrsl. ... Accessed [DAY
+# MONTH YEAR]." -- a citation-generation instruction for someone citing
+# this in a document with a fixed access date, not a literal string to
+# embed here; every other ATTRIBUTION constant in this file is a static,
+# undated citation, so the "accessed on" wrapper is deliberately dropped
+# to match that convention. Flagged as a decision to confirm.
+POPULATION_ATTRIBUTION = (
+    "Meta and Center for International Earth Science Information Network - CIESIN - Columbia University. "
+    "2022. High Resolution Settlement Layer (HRSL). Source imagery for HRSL © 2016 Maxar."
+)

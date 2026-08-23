@@ -76,6 +76,7 @@ from app.data.density_raster import get_building_density
 from app.data.distance_raster import get_distance_to_river, get_distance_to_road
 from app.data.grid import AOIGrid
 from app.data.hydrology import get_drainage_density, get_twi
+from app.data.population import get_population
 from app.data.reclassify import apply_reclassification_cached
 from app.data.worldcover import get_worldcover
 
@@ -151,6 +152,11 @@ def _building_density(aoi: AOI):
     return r.density, r.grid, r.nodata, r.attribution, None
 
 
+def _population_density(aoi: AOI):
+    r = get_population(aoi)
+    return r.density, r.grid, r.nodata, r.attribution, None
+
+
 register_source("dem_elevation", _dem_elevation)
 register_source("dem_slope", _dem_slope)
 register_source("worldcover_land_cover", _worldcover_land_cover)
@@ -159,6 +165,7 @@ register_source("dist_to_road", _dist_to_road)
 register_source("twi", _twi)
 register_source("drainage_density", _drainage_density)
 register_source("building_density", _building_density)
+register_source("population_density", _population_density)
 
 # Snapshot at built-in-registration time, for display purposes only (e.g.
 # app/overlay/models.py's OverlayCriterionInput.source Field description)
