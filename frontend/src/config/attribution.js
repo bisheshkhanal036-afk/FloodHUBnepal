@@ -86,7 +86,7 @@ export const TEAM_CREDITS = [
   {
     id: 2,
     name: 'Aayush Roka',
-    email: 'Kingroka123@gmail.com',
+    email: 'er.rokaayush77@gmail.com',
     linkedin: 'https://www.linkedin.com/in/aayushroka77',
     photo: aayushPhoto,
   },
