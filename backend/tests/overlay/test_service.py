@@ -123,6 +123,46 @@ def test_different_weights_for_same_aoi_and_criteria_gives_different_cache_key_a
     assert len(calls) == 4  # 2 criteria resolved fresh for each of the 2 distinct weight sets
 
 
+def test_different_reclassification_rules_for_same_id_and_weight_gives_different_cache_key_and_recomputes(
+    test_aoi, monkeypatch
+):
+    """The regression test for the real bug this covers, at the full
+    compute_overlay level (not just compute_cache_key's hash) -- proves
+    both halves of the fix: a different cache_key, AND an actually
+    different materialized result, not a stale one silently reused from
+    the first request. The fake resolver below deliberately responds to
+    `rules` (unlike this file's other tests' _fake_resolve, which ignores
+    it) specifically so this test can tell the two calls' outputs apart.
+    """
+    calls = []
+
+    def fake(aoi, criterion_id, source, rules):
+        calls.append((criterion_id, rules))
+        # A trivial "respond to the rules" stand-in for real reclassification:
+        # different rules -> different risk class.
+        class_value = 5 if rules and rules[0].get("risk_class") == 5 else 3
+        return np.full((2, 2), class_value, dtype=np.uint8), GRID, "Fake Source Attribution", None
+
+    monkeypatch.setattr("app.overlay.service.resolve_criterion_raster", fake)
+    rules_a = [{"min": None, "max": None, "risk_class": 3}]
+    rules_b = [{"min": None, "max": None, "risk_class": 5}]
+
+    first = compute_overlay(
+        test_aoi, [OverlayCriterionRequest(id="a", source="dem_elevation", reclassification_rules=rules_a)],
+        {"a": 1.0}, complete=True,
+    )
+    second = compute_overlay(
+        test_aoi, [OverlayCriterionRequest(id="a", source="dem_elevation", reclassification_rules=rules_b)],
+        {"a": 1.0}, complete=True,
+    )
+
+    assert first.cache_key != second.cache_key
+    assert len(calls) == 2  # resolved fresh for each of the 2 distinct rule sets, not a stale cache hit
+    assert not np.array_equal(first.risk_surface.risk_surface, second.risk_surface.risk_surface)
+    assert np.all(first.risk_surface.risk_surface == pytest.approx(0.5, abs=1e-6))  # class 3 -> (3-1)/(5-1)
+    assert np.all(second.risk_surface.risk_surface == pytest.approx(1.0, abs=1e-6))  # class 5 -> (5-1)/(5-1)
+
+
 def test_geotiff_is_rewritten_if_missing_even_on_a_cache_hit(test_aoi, monkeypatch):
     calls = []
     _fake_resolve(monkeypatch, calls)

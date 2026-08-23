@@ -88,7 +88,10 @@ def compute_overlay(
             f"criteria={sorted(criterion_ids)}, weights={sorted(weight_ids)}"
         )
 
-    criteria_set = [{"criterion_id": c.id, "weight": final_weights[c.id]} for c in criteria]
+    criteria_set = [
+        {"criterion_id": c.id, "weight": final_weights[c.id], "reclassification_rules": c.reclassification_rules}
+        for c in criteria
+    ]
     cache_key = compute_cache_key(aoi, criteria_set)
 
     def _compute() -> tuple[RiskSurfaceResult, list[str], list[SourceWarning]]:

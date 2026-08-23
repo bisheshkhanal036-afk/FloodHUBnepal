@@ -151,13 +151,25 @@ def test_rejects_duplicate_criterion_id():
 
 # --- compute_cache_key ---
 
+# A placeholder rules list for tests below that aren't specifically about
+# rules-sensitivity (weight/order/polygon behavior) -- rules_fingerprint
+# just needs each rule to have a risk_class, nothing about these tests
+# cares what the actual thresholds are.
+_SAMPLE_RULES = [{"min": None, "max": None, "risk_class": 1}]
+
 
 def test_cache_key_is_deterministic_and_order_independent():
     from app.data.aoi import AOI
 
     aoi = AOI(bbox_4326=(85.30, 27.70, 85.32, 27.72))
-    criteria_set = [{"criterion_id": "a", "weight": 0.5}, {"criterion_id": "b", "weight": 0.5}]
-    reordered = [{"criterion_id": "b", "weight": 0.5}, {"criterion_id": "a", "weight": 0.5}]
+    criteria_set = [
+        {"criterion_id": "a", "weight": 0.5, "reclassification_rules": _SAMPLE_RULES},
+        {"criterion_id": "b", "weight": 0.5, "reclassification_rules": _SAMPLE_RULES},
+    ]
+    reordered = [
+        {"criterion_id": "b", "weight": 0.5, "reclassification_rules": _SAMPLE_RULES},
+        {"criterion_id": "a", "weight": 0.5, "reclassification_rules": _SAMPLE_RULES},
+    ]
 
     assert compute_cache_key(aoi, criteria_set) == compute_cache_key(aoi, reordered)
 
@@ -166,10 +178,36 @@ def test_cache_key_changes_when_weights_change():
     from app.data.aoi import AOI
 
     aoi = AOI(bbox_4326=(85.30, 27.70, 85.32, 27.72))
-    criteria_set = [{"criterion_id": "a", "weight": 0.5}, {"criterion_id": "b", "weight": 0.5}]
-    different_weights = [{"criterion_id": "a", "weight": 0.6}, {"criterion_id": "b", "weight": 0.4}]
+    criteria_set = [
+        {"criterion_id": "a", "weight": 0.5, "reclassification_rules": _SAMPLE_RULES},
+        {"criterion_id": "b", "weight": 0.5, "reclassification_rules": _SAMPLE_RULES},
+    ]
+    different_weights = [
+        {"criterion_id": "a", "weight": 0.6, "reclassification_rules": _SAMPLE_RULES},
+        {"criterion_id": "b", "weight": 0.4, "reclassification_rules": _SAMPLE_RULES},
+    ]
 
     assert compute_cache_key(aoi, criteria_set) != compute_cache_key(aoi, different_weights)
+
+
+def test_cache_key_changes_when_reclassification_rules_change_even_with_same_id_and_weight():
+    """The regression test for the real bug this covers: two requests for
+    the same criterion_id and weight but different reclassification_rules
+    (e.g. the frontend's classification editor submitting custom breaks)
+    must NOT collide on the same cache_key -- caught live during
+    implementation (two manual requests with different breakpoints for
+    the same criterion produced an identical cache_key before this fix).
+    """
+    from app.data.aoi import AOI
+
+    aoi = AOI(bbox_4326=(85.30, 27.70, 85.32, 27.72))
+    rules_a = [{"min": None, "max": 100, "risk_class": 1}, {"min": 100, "max": None, "risk_class": 5}]
+    rules_b = [{"min": None, "max": 200, "risk_class": 1}, {"min": 200, "max": None, "risk_class": 5}]
+
+    criteria_set = [{"criterion_id": "population_density", "weight": 1.0, "reclassification_rules": rules_a}]
+    different_rules = [{"criterion_id": "population_density", "weight": 1.0, "reclassification_rules": rules_b}]
+
+    assert compute_cache_key(aoi, criteria_set) != compute_cache_key(aoi, different_rules)
 
 
 def test_cache_key_matches_schema_pattern():
@@ -178,7 +216,7 @@ def test_cache_key_matches_schema_pattern():
     from app.data.aoi import AOI
 
     aoi = AOI(bbox_4326=(85.30, 27.70, 85.32, 27.72))
-    key = compute_cache_key(aoi, [{"criterion_id": "a", "weight": 1.0}])
+    key = compute_cache_key(aoi, [{"criterion_id": "a", "weight": 1.0, "reclassification_rules": _SAMPLE_RULES}])
     assert re.fullmatch(r"[a-f0-9]{64}", key)
 
 
@@ -197,7 +235,7 @@ def test_cache_key_differs_for_a_polygon_aoi_vs_a_plain_bbox_aoi_with_the_same_e
     }
     with_polygon = AOI(bbox_4326=bbox, polygon=shape(triangle))
 
-    criteria_set = [{"criterion_id": "a", "weight": 1.0}]
+    criteria_set = [{"criterion_id": "a", "weight": 1.0, "reclassification_rules": _SAMPLE_RULES}]
     assert compute_cache_key(bbox_only, criteria_set) != compute_cache_key(with_polygon, criteria_set)
 
 

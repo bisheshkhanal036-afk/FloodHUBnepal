@@ -26,7 +26,7 @@ import numpy as np
 from app.data.aoi import AOI
 from app.data.grid import AOIGrid
 from app.data.nodata import assert_consistent_nodata
-from app.data.reclassify import RECLASSIFIED_NODATA
+from app.data.reclassify import RECLASSIFIED_NODATA, rules_fingerprint
 
 from .errors import OverlayValidationError
 
@@ -143,7 +143,7 @@ def compute_cache_key(aoi: AOI, criteria_set: list[dict]) -> str:
     """SHA-256 hex digest of (AOI bbox + true polygon shape, when present
     + criteria_set), matching schemas/risk_surface.schema.json's
     `cache_key` description. `criteria_set` is
-    [{"criterion_id": str, "weight": float}, ...].
+    [{"criterion_id": str, "weight": float, "reclassification_rules": list[dict]}, ...].
 
     Includes `aoi.polygon`'s WKT when set, not just `bbox_4326`: since
     compute_overlay now masks the final surface to the true polygon shape
@@ -152,10 +152,30 @@ def compute_cache_key(aoi: AOI, criteria_set: list[dict]) -> str:
     AOI vs. a basin selection whose envelope happens to match it) must
     never collide on the same cache entry — they'd produce genuinely
     different masked surfaces.
+
+    Also includes each criterion's reclassification_rules — via
+    reclassify.rules_fingerprint, the exact same stable/canonical hash
+    apply_reclassification_cached already uses to version its own
+    (lower-level, per-criterion) cache entry, reused here rather than
+    re-implemented, so the two caches can never disagree about what
+    counts as "the same rules." This was a real correctness bug, not a
+    theoretical one, before this fix: two requests for the same AOI and
+    the same criterion_id/weight but DIFFERENT reclassification_rules
+    (e.g. the frontend's classification editor submitting custom breaks)
+    hashed to the *same* cache_key, so cache.cached_or_compute's disk
+    cache — and the persisted risk_surface .tif at
+    _risk_surface_tif_path(cache_key) — would silently serve the first
+    request's result for the second, computed under the wrong rules.
+    Caught live: two manual test requests with different breakpoints for
+    the same criterion produced an identical cache_key.
     """
     normalized_criteria = sorted(
         (
-            {"criterion_id": c["criterion_id"], "weight": round(float(c["weight"]), 10)}
+            {
+                "criterion_id": c["criterion_id"],
+                "weight": round(float(c["weight"]), 10),
+                "reclassification_rules_fingerprint": rules_fingerprint(c["reclassification_rules"]),
+            }
             for c in criteria_set
         ),
         key=lambda c: c["criterion_id"],

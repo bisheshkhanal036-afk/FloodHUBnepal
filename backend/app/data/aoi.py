@@ -97,13 +97,26 @@ class AOI:
         since a raw processed DEM/WorldCover/OSM clip doesn't depend on
         either.
 
-        Deliberately independent of `polygon` too: every current consumer
-        (DEM/WorldCover/OSM fetch) only ever reads bbox_4326, so two AOIs
-        that share a bbox_4326 but differ in `polygon` would fetch and
-        produce byte-identical results today — keying the cache on
-        bbox_4326 alone is therefore correct, not an oversight. This
-        would need revisiting only once some consumer actually starts
-        using `polygon` to clip to the true shape.
+        Deliberately independent of `polygon` too: every raw-source
+        consumer (DEM/WorldCover/OSM/population fetch) only ever reads
+        bbox_4326, so two AOIs that share a bbox_4326 but differ in
+        `polygon` fetch and produce byte-identical raw results — keying
+        *this* cache on bbox_4326 alone is therefore correct, not an
+        oversight.
+
+        This is no longer the only place polygon-awareness would need to
+        live, though: overlay/service.py's risk_surface cache also goes
+        through this same aoi.cache_key() (via cache.cached_or_compute),
+        and DOES need to be polygon-aware now that a basin AOI's surface
+        gets masked to its true shape (compute.mask_risk_surface_to_
+        polygon). That's handled at a different layer, not here —
+        compute.compute_cache_key folds `polygon.wkt` into its own hash
+        (used as cached_or_compute's `version` argument, concatenated
+        onto this key), so the *combined* cache path is correctly
+        polygon-aware end to end even though this method's own output
+        isn't. Verified by tests/overlay/test_compute.py's
+        test_cache_key_differs_for_a_polygon_aoi_vs_a_plain_bbox_aoi_
+        with_the_same_envelope.
         """
         payload = json.dumps({"bbox_4326": [round(v, 8) for v in self.bbox_4326]}, sort_keys=True)
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()

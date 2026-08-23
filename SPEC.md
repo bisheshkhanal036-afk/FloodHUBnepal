@@ -752,6 +752,37 @@ them.
   COUNT, not a density, and an early version of this source bilinear-
   resampled it directly (wrong per that rule, caught and fixed before
   first commit — see `population.py`'s `_count_to_density`).
+- Backend: **fixed a real correctness bug in the risk-surface cache
+  key** (`overlay/compute.py`'s `compute_cache_key`) — it hashed only
+  `criterion_id` + `weight`, never the criterion's own
+  `reclassification_rules`. Two requests for the same AOI/criterion_id/
+  weight but genuinely different rules (e.g. the frontend's
+  classification editor submitting custom breaks) collided on the same
+  `cache_key` and silently served each other's cached result — caught
+  live: two manual test requests with different breakpoints for the
+  same criterion produced an identical `cache_key`. Fixed by folding in
+  `reclassify.rules_fingerprint()` per criterion, the same canonical
+  hash the *inner* per-criterion reclassification cache
+  (`apply_reclassification_cached`) already correctly used — reused
+  rather than re-implemented, so the two caches can never disagree
+  about what counts as "the same rules." Audited every other cache-key
+  computation in the codebase for the same gap while at it: `reclassify.
+  py` was already correct (where the reusable fix came from);
+  `data/cache.py`'s generic `cached_or_compute` has no bug of its own
+  (it faithfully uses whatever `version` string it's given — the gap was
+  entirely in what `compute_cache_key` computed for that argument); every
+  raw-source fetch (DEM/WorldCover/OSM/population/hydrology/etc.)
+  correctly caches on AOI alone, with no criterion-specific config in
+  play at that layer; `AOI.cache_key()` has no bug either (deliberately
+  AOI-only by design — the risk-surface cache's polygon-awareness lives
+  in `compute_cache_key`'s own hash instead, confirmed still correct),
+  though its docstring had gone stale claiming "every consumer only
+  reads bbox_4326" and was corrected alongside. `schemas/
+  risk_surface.schema.json`'s `criteria_set` items now require
+  `reclassification_rules` too, matching what the key actually depends
+  on (not yet wired into any live API response — currently internal to
+  compute.py/service.py's own hashing — updated for documentation
+  accuracy regardless).
 - Not yet implemented: AOI persistence, vulnerability classification
   (discrete display classes derived from the continuous risk surface),
   and shelter identification. The GeoTIFF file route is a simple

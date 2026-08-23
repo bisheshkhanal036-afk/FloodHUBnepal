@@ -8,7 +8,7 @@
     "cache_key": {
       "type": "string",
       "pattern": "^[a-f0-9]{64}$",
-      "description": "SHA-256 hex digest of a canonical serialization of (AOI bbox + the AOI's true polygon shape, when present + the set of criterion ids used + their final weights). Two requests that hash to the same cache_key are considered identical and may reuse the same stored surface."
+      "description": "SHA-256 hex digest of a canonical serialization of (AOI bbox + the AOI's true polygon shape, when present + the set of criterion ids used + their final weights + a stable fingerprint of each criterion's reclassification_rules). Two requests that hash to the same cache_key are considered identical and may reuse the same stored surface — reclassification_rules must be included here, not just criterion_id/weight, since two requests for the same criterion can legitimately submit different breaks (e.g. the frontend's classification editor) and must never collide on the same cached result."
     },
     "aoi": {
       "$ref": "aoi.schema.json",
@@ -21,9 +21,15 @@
         "type": "object",
         "properties": {
           "criterion_id": { "type": "string" },
-          "weight": { "type": "number", "minimum": 0, "maximum": 1 }
+          "weight": { "type": "number", "minimum": 0, "maximum": 1 },
+          "reclassification_rules": {
+            "type": "array",
+            "description": "Snapshotted alongside criterion_id/weight for the same reason: the cache_key must change if this changes, since it changes what the resulting surface actually means. See cache_key's own description.",
+            "items": { "$ref": "criterion.schema.json#/$defs/reclassificationRule" },
+            "minItems": 1
+          }
         },
-        "required": ["criterion_id", "weight"],
+        "required": ["criterion_id", "weight", "reclassification_rules"],
         "additionalProperties": false
       },
       "minItems": 1
