@@ -28,14 +28,22 @@ export default function ResultPanel() {
       </p>
 
       <div className="legend legend--ramp">
-        <div className="legend__ramp-bar">
+        <div
+          className="legend__ramp-bar"
+          style={{
+            background: `linear-gradient(to right, ${RISK_LEGEND_STOPS.map((s) => `${s.color} ${s.value * 100}%`).join(', ')})`,
+          }}
+        />
+        <div className="legend__ramp-ticks">
           {RISK_LEGEND_STOPS.map((stop) => (
-            <span key={stop.value} style={{ background: stop.color, flex: 1 }} />
+            <span key={stop.value} className="legend__ramp-tick" style={{ left: `${stop.value * 100}%` }}>
+              {stop.value.toFixed(2)}
+            </span>
           ))}
         </div>
         <div className="legend__ramp-labels">
-          <span>0.0 (low risk)</span>
-          <span>1.0 (high risk)</span>
+          <span>Low risk</span>
+          <span>High risk</span>
         </div>
       </div>
 

@@ -6,6 +6,7 @@
 // computation of its own.
 import { absoluteDataUrl, generateReport } from '../api/client'
 import { CRITERIA_BY_ID } from '../config/criteria'
+import { riskValueToCssColor } from '../lib/colorRamp'
 import { useAppState } from '../state/AppStateContext'
 
 /** state.ahpMatrices already has exactly the {items, matrix} shape POST /api/overlay/report's weighting.cluster_comparison/within_cluster_comparisons expects -- built directly from the pairwise-comparison UI, not re-derived here. */
@@ -130,7 +131,15 @@ export default function ReportPanel() {
             <tbody>
               {result.zonal_stats.map((s) => (
                 <tr key={s.hazard_class} className={`report-panel__zonal-row report-panel__zonal-row--class-${s.hazard_class}`}>
-                  <td>{s.hazard_label}</td>
+                  <td>
+                    <span className="report-panel__zonal-row__label">
+                      <span
+                        className="legend__swatch"
+                        style={{ background: riskValueToCssColor((s.hazard_class - 1) / 4) }}
+                      />
+                      {s.hazard_label}
+                    </span>
+                  </td>
                   <td>{s.area_km2.toFixed(3)}</td>
                   <td>{formatNumber(s.population)}</td>
                   <td>{formatNumber(s.building_count)}</td>

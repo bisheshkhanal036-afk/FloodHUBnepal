@@ -145,6 +145,37 @@ class BasemapControl {
   }
 }
 
+// A small live lng/lat/zoom readout, bottom-left next to MapLibre's own
+// ScaleControl -- the kind of chrome a serious cartography tool (Mapbox
+// Studio, QGIS) shows as a matter of course, and this app had none of
+// before. Purely a readout (no interaction, nothing to dispatch) so it's
+// a plain IControl that just re-renders its own text node on 'move' --
+// no need to route through React state for something this cheap and
+// map-internal.
+class CoordinateReadoutControl {
+  onAdd(map) {
+    this._map = map
+    const container = document.createElement('div')
+    container.className = 'maplibregl-ctrl coord-readout'
+    this._container = container
+    this._update = () => {
+      const c = map.getCenter()
+      const lat = c.lat.toFixed(4)
+      const lng = c.lng.toFixed(4)
+      const zoom = map.getZoom().toFixed(2)
+      container.textContent = `${lat}, ${lng}  ·  z${zoom}`
+    }
+    map.on('move', this._update)
+    this._update()
+    return container
+  }
+
+  onRemove() {
+    this._map.off('move', this._update)
+    this._container?.parentNode?.removeChild(this._container)
+  }
+}
+
 const DRAW_PREVIEW_SOURCE = 'draw-preview'
 const BASINS_SOURCE = 'basins'
 const RISK_SURFACE_SOURCE = 'risk-surface'
@@ -167,6 +198,12 @@ export default function MapView() {
     mapRef.current = map
     map.addControl(new maplibregl.NavigationControl(), 'top-right')
     map.addControl(new BasemapControl(dispatch, () => stateRef.current), 'top-left')
+    // Cartographic-instrument chrome Mapbox Studio/QGIS treat as table
+    // stakes and this app previously had none of: a real scale bar
+    // (MapLibre's own control, zero new deps) and a live coordinate/zoom
+    // readout, both bottom-left so they read together as one status strip.
+    map.addControl(new maplibregl.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-left')
+    map.addControl(new CoordinateReadoutControl(), 'bottom-left')
 
     map.on('load', () => {
       map.addSource(DRAW_PREVIEW_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })

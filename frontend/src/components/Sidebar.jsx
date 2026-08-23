@@ -1,14 +1,23 @@
 // The left-hand panel stack: one cohesive flow, AOI -> criteria ->
 // weighting -> compute -> result, all reading/writing the same shared
-// AppStateContext as the map. Each step's section is only shown once
-// the previous one has something meaningful to act on, so the flow
-// reads top-to-bottom rather than as disconnected views.
-import { useState } from 'react'
-import { useAppState, useSelectedCriteriaIds } from '../state/AppStateContext'
+// AppStateContext as the map. Rendered as a connected step-rail (see
+// StepSection.jsx) rather than plain stacked cards -- each step is only
+// reachable once the previous one has something meaningful to act on
+// (unchanged from before: a not-yet-reachable step's own panel component
+// is never mounted, only its header shows, dimmed). Every reachable step
+// is open by default, same as the original always-expanded layout; a
+// step can be collapsed by clicking its header, purely as an opt-in
+// convenience for a step you're done with (see isOpen's own comment
+// below for why this isn't automatic). Collapsing is local UI state only
+// (`overrides` below) -- it never touches AppStateContext, so it can't
+// affect which data is actually submitted anywhere.
+import { useMemo, useState } from 'react'
+import { useAppState, useFinalWeights, useSelectedCriteriaIds } from '../state/AppStateContext'
 import AboutModal from './AboutModal'
 import AOIPanel from './AOIPanel'
 import CriteriaPanel from './CriteriaPanel'
 import Logo from './Logo'
+import StepSection from './StepSection'
 import WeightingPanel from './WeightingPanel'
 import ComputePanel from './ComputePanel'
 import ResultPanel from './ResultPanel'
@@ -17,7 +26,54 @@ import ReportPanel from './ReportPanel'
 export default function Sidebar({ onBackToLanding }) {
   const { state, dispatch } = useAppState()
   const selectedIds = useSelectedCriteriaIds()
+  const { complete: weightsComplete } = useFinalWeights()
   const [aboutOpen, setAboutOpen] = useState(false)
+  const [overrides, setOverrides] = useState({})
+
+  const steps = useMemo(() => {
+    const hasAoi = !!state.aoi
+    const hasCriteria = selectedIds.length > 0
+    const weightingReady = hasCriteria && weightsComplete
+    const overlayLoaded = state.overlay.status === 'loaded'
+    const reportLoaded = state.report.status === 'loaded'
+
+    return [
+      { id: 1, title: 'Area of interest', reachable: true, complete: hasAoi, content: <AOIPanel /> },
+      { id: 2, title: 'Criteria', reachable: hasAoi, complete: hasCriteria, content: <CriteriaPanel /> },
+      { id: 3, title: 'Weighting', reachable: hasAoi && hasCriteria, complete: weightingReady, content: <WeightingPanel /> },
+      {
+        id: 4,
+        title: 'Compute',
+        reachable: hasAoi && hasCriteria,
+        complete: overlayLoaded,
+        content: (
+          <>
+            <ComputePanel />
+            <ResultPanel />
+          </>
+        ),
+      },
+      { id: 5, title: 'Vulnerability report', reachable: overlayLoaded, complete: reportLoaded, content: <ReportPanel /> },
+    ]
+  }, [state.aoi, selectedIds.length, weightsComplete, state.overlay.status, state.report.status])
+
+  // Every reachable step is open by default -- deliberately NOT an
+  // accordion that auto-collapses a step the instant it's "complete"
+  // (e.g. the Criteria step becomes "complete" the moment a single
+  // checkbox is checked, since that's the same threshold that unlocks
+  // Weighting -- auto-collapsing right then would yank the checkbox list
+  // away from someone who's only picked their first of several
+  // criteria). Collapsing is purely an opt-in convenience: any step can
+  // still be manually closed (and reopened) via `overrides`, which
+  // always wins over this default.
+  function isOpen(step) {
+    if (step.id in overrides) return overrides[step.id]
+    return true
+  }
+
+  function toggle(step) {
+    setOverrides((prev) => ({ ...prev, [step.id]: !isOpen(step) }))
+  }
 
   return (
     <aside className="sidebar">
@@ -53,39 +109,24 @@ export default function Sidebar({ onBackToLanding }) {
 
       {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
 
-      <section className="sidebar__section">
-        <h3>1. Area of interest</h3>
-        <AOIPanel />
-      </section>
-
-      {state.aoi && (
-        <section className="sidebar__section">
-          <h3>2. Criteria</h3>
-          <CriteriaPanel />
-        </section>
-      )}
-
-      {state.aoi && selectedIds.length > 0 && (
-        <section className="sidebar__section">
-          <h3>3. Weighting</h3>
-          <WeightingPanel />
-        </section>
-      )}
-
-      {state.aoi && selectedIds.length > 0 && (
-        <section className="sidebar__section">
-          <h3>4. Compute</h3>
-          <ComputePanel />
-          <ResultPanel />
-        </section>
-      )}
-
-      {state.overlay.status === 'loaded' && (
-        <section className="sidebar__section">
-          <h3>5. Vulnerability report</h3>
-          <ReportPanel />
-        </section>
-      )}
+      <div className="step-rail">
+        {steps.map((step, i) => {
+          const status = !step.reachable ? 'locked' : step.complete ? 'complete' : 'active'
+          return (
+            <StepSection
+              key={step.id}
+              number={step.id}
+              title={step.title}
+              status={status}
+              isLast={i === steps.length - 1}
+              isOpen={step.reachable && isOpen(step)}
+              onToggle={() => toggle(step)}
+            >
+              {step.content}
+            </StepSection>
+          )
+        })}
+      </div>
     </aside>
   )
 }

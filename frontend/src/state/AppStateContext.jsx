@@ -19,9 +19,13 @@ function initialTheme() {
     const stored = localStorage.getItem(THEME_STORAGE_KEY)
     if (stored === 'light' || stored === 'dark') return stored
   } catch {
-    // localStorage unavailable (private browsing, etc.) -- fall through to system preference
+    // localStorage unavailable (private browsing, etc.) -- fall through to the default below
   }
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  // Dark-first by deliberate product decision (the "midnight precision
+  // instrument" redesign) -- unlike before, this no longer follows
+  // prefers-color-scheme for a first-time visitor. Still fully overridable
+  // via the sidebar's theme toggle and persisted the same way afterward.
+  return 'dark'
 }
 
 function initialState() {
