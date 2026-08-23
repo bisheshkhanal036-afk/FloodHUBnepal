@@ -101,6 +101,15 @@ export const LITERATURE = {
       'Low NDVI is assigned the highest risk, decreasing to lowest risk for dense vegetation. Breaks follow common NDVI interpretation bands (water/built < 0.1; sparse to dense vegetation upward) and are adjustable for the season and sensor (Rouse et al., 1974).',
     refs: ['rouse1974', 'tehrany2014'],
   },
+  soil_infiltration: {
+    whatItIs:
+      'Topsoil (0–5 cm) sand content (%), from ISRIC SoilGrids 2.0 (Poggio et al., 2021), used as a proxy for soil infiltration capacity.',
+    floodRole:
+      'Soil texture governs how quickly rainfall infiltrates versus runs off: coarser, sandier soils have higher hydraulic conductivity and infiltration capacity than finer-textured soils (Rawls, Brakensiek, & Saxton, 1982) — the same texture–permeability relationship USDA Hydrologic Soil Group classification is built on (NRCS, 2007). Higher sand content therefore means faster drainage and less runoff generation, so flood risk decreases as sand content increases. Soil type/permeability is a recognized conditioning factor in both index-based and machine-learning flood-susceptibility mapping (Chapi et al., 2017).',
+    rangeBasis:
+      'Class breaks are equal intervals across SoilGrids’ 0–100% sand-content range, with the lowest-sand (finest-textured, least permeable) band assigned the highest risk. This is a simplified single-property proxy, not a full USDA Hydrologic Soil Group — that would also incorporate clay content via the standard texture-triangle lookup — and, as with every criterion here, the breaks are a placeholder pending calibration (NRCS, 2007).',
+    refs: ['poggio2021', 'rawls1982', 'nrcs2007', 'chapi2017'],
+  },
   // ---------------- Infrastructure ----------------
   dist_to_road: {
     whatItIs:
@@ -172,4 +181,12 @@ export const REFERENCES = {
     'European Space Agency & Airbus (2022). Copernicus DEM — Global and European Digital Elevation Model (GLO-30). Copernicus Space Component data access.',
   hrsl:
     'Meta & CIESIN, Columbia University (2022). High Resolution Settlement Layer (HRSL). Source imagery © 2016 Maxar. https://registry.opendata.aws/dataforgood-fb-hrsl/',
+  poggio2021:
+    'Poggio, L., de Sousa, L. M., Batjes, N. H., Heuvelink, G. B. M., Kempen, B., Ribeiro, E., & Rossiter, D. (2021). SoilGrids 2.0: producing soil information for the globe with quantified spatial uncertainty. SOIL, 7, 217–240. https://doi.org/10.5194/soil-7-217-2021',
+  rawls1982:
+    'Rawls, W. J., Brakensiek, D. L., & Saxton, K. E. (1982). Estimation of soil water properties. Transactions of the ASAE, 25(5), 1316–1320.',
+  nrcs2007:
+    'USDA Natural Resources Conservation Service (2007). National Engineering Handbook, Part 630 Hydrology, Chapter 7: Hydrologic Soil Groups.',
+  chapi2017:
+    'Chapi, K., Singh, V. P., Shirzadi, A., Shahabi, H., Bui, D. T., Pham, B. T., & Khosravi, K. (2017). A novel hybrid artificial intelligence approach for flood susceptibility assessment. Environmental Modelling & Software, 95, 229–245.',
 }
