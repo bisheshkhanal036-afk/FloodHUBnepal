@@ -217,6 +217,41 @@ export default function MapView() {
       map.getCanvas().style.cursor = stateRef.current.aoiMode === 'draw' ? 'crosshair' : 'grab'
     })
 
+    // --- Right-mouse-button drag pans the map. Works in every mode,
+    // including 'draw' (where the LEFT button is reserved for drawing the
+    // AOI rectangle) -- so the map can always be repositioned with the
+    // right button. MapLibre's default right-drag (rotate/pitch) is
+    // disabled so it doesn't fight this; the browser context menu is
+    // suppressed over the map so a right-drag isn't interrupted. ---
+    map.dragRotate.disable()
+    const canvasContainer = map.getCanvasContainer()
+    let rightPanLast = null
+    const onContextMenu = (e) => e.preventDefault()
+    const onRightDown = (e) => {
+      if (e.button !== 2) return
+      rightPanLast = [e.clientX, e.clientY]
+      map.getCanvas().style.cursor = 'grabbing'
+      e.preventDefault()
+    }
+    const onRightMove = (e) => {
+      if (!rightPanLast) return
+      const dx = e.clientX - rightPanLast[0]
+      const dy = e.clientY - rightPanLast[1]
+      rightPanLast = [e.clientX, e.clientY]
+      // Move the view opposite the cursor delta -- same feel as grabbing
+      // the map and dragging it. duration:0 keeps it 1:1 with the mouse.
+      map.panBy([-dx, -dy], { duration: 0 })
+    }
+    const onRightUp = (e) => {
+      if (e.button !== 2 || !rightPanLast) return
+      rightPanLast = null
+      map.getCanvas().style.cursor = stateRef.current.aoiMode === 'draw' ? 'crosshair' : 'grab'
+    }
+    canvasContainer.addEventListener('contextmenu', onContextMenu)
+    canvasContainer.addEventListener('mousedown', onRightDown)
+    window.addEventListener('mousemove', onRightMove)
+    window.addEventListener('mouseup', onRightUp)
+
     map.on('load', () => {
       map.addSource(DRAW_PREVIEW_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
       map.addLayer({
@@ -236,6 +271,10 @@ export default function MapView() {
     })
 
     return () => {
+      canvasContainer.removeEventListener('contextmenu', onContextMenu)
+      canvasContainer.removeEventListener('mousedown', onRightDown)
+      window.removeEventListener('mousemove', onRightMove)
+      window.removeEventListener('mouseup', onRightUp)
       map.remove()
       mapRef.current = null
     }
@@ -451,6 +490,10 @@ function setupDrawInteraction(map, stateRef, dispatch) {
 
   map.on('mousedown', (e) => {
     if (stateRef.current.aoiMode !== 'draw') return
+    // Left button only: the right button is reserved for panning the map
+    // (see the right-drag handler in the init effect), so it must never
+    // start drawing an AOI rectangle.
+    if (e.originalEvent.button !== 0) return
     startLngLat = [e.lngLat.lng, e.lngLat.lat]
     e.preventDefault()
   })
