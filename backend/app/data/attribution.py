@@ -82,3 +82,15 @@ METHODOLOGY_CITATIONS = {
         "https://doi.org/10.3390/ijgi12070286"
     ),
 }
+
+
+# CHIRPS v3 preliminary daily precipitation (Climate Hazards Center, UC
+# Santa Barbara + USGS) -- the recent_rainfall.py source. Public domain,
+# CC BY 4.0. See https://www.chc.ucsb.edu/data/chirps3 for the full
+# product description.
+CHIRPS_ATTRIBUTION = (
+    "Funk, C. et al. (2015). The climate hazards infrared precipitation with stations — a new "
+    "environmental record for monitoring extremes. Scientific Data, 2, 150066. "
+    "https://doi.org/10.1038/sdata.2015.66. CHIRPS v3 preliminary daily data, Climate Hazards "
+    "Center, UC Santa Barbara. Public domain / CC BY 4.0."
+)

@@ -64,6 +64,15 @@ export const LITERATURE = {
     refs: ['renno2008', 'nobre2011', 'nobre2016'],
   },
   // ---------------- Hydrological ----------------
+  recent_rainfall: {
+    whatItIs:
+      'Rainfall (mm) accumulated over the trailing 7 days, from CHIRPS v3 preliminary daily precipitation — a satellite-based near-real-time product (IMERG-disaggregated), not a station climatology. It is refreshed daily and typically lags by a few days.',
+    floodRole:
+      'Static terrain criteria describe where flooding tends to happen; this describes whether the ground has actually been wet lately. Antecedent rainfall is a standard input to short-term flood risk: a multi-day wet spell saturates soil and fills channels, making identical terrain more flood-prone than it would be after a dry spell.',
+    rangeBasis:
+      'A 7-day window is a standard antecedent-precipitation period — long enough to capture a multi-day monsoon spell, short enough to still mean “recent”. Breaks are provisional pending calibration against known wet-season totals; unlike this project’s other criteria, the underlying value changes daily by design, so a static reclassification should be revisited once real accumulation ranges across a monsoon season are observed.',
+    refs: ['chirps2015'],
+  },
   dist_to_river: {
     whatItIs:
       'Euclidean distance (metres) from each cell to the nearest river / stream / canal, from OpenStreetMap waterways.',
@@ -143,6 +152,8 @@ export const LITERATURE = {
 
 // Curated bibliography. Keys are referenced by METHOD_INTRO/LITERATURE.
 export const REFERENCES = {
+  chirps2015:
+    'Funk, C., Peterson, P., Landsfeld, M., Pedreros, D., Verdin, J., Shukla, S., Husak, G., Rowland, J., Harrison, L., Hoell, A., & Michaelsen, J. (2015). The climate hazards infrared precipitation with stations — a new environmental record for monitoring extremes. Scientific Data, 2, 150066. https://doi.org/10.1038/sdata.2015.66',
   saaty1980:
     'Saaty, T. L. (1980). The Analytic Hierarchy Process: Planning, Priority Setting, Resource Allocation. McGraw-Hill, New York.',
   kazakis2015:

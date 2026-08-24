@@ -118,6 +118,23 @@ export const CRITERIA = [
     ],
   },
   {
+    id: 'recent_rainfall',
+    label: 'Recent Rainfall (7-day)',
+    cluster: 'Hydrological',
+    type: 'continuous',
+    riskDirection: 'ascending', // high value -> high risk
+    unit: 'mm',
+    description:
+      'Rainfall accumulated over the trailing 7 days, from CHIRPS satellite-based near-real-time precipitation. Unlike every other criterion here, this changes day to day and reflects recent conditions rather than a long-term average. It is not a live reading, forecast, or flood warning — see the info panel for how current the data actually is.',
+    defaultReclassificationRules: [
+      { min: null, max: 50, risk_class: 1 },
+      { min: 50, max: 75, risk_class: 2 },
+      { min: 75, max: 100, risk_class: 3 },
+      { min: 100, max: 150, risk_class: 4 },
+      { min: 150, max: null, risk_class: 5 },
+    ],
+  },
+  {
     id: 'dist_to_river',
     label: 'Distance to River',
     cluster: 'Hydrological',
