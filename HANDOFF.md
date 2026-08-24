@@ -29,9 +29,12 @@ Hierarchy Process), then derives a **vulnerability/exposure report**
 from that risk surface (hazard-class-tagged buildings, population and
 area per hazard class). It is a real scientific methodology
 implementation (matching a "Siraha-style" flood susceptibility mapping
-approach cited informally in the code as "the Siraha paper" — full
-citation not yet available, deliberately not published in the app's
-Credits section for that reason), not a toy demo.
+approach referred to in the code as "the Siraha paper" — Parajuli et
+al., 2023, ISPRS Int. J. Geo-Inf. 12(7), 286, doi:10.3390/ijgi12070286,
+open access CC BY 4.0; cited in full in
+`backend/app/data/attribution.py`'s `METHODOLOGY_CITATIONS`. It is still
+not shown in the app's Credits section, but that is now a product
+choice, not a missing-citation blocker), not a toy demo.
 
 **Architecture**: FastAPI (Python 3.12) backend + React (Vite, plain
 JS not TypeScript) frontend + PostGIS (currently unused by the app's

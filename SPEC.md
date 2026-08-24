@@ -863,12 +863,19 @@ them.
   page, since it's shown before any AOI/compute exists — see that
   file's own docstring for the sync caveat) plus HydroBASINS/Nepal-
   boundary credits. Methodology citations (Saaty/AHP, the drainage-
-  density technique reference) are deliberately left out for now at the
-  user's request ("don't cite papers yet") — the drainage-density
-  reference in particular only has an informal "the Siraha paper"
-  mention in `backend/app/data/hydrology.py`, no full bibliographic
-  details anywhere in this codebase, and shouldn't be published as a
-  citation until those are supplied. `index.css` was rewritten around
+  density technique reference) are still left out for now at the user's
+  request ("don't cite papers yet") — a product decision, no longer a
+  blocked one. The note previously here said no full bibliographic
+  details existed anywhere in this codebase; that was inaccurate. The
+  reference method's complete citation was already in
+  `backend/tests/test_ahp_core.py` (whose docstring transcribes the
+  paper's Tables 4–5), and now also lives in
+  `backend/app/data/attribution.py`'s `METHODOLOGY_CITATIONS` and, per
+  criterion, in `frontend/src/config/literature.js`'s `REFERENCES`:
+  Parajuli, G., Neupane, S., Kunwar, S., Adhikari, R., & Acharya, T. D.
+  (2023), *A GIS-Based Evacuation Route Planning in Flood-Susceptible
+  Area of Siraha Municipality, Nepal*, ISPRS Int. J. Geo-Inf. 12(7),
+  286, https://doi.org/10.3390/ijgi12070286 — open access, CC BY 4.0. `index.css` was rewritten around
   an explicit design-token system (type/spacing/radius/shadow scales, a
   teal/terracotta palette distinct from the risk ramp so UI chrome is
   never mistaken for a risk value, both themes) that every existing

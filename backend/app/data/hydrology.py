@@ -315,7 +315,9 @@ def compute_drainage_density_raster(
     continuous per-pixel drainage-density raster via a circular moving-
     window line-density transform — for each pixel, (total stream length
     within window_radius_m) / (window area), in km per km^2. This is the
-    same "Line Density" construction used in the Siraha paper and
+    same "Line Density" construction used by Parajuli et al. (2023) --
+    the reference method for this project, cited in full in
+    app/data/attribution.py's METHODOLOGY_CITATIONS -- and
     standard GIS tools (e.g. ArcGIS Spatial Analyst's Line Density tool),
     so it can serve as a per-pixel AHP criterion like every other source
     in this registry, rather than a single catchment-wide scalar.
