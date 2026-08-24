@@ -20,6 +20,14 @@
 // hero now leans on typography, the Logo mark, and a plain background
 // wash instead of a standalone graphic.
 import { ADDITIONAL_SOURCE_CREDITS, SOURCE_ATTRIBUTIONS, TEAM_CREDITS } from '../config/attribution'
+// METHOD_INTRO's own AHP paragraph is reused verbatim here (not
+// re-written) -- the same "one place holds the real text, everything
+// else quotes it" discipline this project already applies to
+// SOURCE_ATTRIBUTIONS (config/attribution.js's own comment: "copied
+// VERBATIM from backend/app/data/attribution.py's own constants").
+// Keeps the landing page's "What is AHP?" card and the in-tool
+// LiteratureModal's method intro from ever silently drifting apart.
+import { METHOD_INTRO } from '../config/literature'
 import { useScrollZoom } from '../lib/useScrollZoom'
 import Logo from './Logo'
 
@@ -97,6 +105,66 @@ export default function LandingPage({ onLaunch }) {
             <li>AHP · equal · manual weighting</li>
             <li>Day &amp; night basemaps</li>
           </ul>
+        </div>
+      </ZoomSection>
+
+      <ZoomSection id="how-it-works" className="zoom-section--method">
+        <h2 className="zoom-section__heading">How it works</h2>
+        <p className="zoom-section__sub">The method behind the map, and how to drive it.</p>
+        <div className="method-showcase">
+          <div className="method-showcase__card">
+            <h3 className="method-showcase__title">How to use</h3>
+            <ol className="method-showcase__steps">
+              <li>
+                <strong>Area of interest</strong> — draw a rectangle on the map, or select a hydrological basin or
+                district instead.
+              </li>
+              <li>
+                <strong>Criteria</strong> — check which physical and exposure factors to include: elevation,
+                slope, drainage, land cover, rainfall, population, and more.
+              </li>
+              <li>
+                <strong>Weighting</strong> — set each factor&rsquo;s relative importance via AHP pairwise
+                comparison, equal weights, or manual sliders.
+              </li>
+              <li>
+                <strong>Compute</strong> — generates the per-pixel composite risk surface from your selections.
+              </li>
+              <li>
+                <strong>Vulnerability report</strong> — hazard-class-tagged buildings, with per-class population
+                and area statistics.
+              </li>
+            </ol>
+          </div>
+
+          <div className="method-showcase__card">
+            <h3 className="method-showcase__title">What is AHP?</h3>
+            <p className="method-showcase__text">{METHOD_INTRO.body[0]}</p>
+          </div>
+
+          <div className="method-showcase__card">
+            <h3 className="method-showcase__title">The method</h3>
+            <p className="method-showcase__text">
+              Every criterion is grouped into one of five canonical clusters — Topographic, Hydrological, Land
+              Use, Infrastructure, and Exposure — following the AHP flood-susceptibility approach of Parajuli et
+              al. (2023). Each cluster&rsquo;s own weight, and each criterion&rsquo;s weight within it, come from
+              your own pairwise comparisons, not a fixed, hidden formula — the same weighted-sum math is shown
+              openly at every step.
+            </p>
+          </div>
+
+          <div className="method-showcase__card">
+            <h3 className="method-showcase__title">METEOR: criterion vs. validation</h3>
+            <p className="method-showcase__text">
+              METEOR&rsquo;s modeled flood hazard maps can be used two different ways here, and they are not the
+              same thing. As a <strong>criterion</strong>, METEOR&rsquo;s modeled water depth becomes one weighted
+              input blended into your own composite AHP score, alongside terrain, land cover, rainfall, and
+              exposure. As <strong>validation</strong>, the same data is shown as a live, independent overlay
+              directly on the map — never blended into your score — so you can visually sanity-check your own
+              computed risk surface against a third party&rsquo;s model, since METEOR is itself a modeled
+              estimate (the Fathom framework), not ground truth.
+            </p>
+          </div>
         </div>
       </ZoomSection>
 
