@@ -49,14 +49,14 @@ export const SOURCE_ATTRIBUTIONS = [
     text: 'Poggio, L., de Sousa, L. M., Batjes, N. H., Heuvelink, G. B. M., Kempen, B., Ribeiro, E., and Rossiter, D. (2021). SoilGrids 2.0: producing soil information for the globe with quantified spatial uncertainty. SOIL, 7, 217-240. https://doi.org/10.5194/soil-7-217-2021. © ISRIC — World Soil Information, licensed under CC BY 4.0.',
   },
   {
-    id: 'rainfall',
-    name: 'DHM rain-gauge network',
-    text: 'Precipitation: Department of Hydrology and Meteorology (DHM), Government of Nepal — daily rain-gauge record 1980-2022, 254 stations. ETCCDI climatological indices (Rx1day, Rx5day, PRCPTOT, R95pTOT) derived from that record and interpolated to the analysis grid by inverse distance weighting.',
-  },
-  {
     id: 'chirps',
     name: 'CHIRPS satellite precipitation',
     text: 'Funk, C., Peterson, P., Landsfeld, M., Pedreros, D., Verdin, J., Shukla, S., Husak, G., Rowland, J., Harrison, L., Hoell, A., and Michaelsen, J. (2015). The climate hazards infrared precipitation with stations—a new environmental record for monitoring extremes. Scientific Data, 2, 150066. https://doi.org/10.1038/sdata.2015.66. Climate Hazards Center, UC Santa Barbara — public domain.',
+  },
+  {
+    id: 'chirps-prelim',
+    name: 'CHIRPS v3 preliminary daily precipitation',
+    text: 'Funk, C. et al. (2015). The climate hazards infrared precipitation with stations — a new environmental record for monitoring extremes. Scientific Data, 2, 150066. https://doi.org/10.1038/sdata.2015.66. CHIRPS v3 preliminary daily data (Climate Hazards Center, UC Santa Barbara + USGS), IMERG-disaggregated. Public domain / CC BY 4.0.',
   },
   {
     id: 'meteor',

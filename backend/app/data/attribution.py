@@ -59,20 +59,6 @@ SOIL_ATTRIBUTION = (
     "© ISRIC — World Soil Information, licensed under CC BY 4.0."
 )
 
-# Nepal's national rain-gauge network, operated by the Department of
-# Hydrology and Meteorology (DHM). The ETCCDI climatological indices
-# interpolated by rainfall.py were computed from the 1980-2022 daily
-# record over 254 quality-controlled gauges. DHM data is provided for
-# research use; the derived station-climatology table committed at
-# app/data/resources/nepal_precip_stations.csv contains aggregated
-# indices, not the raw daily series.
-DHM_PRECIP_ATTRIBUTION = (
-    "Precipitation: Department of Hydrology and Meteorology (DHM), Government of Nepal — "
-    "daily rain-gauge record 1980-2022, 254 stations. ETCCDI climatological indices "
-    "(Rx1day, Rx5day, PRCPTOT, R95pTOT) derived from that record and interpolated to the "
-    "analysis grid by inverse distance weighting."
-)
-
 # CHIRPS-2.0's own recommended citation (Funk et al., 2015), verified
 # during implementation of chirps.py. Data is public domain (the Climate
 # Hazards Center has waived all copyright, registered with Creative
@@ -117,7 +103,6 @@ METEOR_FLOOD_ATTRIBUTION = (
     "https://maps.meteor-project.org/map/flood-npl/"
 )
 
-
 # Methodology references, as distinct from the data-source attributions
 # above: these credit the *method* this project implements, not a
 # dataset it reads. Kept here so there is exactly one place in the
@@ -140,3 +125,25 @@ METHODOLOGY_CITATIONS = {
         "https://doi.org/10.3390/ijgi12070286"
     ),
 }
+
+
+# CHIRPS v3 preliminary daily precipitation (Climate Hazards Center, UC
+# Santa Barbara + USGS) -- the recent_rainfall.py source. Public domain,
+# CC BY 4.0. See https://www.chc.ucsb.edu/data/chirps3 for the full
+# product description.
+#
+# Named CHIRPS_PRELIM_ATTRIBUTION, not CHIRPS_ATTRIBUTION -- a real
+# naming collision found merging this in: that name was already taken by
+# a DIFFERENT CHIRPS product (CHIRPS-2.0's own 1981-2024 mean-annual
+# climatology, chirps.py's precipitation_chirps criterion, added to main
+# after this branch diverged, so the two were never reconciled until this
+# merge). The two are genuinely different data (annual-normals
+# climatology vs. a rolling 7-day recent accumulation, different CHIRPS
+# major versions), so kept as two distinct constants rather than merged
+# into one, with distinguishing names.
+CHIRPS_PRELIM_ATTRIBUTION = (
+    "Funk, C. et al. (2015). The climate hazards infrared precipitation with stations — a new "
+    "environmental record for monitoring extremes. Scientific Data, 2, 150066. "
+    "https://doi.org/10.1038/sdata.2015.66. CHIRPS v3 preliminary daily data, Climate Hazards "
+    "Center, UC Santa Barbara. Public domain / CC BY 4.0."
+)

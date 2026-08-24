@@ -80,7 +80,7 @@ from app.data.hydrology import get_drainage_density, get_hand, get_twi
 from app.data.meteor_flood import get_meteor_flood_hazard
 from app.data.ndvi import get_ndvi
 from app.data.population import get_population
-from app.data.rainfall import get_rainfall
+from app.data.recent_rainfall import get_recent_rainfall
 from app.data.reclassify import apply_reclassification_cached
 from app.data.soil import get_soil_infiltration
 from app.data.worldcover import get_worldcover
@@ -185,8 +185,8 @@ def _ndvi(aoi: AOI, **_kwargs):
     return r.ndvi, r.grid, r.nodata, r.attribution, None
 
 
-def _rainfall(aoi: AOI, **_kwargs):
-    r = get_rainfall(aoi)
+def _recent_rainfall(aoi: AOI, **_kwargs):
+    r = get_recent_rainfall(aoi)
     return r.rainfall_mm, r.grid, r.nodata, r.attribution, r.warning
 
 
@@ -216,7 +216,7 @@ register_source("hand", _hand)
 register_source("building_density", _building_density)
 register_source("population_density", _population_density)
 register_source("ndvi", _ndvi)
-register_source("rainfall", _rainfall)
+register_source("recent_rainfall", _recent_rainfall)
 register_source("soil_infiltration", _soil_infiltration)
 register_source("precipitation_chirps", _precipitation_chirps)
 register_source("flood_hazard_meteor", _flood_hazard_meteor)

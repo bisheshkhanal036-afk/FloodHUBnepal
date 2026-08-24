@@ -64,20 +64,20 @@ export const LITERATURE = {
     refs: ['renno2008', 'nobre2011', 'nobre2016'],
   },
   // ---------------- Hydrological ----------------
-  rainfall: {
+  recent_rainfall: {
     whatItIs:
-      'Mean annual maximum 1-day precipitation (Rx1day, mm) — an ETCCDI extreme-precipitation index computed from the Department of Hydrology and Meteorology daily gauge record (1980–2022, 254 quality-controlled stations) and interpolated to the analysis grid by inverse distance weighting.',
+      'Rainfall (mm) accumulated over the trailing 7 days, from CHIRPS v3 preliminary daily precipitation — a satellite-based near-real-time product (IMERG-disaggregated), not a station climatology. It is refreshed daily and typically lags by a few days.',
     floodRole:
-      'Rainfall is the flood trigger: every other criterion in this model describes the terrain, land cover or exposure that converts rain into a flood, but precipitation is what supplies the water. Short-duration extreme rainfall in particular drives flash and pluvial flooding, so risk increases with Rx1day. Precipitation is one of the two most heavily weighted factors in the reference method for this project (Parajuli et al., 2023) and is standard in index-based flood-susceptibility models (Kazakis et al., 2015; Tehrany et al., 2014).',
+      'Static terrain criteria describe where flooding tends to happen; this describes whether the ground has actually been wet lately. Antecedent rainfall is a standard input to short-term flood risk: a multi-day wet spell saturates soil and fills channels, making identical terrain more flood-prone than it would be after a dry spell.',
     rangeBasis:
-      'Unlike most criteria here, these breaks are not expert-set: they are the observed quintiles of Rx1day across all 254 gauges (80, 96, 124 and 151 mm), so each class holds one fifth of the national gauge distribution. Rx1day is the default index because short-duration extremes drive flooding; switch RAINFALL_VARIABLE to PRCPTOT for direct comparison with the reference paper’s annual precipitation factor. Interpolation is elevation-blind, so values in steep terrain carry a warning on the result.',
-    refs: ['parajuli2023', 'kazakis2015', 'tehrany2014', 'zhang2011etccdi', 'dhm'],
+      'A 7-day window is a standard antecedent-precipitation period — long enough to capture a multi-day monsoon spell, short enough to still mean “recent”. Breaks are provisional pending calibration against known wet-season totals; unlike this project’s other criteria, the underlying value changes daily by design, so a static reclassification should be revisited once real accumulation ranges across a monsoon season are observed.',
+    refs: ['funk2015'],
   },
   precipitation_chirps: {
     whatItIs:
       'Mean annual precipitation (mm/yr), a 1981–2024 climatology from CHIRPS (Climate Hazards group InfraRed Precipitation with Station data) — a satellite-derived, quasi-global rainfall estimate that itself blends infrared cold-cloud-duration imagery with station data (Funk et al., 2015), read at its native ~0.05° (~5.5 km) grid.',
     floodRole:
-      'Like "Rainfall", this is a flood-trigger factor, not a terrain or exposure one — precipitation is what supplies the water every other criterion turns into a flood (Parajuli et al., 2023). It is registered as a second, independent precipitation estimate rather than a replacement for the DHM-gauge "Rainfall" criterion: the two fail differently. "Rainfall" is interpolated (IDW) from 254 point gauges and is elevation-blind, degrading with distance from the nearest one; CHIRPS is a dense, gapless grid that never depends on gauge proximity, but satellite infrared retrievals carry their own known bias over high, complex, snow-covered terrain — exactly the terrain much of Nepal is. Risk increases with precipitation in both criteria.',
+      'A flood-trigger factor, not a terrain or exposure one — precipitation is what supplies the water every other criterion turns into a flood (Parajuli et al., 2023). This is a long-term climatology (what this place\'s rainfall normally looks like), distinct from "Recent Rainfall"\'s own rolling 7-day accumulation (what has actually fallen here lately) — the two answer different questions and are registered as separate, independent criteria rather than one replacing the other: a place can be climatologically wet but currently dry, or vice versa, and both matter to flood risk differently. Risk increases with precipitation in both criteria.',
     rangeBasis:
       'Placeholder equal-interval-ish breaks (1000 / 1800 / 2600 / 3400 mm/yr), derived from real CHIRPS values sampled across Nepal’s actual climate range rather than guessed: from the dry western hills (Jumla, ~670 mm/yr) to the wet mid-hills (Pokhara, ~3,340 mm/yr), with Kathmandu Valley (~1,490 mm/yr) and the Terai plains (~1,890 mm/yr) both sitting mid-range. Like every other criterion here, these are a starting point pending calibration against an observed flood inventory, not a literature-derived threshold set.',
     refs: ['funk2015', 'parajuli2023', 'kazakis2015', 'tehrany2014'],
@@ -172,12 +172,19 @@ export const LITERATURE = {
 export const REFERENCES = {
   parajuli2023:
     'Parajuli, G., Neupane, S., Kunwar, S., Adhikari, R., & Acharya, T. D. (2023). A GIS-Based Evacuation Route Planning in Flood-Susceptible Area of Siraha Municipality, Nepal. ISPRS International Journal of Geo-Information, 12(7), 286. https://doi.org/10.3390/ijgi12070286',
-  zhang2011etccdi:
-    'Zhang, X., Alexander, L., Hegerl, G. C., Jones, P., Tank, A. K., Peterson, T. C., Trewin, B., & Zwiers, F. W. (2011). Indices for monitoring changes in extremes based on daily temperature and precipitation data. WIREs Climate Change, 2(6), 851–870.',
-  dhm:
-    'Department of Hydrology and Meteorology (DHM), Government of Nepal. Daily precipitation records, 1980–2022, national rain-gauge network.',
+  // zhang2011etccdi/dhm used to live here, cited only by the DHM-gauge
+  // `rainfall` criterion's own LITERATURE entry -- removed along with it
+  // (feature/rainfall-criterion's own revert commit: "kept private for
+  // publishing reasons", replaced by recent_rainfall.py's CHIRPS-based
+  // source instead, which shares no DHM data).
   funk2015:
     'Funk, C., Peterson, P., Landsfeld, M., Pedreros, D., Verdin, J., Shukla, S., Husak, G., Rowland, J., Harrison, L., Hoell, A., & Michaelsen, J. (2015). The climate hazards infrared precipitation with stations—a new environmental record for monitoring extremes. Scientific Data, 2, 150066. https://doi.org/10.1038/sdata.2015.66',
+  // recent_rainfall's own refs pointed at a new `chirps2015` key here,
+  // carrying the exact same Funk et al. 2015 citation funk2015 already
+  // has (CHIRPS v3-prelim and CHIRPS-2.0-annual are different products
+  // from the same underlying paper) -- consolidated onto funk2015
+  // instead of keeping a duplicate entry; recent_rainfall's refs array
+  // (below) was updated to match.
   saaty1980:
     'Saaty, T. L. (1980). The Analytic Hierarchy Process: Planning, Priority Setting, Resource Allocation. McGraw-Hill, New York.',
   kazakis2015:
