@@ -58,3 +58,41 @@ SOIL_ATTRIBUTION = (
     "spatial uncertainty. SOIL, 7, 217-240. https://doi.org/10.5194/soil-7-217-2021. "
     "© ISRIC — World Soil Information, licensed under CC BY 4.0."
 )
+
+# Nepal's national rain-gauge network, operated by the Department of
+# Hydrology and Meteorology (DHM). The ETCCDI climatological indices
+# interpolated by rainfall.py were computed from the 1980-2022 daily
+# record over 254 quality-controlled gauges. DHM data is provided for
+# research use; the derived station-climatology table committed at
+# app/data/resources/nepal_precip_stations.csv contains aggregated
+# indices, not the raw daily series.
+DHM_PRECIP_ATTRIBUTION = (
+    "Precipitation: Department of Hydrology and Meteorology (DHM), Government of Nepal — "
+    "daily rain-gauge record 1980-2022, 254 stations. ETCCDI climatological indices "
+    "(Rx1day, Rx5day, PRCPTOT, R95pTOT) derived from that record and interpolated to the "
+    "analysis grid by inverse distance weighting."
+)
+
+
+# Methodology references, as distinct from the data-source attributions
+# above: these credit the *method* this project implements, not a
+# dataset it reads. Kept here so there is exactly one place in the
+# backend holding full bibliographic details, rather than the informal
+# "the Siraha paper" shorthand that used to appear in hydrology.py with
+# the complete citation living only inside a test docstring
+# (tests/test_ahp_core.py, which transcribes this paper's Tables 4-5).
+#
+# Parajuli et al. (2023) is open access under CC BY 4.0, so its tables
+# and figures may be reused with attribution.
+METHODOLOGY_CITATIONS = {
+    "ahp": (
+        "Saaty, T. L. (1980). The Analytic Hierarchy Process: Planning, Priority Setting, "
+        "Resource Allocation. McGraw-Hill, New York."
+    ),
+    "reference_method": (
+        "Parajuli, G., Neupane, S., Kunwar, S., Adhikari, R., & Acharya, T. D. (2023). "
+        "A GIS-Based Evacuation Route Planning in Flood-Susceptible Area of Siraha "
+        "Municipality, Nepal. ISPRS International Journal of Geo-Information, 12(7), 286. "
+        "https://doi.org/10.3390/ijgi12070286"
+    ),
+}

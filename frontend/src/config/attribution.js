@@ -52,13 +52,25 @@ export const ADDITIONAL_SOURCE_CREDITS = [
 ]
 
 // Methodology citations (Saaty/AHP, Random Index source, drainage-density
-// technique reference) deliberately left out of the Credits section for
-// now, at the user's request ("don't cite papers yet") -- the full,
-// correct bibliographic details (especially for the drainage-density
-// reference, currently only an informal "the Siraha paper" mention in
-// backend/app/data/hydrology.py with no author list/journal/DOI anywhere
-// in this codebase) need to be supplied before this goes back in, rather
-// than publishing a citation this project can't fully stand behind yet.
+// technique reference) are still left out of the Credits section, at the
+// user's request ("don't cite papers yet"). That remains a product
+// decision, but it is no longer a *blocked* one: the reason originally
+// recorded here -- that no author list/journal/DOI existed anywhere in
+// this codebase -- was not accurate. The complete citation for the
+// reference method was already in backend/tests/test_ahp_core.py, whose
+// docstring transcribes the paper's Tables 4-5 cell by cell:
+//
+//   Parajuli, G., Neupane, S., Kunwar, S., Adhikari, R., & Acharya, T. D.
+//   (2023). A GIS-Based Evacuation Route Planning in Flood-Susceptible
+//   Area of Siraha Municipality, Nepal. ISPRS International Journal of
+//   Geo-Information, 12(7), 286. https://doi.org/10.3390/ijgi12070286
+//
+// It now also lives in backend/app/data/attribution.py's
+// METHODOLOGY_CITATIONS (the backend's single source of truth) and is
+// surfaced per-criterion through src/config/literature.js's REFERENCES,
+// which the LiteratureModal already renders. The paper is open access
+// under CC BY 4.0, so it can be cited and its tables reused freely
+// whenever the Credits section is ready to show it.
 
 // Team credits: the 3 people who built this project. `photo` is an
 // imported image, cropped to a head-and-shoulders square from the

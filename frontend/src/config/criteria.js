@@ -118,6 +118,23 @@ export const CRITERIA = [
     ],
   },
   {
+    id: 'rainfall',
+    label: 'Rainfall (Rx1day)',
+    cluster: 'Hydrological',
+    type: 'continuous',
+    riskDirection: 'ascending', // high value -> high risk
+    unit: 'mm',
+    description:
+      'Mean annual maximum 1-day rainfall, interpolated from 254 DHM gauges (1980-2022). Rainfall is the flood trigger — every other criterion describes the terrain or exposure that turns rain into a flood. Risk increases with rainfall.',
+    defaultReclassificationRules: [
+      { min: null, max: 80, risk_class: 1 },
+      { min: 80, max: 96, risk_class: 2 },
+      { min: 96, max: 124, risk_class: 3 },
+      { min: 124, max: 151, risk_class: 4 },
+      { min: 151, max: null, risk_class: 5 },
+    ],
+  },
+  {
     id: 'dist_to_river',
     label: 'Distance to River',
     cluster: 'Hydrological',
