@@ -136,7 +136,7 @@ export const CRITERIA = [
   },
   {
     id: 'precipitation_chirps',
-    label: 'Precipitation (satellite)',
+    label: 'Rainfall (satellite)',
     cluster: 'Hydrological',
     type: 'continuous',
     riskDirection: 'ascending', // high value -> high risk

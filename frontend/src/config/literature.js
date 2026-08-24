@@ -73,6 +73,15 @@ export const LITERATURE = {
       'Unlike most criteria here, these breaks are not expert-set: they are the observed quintiles of Rx1day across all 254 gauges (80, 96, 124 and 151 mm), so each class holds one fifth of the national gauge distribution. Rx1day is the default index because short-duration extremes drive flooding; switch RAINFALL_VARIABLE to PRCPTOT for direct comparison with the reference paper’s annual precipitation factor. Interpolation is elevation-blind, so values in steep terrain carry a warning on the result.',
     refs: ['parajuli2023', 'kazakis2015', 'tehrany2014', 'zhang2011etccdi', 'dhm'],
   },
+  precipitation_chirps: {
+    whatItIs:
+      'Mean annual precipitation (mm/yr), a 1981–2024 climatology from CHIRPS (Climate Hazards group InfraRed Precipitation with Station data) — a satellite-derived, quasi-global rainfall estimate that itself blends infrared cold-cloud-duration imagery with station data (Funk et al., 2015), read at its native ~0.05° (~5.5 km) grid.',
+    floodRole:
+      'Like "Rainfall", this is a flood-trigger factor, not a terrain or exposure one — precipitation is what supplies the water every other criterion turns into a flood (Parajuli et al., 2023). It is registered as a second, independent precipitation estimate rather than a replacement for the DHM-gauge "Rainfall" criterion: the two fail differently. "Rainfall" is interpolated (IDW) from 254 point gauges and is elevation-blind, degrading with distance from the nearest one; CHIRPS is a dense, gapless grid that never depends on gauge proximity, but satellite infrared retrievals carry their own known bias over high, complex, snow-covered terrain — exactly the terrain much of Nepal is. Risk increases with precipitation in both criteria.',
+    rangeBasis:
+      'Placeholder equal-interval-ish breaks (1000 / 1800 / 2600 / 3400 mm/yr), derived from real CHIRPS values sampled across Nepal’s actual climate range rather than guessed: from the dry western hills (Jumla, ~670 mm/yr) to the wet mid-hills (Pokhara, ~3,340 mm/yr), with Kathmandu Valley (~1,490 mm/yr) and the Terai plains (~1,890 mm/yr) both sitting mid-range. Like every other criterion here, these are a starting point pending calibration against an observed flood inventory, not a literature-derived threshold set.',
+    refs: ['funk2015', 'parajuli2023', 'kazakis2015', 'tehrany2014'],
+  },
   dist_to_river: {
     whatItIs:
       'Euclidean distance (metres) from each cell to the nearest river / stream / canal, from OpenStreetMap waterways.',
@@ -158,6 +167,8 @@ export const REFERENCES = {
     'Zhang, X., Alexander, L., Hegerl, G. C., Jones, P., Tank, A. K., Peterson, T. C., Trewin, B., & Zwiers, F. W. (2011). Indices for monitoring changes in extremes based on daily temperature and precipitation data. WIREs Climate Change, 2(6), 851–870.',
   dhm:
     'Department of Hydrology and Meteorology (DHM), Government of Nepal. Daily precipitation records, 1980–2022, national rain-gauge network.',
+  funk2015:
+    'Funk, C., Peterson, P., Landsfeld, M., Pedreros, D., Verdin, J., Shukla, S., Husak, G., Rowland, J., Harrison, L., Hoell, A., & Michaelsen, J. (2015). The climate hazards infrared precipitation with stations—a new environmental record for monitoring extremes. Scientific Data, 2, 150066. https://doi.org/10.1038/sdata.2015.66',
   saaty1980:
     'Saaty, T. L. (1980). The Analytic Hierarchy Process: Planning, Priority Setting, Resource Allocation. McGraw-Hill, New York.',
   kazakis2015:
