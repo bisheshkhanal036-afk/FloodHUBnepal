@@ -135,6 +135,30 @@ export const CRITERIA = [
     ],
   },
   {
+    id: 'precipitation_chirps',
+    label: 'Precipitation (satellite)',
+    cluster: 'Hydrological',
+    type: 'continuous',
+    riskDirection: 'ascending', // high value -> high risk
+    unit: 'mm/yr',
+    description:
+      'Mean annual precipitation (1981-2024 climatology), from CHIRPS satellite-derived rainfall estimates — a dense, gapless national grid independent of gauge-network coverage, complementing the "Rainfall" criterion\'s DHM-gauge interpolation rather than replacing it. Risk increases with rainfall.',
+    // Placeholder equal-interval-ish breaks, the same "not yet
+    // literature-calibrated" pattern as this project's other defaults —
+    // but derived from real sampled CHIRPS values across Nepal's actual
+    // climate range during implementation, not guessed blindly: ~670mm
+    // (dry western hills, e.g. Jumla) to ~3340mm (wet mid-hills, e.g.
+    // Pokhara), with Kathmandu Valley (~1490mm) and the Terai plains
+    // (~1890mm) both sitting mid-range.
+    defaultReclassificationRules: [
+      { min: null, max: 1000, risk_class: 1 },
+      { min: 1000, max: 1800, risk_class: 2 },
+      { min: 1800, max: 2600, risk_class: 3 },
+      { min: 2600, max: 3400, risk_class: 4 },
+      { min: 3400, max: null, risk_class: 5 },
+    ],
+  },
+  {
     id: 'dist_to_river',
     label: 'Distance to River',
     cluster: 'Hydrological',

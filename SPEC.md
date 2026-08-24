@@ -1,6 +1,6 @@
 # SPEC — Flood Risk Mapping & Shelter Identification, Kathmandu Valley
 
-Status: **Backend (AHP engine, geospatial data layer with 12 registered
+Status: **Backend (AHP engine, geospatial data layer with 14 registered
 criterion sources, overlay engine, vulnerability-classification/reporting)
 and a working, redesigned frontend map UI implemented; shelter
 identification still pending** — see §5. This document defines
@@ -342,6 +342,8 @@ with zero changes to `sources.py` or any other `overlay/` file.
 | `population_density` | Meta/CIESIN HRSL population density (people/km²) | Continuous | `app/data/population.py` |
 | `hand` | Height Above Nearest Drainage (m) — elevation above the nearest stream cell along the D8 flow path | Continuous | `app/data/hydrology.py` |
 | `soil_infiltration` | ISRIC SoilGrids topsoil (0-5cm) sand content (%), used as an infiltration-capacity proxy | Continuous | `app/data/soil.py` |
+| `rainfall` | Precipitation ETCCDI index (default Rx1day, configurable), interpolated (IDW) from Nepal's DHM rain-gauge network | Continuous | `app/data/rainfall.py` |
+| `precipitation_chirps` | CHIRPS-2.0 satellite precipitation, 1981-2024 mean-annual climatology | Continuous | `app/data/chirps.py` |
 
 **Distance rasters** (`distance_raster.py`): a generic
 `compute_distance_raster(features, grid)` rasterizes arbitrary vector
@@ -1817,6 +1819,72 @@ them.
     confirmed correctness; this cost real debugging time before being
     understood as a harness artifact, not an app bug, and is recorded
     here so a future session doesn't re-diagnose it from scratch.
+- Backend: **11th and 12th criterion sources, `rainfall` and
+  `precipitation_chirps`** — two genuinely independent precipitation
+  estimates, both registered rather than one replacing the other, since
+  they fail differently and a user should be able to reason about each.
+  - `rainfall` (`app/data/rainfall.py`) was contributed externally (a
+    collaborator's branch, reviewed and merged after independent
+    verification — its own test suite re-run in an isolated worktree,
+    353/353 passing, plus a live functional call — rather than merged
+    on trust): interpolates Nepal's DHM (Department of Hydrology and
+    Meteorology) rain-gauge network — 254 quality-controlled stations,
+    1980-2022, committed directly as a 22KB CSV resource (unlike every
+    multi-GB raw source elsewhere in this project, gitignored) — via
+    Inverse Distance Weighting over the K nearest gauges nationwide
+    (never scoped to gauges strictly inside the AOI, since the network
+    is sparse enough that would return empty for most real requests).
+    The represented ETCCDI index is env-configurable
+    (`RAINFALL_VARIABLE`: Rx1day default, or Rx5day/PRCPTOT/R95pTOT/
+    SDII) — Rx1day (mean annual max 1-day rainfall) matches this
+    project's own reference method (Parajuli et al. 2023, "the Siraha
+    paper" — its full citation was already buried in a test docstring
+    and surfaced properly into `attribution.py`'s new
+    `METHODOLOGY_CITATIONS` by this same contribution, correcting a
+    stale "no citation available" note in SPEC.md/HANDOFF.md).
+    IDW is elevation-blind in a strongly orographic country; this is
+    reported as a `source_warnings` entry (the same mechanism
+    `twi`/`drainage_density`/`hand` use for their own caveats) whenever
+    the contributing gauges span a wide elevation range or the nearest
+    one is far away, never silently absorbed.
+  - `precipitation_chirps` (`app/data/chirps.py`) is the satellite
+    complement: CHIRPS-2.0's own 44-year (1981-2024) mean-annual-
+    precipitation climatology, one public-domain global GeoTIFF
+    (`data.chc.ucsb.edu`, verified live — no authentication, unlike GPM
+    IMERG, evaluated and rejected for the same Earthdata-Login-required
+    reason HYSOGs250m already was) — dense and gapless regardless of
+    how close the nearest DHM gauge is, at the cost of satellite IR's
+    own known bias over high, complex, snow-covered terrain, which IDW
+    doesn't share. CRS is plain EPSG:4326 (no Homolosine-style
+    reprojection-before-windowing needed, unlike `soil_infiltration`'s
+    SoilGrids source); nodata (-9999.0) is supplied explicitly rather
+    than read off the file, since the file's own GDAL metadata doesn't
+    declare a NoData tag (confirmed live by sampling an open-ocean
+    window). **A real bug caught live during implementation**: a small
+    (~2km) real test AOI against CHIRPS's own coarse ~5.5km (0.05°)
+    native pixels produced a raw `from_bounds` window of width=0.4,
+    height=0.4 source pixels — `ds.read()` rejected that outright
+    ("Invalid dataset dimensions: 0 x 0") rather than rounding it to
+    something usable, a failure mode none of this project's other
+    windowed-read sources (DEM 30m, WorldCover 10m, SoilGrids 250m) are
+    coarse enough to hit against this project's own typical AOI sizes.
+    Fixed with `_whole_pixel_window` (expands outward to whole source
+    pixels, floored at 1×1) used by both the local and cloud read paths;
+    verified live end to end that the exact previously-crashing AOI now
+    resolves correctly through the real registry
+    (`resolve_criterion_raster`) and the real `POST /api/overlay/compute`
+    endpoint. 9 new tests (local-hit reprojection, the undeclared-
+    NoData-tag handling, cache reuse, cloud fallback, the shared GDAL
+    retry-env usage, two dedicated regression tests for the whole-pixel-
+    window fix at both the unit and `get_chirps_precipitation` level,
+    plus a `@pytest.mark.slow` live-network test) — 362 backend tests
+    passing total, zero regressions.
+  - Frontend: `precipitation_chirps` added to `config/criteria.js`
+    (Hydrological cluster, alongside `rainfall`), default
+    reclassification breaks derived from real CHIRPS values sampled
+    across Nepal's actual climate range during implementation (~670mm
+    dry western hills to ~3340mm wet mid-hills — Jumla and Pokhara
+    respectively), not guessed blindly.
 - Not yet implemented: AOI persistence, and shelter identification. The
   GeoTIFF file route is a simple
   direct-read endpoint, not a general static-asset server or CDN — fine

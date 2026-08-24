@@ -21,6 +21,31 @@ LOCAL_WORLDCOVER_DIR = DATA_DIR / "raw" / "worldcover"
 LOCAL_POPULATION_DIR = DATA_DIR / "raw" / "population"
 LOCAL_NDVI_DIR = DATA_DIR / "raw" / "ndvi"
 LOCAL_SOIL_DIR = DATA_DIR / "raw" / "soil"
+LOCAL_CHIRPS_DIR = DATA_DIR / "raw" / "chirps"
+
+# chirps.py's cloud fallback: UC Santa Barbara Climate Hazards Center's own
+# public, unauthenticated hosting (data.chc.ucsb.edu) -- verified live
+# during implementation to need no authentication, same as SoilGrids and
+# unlike GPM IMERG (whose AWS bucket is gesdisc-cumulus-prod-*protected*,
+# requiring Earthdata Login credentials -- rejected for the same reason
+# HYSOGs250m was). This one file is CHIRPS-2.0's own 44-year (1981-2024)
+# mean-annual-precipitation climatology -- a single global raster, not a
+# per-date fetch, since a flood-risk criterion wants "how much does it
+# normally rain here", not one day's weather. Verified live: real ~57.6MB
+# GeoTIFF, CRS EPSG:4326 (no Homolosine-style reprojection-before-
+# windowing needed, unlike soil.py's SoilGrids source), dtype float32,
+# native resolution 0.05° (~5.5km), nodata -9999.0 (confirmed by sampling
+# an open-ocean window; the file's own GDAL metadata does not declare a
+# NoData tag, so this value is supplied explicitly here rather than read
+# off the dataset the way dem.py/worldcover.py do for sources that do
+# declare one). Covers 50°S-50°N, comfortably including Nepal (26.3-
+# 30.5°N, basins.py's own NEPAL_BBOX_4326) -- CHIRPS's coverage note is
+# sometimes misread as excluding Nepal; it does not.
+CHIRPS_NODATA = -9999.0
+CHIRPS_ANNUAL_NORMALS_URL = os.environ.get(
+    "CHIRPS_ANNUAL_NORMALS_URL",
+    "https://data.chc.ucsb.edu/products/CHIRPS-2.0/global_annual/tifs/chirps-v2.0.1981-2024.44yrs.tif",
+)
 
 # soil.py's cloud fallback: ISRIC SoilGrids 2.0's own public, unauthenticated
 # hosting (files.isric.org) -- unlike HYSOGs250m (NASA/ORNL DAAC), whose

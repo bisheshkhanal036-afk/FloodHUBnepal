@@ -73,6 +73,18 @@ DHM_PRECIP_ATTRIBUTION = (
     "analysis grid by inverse distance weighting."
 )
 
+# CHIRPS-2.0's own recommended citation (Funk et al., 2015), verified
+# during implementation of chirps.py. Data is public domain (the Climate
+# Hazards Center has waived all copyright, registered with Creative
+# Commons -- see chc.ucsb.edu/data/chirps).
+CHIRPS_ATTRIBUTION = (
+    "Funk, C., Peterson, P., Landsfeld, M., Pedreros, D., Verdin, J., Shukla, S., Husak, G., "
+    "Rowland, J., Harrison, L., Hoell, A., and Michaelsen, J. (2015). The climate hazards "
+    "infrared precipitation with stations—a new environmental record for monitoring extremes. "
+    "Scientific Data, 2, 150066. https://doi.org/10.1038/sdata.2015.66. "
+    "Climate Hazards Center, UC Santa Barbara — public domain."
+)
+
 
 # Methodology references, as distinct from the data-source attributions
 # above: these credit the *method* this project implements, not a

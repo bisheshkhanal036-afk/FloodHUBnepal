@@ -77,15 +77,19 @@ just unit-tested)
   display and for masking the final risk surface (a basin's result
   now visually follows the basin's real shape on the map, not a
   rectangle).
-- **9 criterion sources**, each independently cached per-AOI and
-  reprojected onto a common analysis grid: `dem_elevation`,
-  `dem_slope` (Copernicus GLO-30 DEM, live S3), `worldcover_land_cover`
-  (ESA WorldCover, live S3), `dist_to_river`, `dist_to_road` (OSM,
-  local `.pbf`/pre-processed FlatGeobuf fast path/R2 fallback), `twi`,
-  `drainage_density` (pysheds-derived hydrology), `building_density`
-  (OSM buildings), `population_density` (Meta/CIESIN HRSL, live S3).
-  Registered via a **pluggable registry**
-  (`app/overlay/sources.py`'s `register_source`) — adding a 10th
+- **14 criterion sources** (this line is a point-in-time count, kept
+  loosely in sync — SPEC.md §3.6's own table is the source of truth),
+  each independently cached per-AOI and reprojected onto a common
+  analysis grid: `dem_elevation`, `dem_slope` (Copernicus GLO-30 DEM,
+  live S3), `worldcover_land_cover` (ESA WorldCover, live S3),
+  `dist_to_river`, `dist_to_road` (OSM, local `.pbf`/pre-processed
+  FlatGeobuf fast path/R2 fallback), `twi`, `drainage_density`, `hand`
+  (pysheds-derived hydrology), `building_density` (OSM buildings),
+  `population_density` (Meta/CIESIN HRSL, live S3), `ndvi` (Sentinel-2
+  L2A), `soil_infiltration` (ISRIC SoilGrids), `rainfall` (DHM
+  gauge-network IDW interpolation), `precipitation_chirps` (CHIRPS
+  satellite climatology). Registered via a **pluggable registry**
+  (`app/overlay/sources.py`'s `register_source`) — adding a 15th
   source needs zero changes to the overlay engine itself.
 - **AHP weighting** (2-level hierarchy: 5 canonical clusters
   {Topographic, Hydrological, Land Use, Infrastructure, Exposure}, then

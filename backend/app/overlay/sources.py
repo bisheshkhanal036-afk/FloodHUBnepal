@@ -71,6 +71,7 @@ from collections.abc import Callable
 import numpy as np
 
 from app.data.aoi import AOI
+from app.data.chirps import get_chirps_precipitation
 from app.data.dem import get_dem
 from app.data.density_raster import get_building_density
 from app.data.distance_raster import get_distance_to_river, get_distance_to_road
@@ -193,6 +194,11 @@ def _soil_infiltration(aoi: AOI, **_kwargs):
     return r.sand_pct, r.grid, r.nodata, r.attribution, None
 
 
+def _precipitation_chirps(aoi: AOI, **_kwargs):
+    r = get_chirps_precipitation(aoi)
+    return r.precipitation_mm, r.grid, r.nodata, r.attribution, None
+
+
 register_source("dem_elevation", _dem_elevation)
 register_source("dem_slope", _dem_slope)
 register_source("worldcover_land_cover", _worldcover_land_cover)
@@ -206,6 +212,7 @@ register_source("population_density", _population_density)
 register_source("ndvi", _ndvi)
 register_source("rainfall", _rainfall)
 register_source("soil_infiltration", _soil_infiltration)
+register_source("precipitation_chirps", _precipitation_chirps)
 
 # Snapshot at built-in-registration time, for display purposes only (e.g.
 # app/overlay/models.py's OverlayCriterionInput.source Field description)
