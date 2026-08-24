@@ -23,8 +23,18 @@ import { ADDITIONAL_SOURCE_CREDITS, SOURCE_ATTRIBUTIONS, TEAM_CREDITS } from '..
 import { useScrollZoom } from '../lib/useScrollZoom'
 import Logo from './Logo'
 
-/** One full-height, scroll-triggered "zoom in" panel -- see useScrollZoom.js's own docstring for why this is IntersectionObserver-driven rather than a continuous scroll-position scrub. */
-function ZoomSection({ id, className = '', children }) {
+/**
+ * One full-height, scroll-triggered "zoom in" panel -- see
+ * useScrollZoom.js's own docstring for why this is IntersectionObserver-
+ * driven rather than a continuous scroll-position scrub.
+ *
+ * `overlay` (optional) renders as a plain sibling of the scaled/faded
+ * `.zoom-section__inner` -- inside the full-height `<section>` for
+ * positioning purposes (e.g. pinned to its bottom edge), but outside the
+ * zoom transform/fade itself, for content that shouldn't visually scale
+ * with the reveal (the hero's own scroll-down cue).
+ */
+function ZoomSection({ id, className = '', overlay = null, children }) {
   const [ref, active] = useScrollZoom()
   return (
     <section
@@ -33,7 +43,19 @@ function ZoomSection({ id, className = '', children }) {
       className={`zoom-section ${className} ${active ? 'zoom-section--active' : ''}`}
     >
       <div className="zoom-section__inner">{children}</div>
+      {overlay}
     </section>
+  )
+}
+
+/** A cascading "wave" of 3 chevrons, fading in and out in sequence, hinting there's more to scroll to. Purely decorative (aria-hidden) -- the page works identically without it. */
+function ScrollCue() {
+  return (
+    <div className="hero__scroll-cue" aria-hidden="true">
+      <span className="hero__scroll-chevron" />
+      <span className="hero__scroll-chevron" />
+      <span className="hero__scroll-chevron" />
+    </div>
   )
 }
 
@@ -52,7 +74,7 @@ export default function LandingPage({ onLaunch }) {
         </button>
       </header>
 
-      <ZoomSection className="zoom-section--hero">
+      <ZoomSection className="zoom-section--hero" overlay={<ScrollCue />}>
         <div className="hero hero--centered">
           <p className="hero__eyebrow">Multi-criteria flood risk mapping</p>
           <h1 className="hero__title">FloodHUB</h1>

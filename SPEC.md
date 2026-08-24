@@ -1944,6 +1944,36 @@ them.
     back to the top correctly re-triggers both sections back to their
     scaled-down/transparent starting state, confirming the reveal is
     genuinely bidirectional, not a one-shot "seen once, stays" reveal.
+- Frontend: **hero section enlarged, plus an animated scroll-down cue**,
+  at the user's feedback that the hero read as a small centered block
+  in mostly-empty space rather than a screen-filling opener. Two real
+  fixes, not just bigger numbers: `--text-display` (the hero title's
+  only consumer) went from `clamp(2.4rem, 5vw, 3.8rem)` to
+  `clamp(3.2rem, 7.5vw, 6rem)`, and — the actual fix, since bigger type
+  alone barely changed how much of the 100vh section visually filled —
+  `.hero--centered` gained its own `min-height: 82vh` so the block
+  itself (and its radial-gradient glow background, sized to that same
+  box) occupies most of the section, rather than staying a
+  content-sized island vertically centered inside a mostly-bare 100vh
+  area. Verified live via a properly-settled screenshot (an initial
+  screenshot attempt caught the CSS transition mid-fade — real content,
+  just not yet fully opaque — resolved by waiting for the transition to
+  finish before capturing, not by changing anything about the reveal
+  itself).
+  - New `.hero__scroll-cue`: 3 chevrons cascading through
+    opacity 0→1→0 on a staggered delay (0s/0.2s/0.4s), reading as a wave
+    rippling downward — pinned to `.zoom-section--hero`'s own bottom
+    edge via a new `overlay` prop on `ZoomSection` (renders as a sibling
+    of the scaled/faded `.zoom-section__inner`, so the cue itself never
+    scales/fades with the reveal — it should just always be there while
+    the hero is on screen). Respects `prefers-reduced-motion` the same
+    way the section reveals do: animation off, chevrons static at 0.5
+    opacity rather than disappearing — verified live via emulated media
+    (`animationName: "none"`, `opacity: "0.5"`). Verified live that the
+    non-reduced-motion animation is genuinely cycling, not stuck: sampled
+    computed opacity across all 3 chevrons at 400ms intervals and
+    confirmed staggered peaks moving between chevrons over time, not all
+    three frozen at one value.
 - Not yet implemented: AOI persistence, and shelter identification. The
   GeoTIFF file route is a simple
   direct-read endpoint, not a general static-asset server or CDN — fine

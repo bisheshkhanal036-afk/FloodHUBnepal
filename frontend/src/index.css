@@ -64,7 +64,7 @@
   --text-lg: 1.15rem;
   --text-xl: 1.5rem;
   --text-2xl: clamp(1.9rem, 2.6vw, 2.5rem);
-  --text-display: clamp(2.4rem, 5vw, 3.8rem);
+  --text-display: clamp(3.2rem, 7.5vw, 6rem);
   --tracking-tight: -0.011em;
   --tracking-tighter: -0.02em;
 
@@ -1761,37 +1761,47 @@ input[type='radio'] {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   text-align: center;
-  max-width: 46rem;
+  /* Genuinely tall, not just centered-with-padding -- the earlier
+     version's content block only occupied roughly the middle third of
+     the section regardless of how big the type got, leaving a lot of
+     bare space above/below at the actual 100vh section size. Sizing
+     the block itself (not just its padding) to most of the viewport
+     means the radial-gradient glow below, which is sized to THIS box,
+     fills most of the screen too, not just a patch behind the text. */
+  width: 100%;
+  min-height: 82vh;
+  max-width: 54rem;
   margin: 0 auto;
-  padding: var(--space-10) var(--space-8) var(--space-12);
-  background: radial-gradient(ellipse 60% 50% at 50% 0%, var(--color-primary-soft), transparent 70%);
+  padding: var(--space-8);
+  background: radial-gradient(ellipse 90% 75% at 50% 40%, var(--color-primary-soft), transparent 72%);
 }
 
 .hero__eyebrow {
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   color: var(--color-primary);
-  margin: 0 0 var(--space-3);
+  margin: 0 0 var(--space-4);
 }
 
 .hero__title {
   font-family: var(--font-display);
   font-size: var(--text-display);
-  line-height: 1.05;
+  line-height: 1.02;
   letter-spacing: var(--tracking-tighter);
-  margin: 0 0 var(--space-4);
+  margin: 0 0 var(--space-6);
   color: var(--color-text);
 }
 
 .hero__description {
-  font-size: var(--text-md);
+  font-size: var(--text-lg);
   line-height: 1.65;
   color: var(--color-text-muted);
-  max-width: 38rem;
-  margin: 0 auto var(--space-5);
+  max-width: 42rem;
+  margin: 0 auto var(--space-8);
 }
 
 .hero__actions {
@@ -1829,6 +1839,65 @@ input[type='radio'] {
   flex-shrink: 0;
 }
 
+/* Scroll-down cue: 3 chevrons cascading through opacity 0 -> 1 -> 0 in a
+   staggered sequence, like a wave rippling downward -- a hint that
+   there's more below, not a functional control (aria-hidden; the page
+   scrolls normally with or without it). Pinned to .zoom-section--hero's
+   own bottom edge (that section's `position: relative`), independent of
+   how tall the actual hero content block is, and NOT nested inside
+   .zoom-section__inner -- it isn't part of the scroll-zoom reveal, it
+   should just always be there while the hero is the active section. */
+.hero__scroll-cue {
+  position: absolute;
+  bottom: var(--space-8);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.hero__scroll-chevron {
+  width: 14px;
+  height: 14px;
+  border-right: 2px solid var(--color-primary);
+  border-bottom: 2px solid var(--color-primary);
+  transform: rotate(45deg);
+  opacity: 0;
+  animation: hero-scroll-wave 1.8s ease-in-out infinite;
+}
+
+.hero__scroll-chevron:nth-child(1) {
+  animation-delay: 0s;
+}
+.hero__scroll-chevron:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.hero__scroll-chevron:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes hero-scroll-wave {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Motion is purely decorative here too -- a reduced-motion viewer still
+   gets the visual hint (three static, dimmed chevrons), just no looping
+   animation, mirroring the same treatment .zoom-section__inner gets. */
+@media (prefers-reduced-motion: reduce) {
+  .hero__scroll-chevron {
+    animation: none;
+    opacity: 0.5;
+  }
+}
+
 /* ==========================================================================
    Scroll-zoom sections (LandingPage.jsx's hero/team/sources sequence) --
    see lib/useScrollZoom.js for the IntersectionObserver mechanics this
@@ -1850,7 +1919,8 @@ input[type='radio'] {
 
 .zoom-section--hero {
   border-top: none;
-  min-height: 90vh;
+  min-height: 100vh;
+  position: relative; /* anchors .hero__scroll-cue to this section's full-height box, not the (much shorter) hero content block centered inside it */
 }
 
 .zoom-section__inner {
