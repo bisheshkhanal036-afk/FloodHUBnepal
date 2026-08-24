@@ -59,20 +59,6 @@ SOIL_ATTRIBUTION = (
     "© ISRIC — World Soil Information, licensed under CC BY 4.0."
 )
 
-# Nepal's national rain-gauge network, operated by the Department of
-# Hydrology and Meteorology (DHM). The ETCCDI climatological indices
-# interpolated by rainfall.py were computed from the 1980-2022 daily
-# record over 254 quality-controlled gauges. DHM data is provided for
-# research use; the derived station-climatology table committed at
-# app/data/resources/nepal_precip_stations.csv contains aggregated
-# indices, not the raw daily series.
-DHM_PRECIP_ATTRIBUTION = (
-    "Precipitation: Department of Hydrology and Meteorology (DHM), Government of Nepal — "
-    "daily rain-gauge record 1980-2022, 254 stations. ETCCDI climatological indices "
-    "(Rx1day, Rx5day, PRCPTOT, R95pTOT) derived from that record and interpolated to the "
-    "analysis grid by inverse distance weighting."
-)
-
 
 # Methodology references, as distinct from the data-source attributions
 # above: these credit the *method* this project implements, not a

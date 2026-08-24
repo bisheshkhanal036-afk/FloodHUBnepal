@@ -64,15 +64,6 @@ export const LITERATURE = {
     refs: ['renno2008', 'nobre2011', 'nobre2016'],
   },
   // ---------------- Hydrological ----------------
-  rainfall: {
-    whatItIs:
-      'Mean annual maximum 1-day precipitation (Rx1day, mm) — an ETCCDI extreme-precipitation index computed from the Department of Hydrology and Meteorology daily gauge record (1980–2022, 254 quality-controlled stations) and interpolated to the analysis grid by inverse distance weighting.',
-    floodRole:
-      'Rainfall is the flood trigger: every other criterion in this model describes the terrain, land cover or exposure that converts rain into a flood, but precipitation is what supplies the water. Short-duration extreme rainfall in particular drives flash and pluvial flooding, so risk increases with Rx1day. Precipitation is one of the two most heavily weighted factors in the reference method for this project (Parajuli et al., 2023) and is standard in index-based flood-susceptibility models (Kazakis et al., 2015; Tehrany et al., 2014).',
-    rangeBasis:
-      'Unlike most criteria here, these breaks are not expert-set: they are the observed quintiles of Rx1day across all 254 gauges (80, 96, 124 and 151 mm), so each class holds one fifth of the national gauge distribution. Rx1day is the default index because short-duration extremes drive flooding; switch RAINFALL_VARIABLE to PRCPTOT for direct comparison with the reference paper’s annual precipitation factor. Interpolation is elevation-blind, so values in steep terrain carry a warning on the result.',
-    refs: ['parajuli2023', 'kazakis2015', 'tehrany2014', 'zhang2011etccdi', 'dhm'],
-  },
   dist_to_river: {
     whatItIs:
       'Euclidean distance (metres) from each cell to the nearest river / stream / canal, from OpenStreetMap waterways.',
@@ -152,12 +143,6 @@ export const LITERATURE = {
 
 // Curated bibliography. Keys are referenced by METHOD_INTRO/LITERATURE.
 export const REFERENCES = {
-  parajuli2023:
-    'Parajuli, G., Neupane, S., Kunwar, S., Adhikari, R., & Acharya, T. D. (2023). A GIS-Based Evacuation Route Planning in Flood-Susceptible Area of Siraha Municipality, Nepal. ISPRS International Journal of Geo-Information, 12(7), 286. https://doi.org/10.3390/ijgi12070286',
-  zhang2011etccdi:
-    'Zhang, X., Alexander, L., Hegerl, G. C., Jones, P., Tank, A. K., Peterson, T. C., Trewin, B., & Zwiers, F. W. (2011). Indices for monitoring changes in extremes based on daily temperature and precipitation data. WIREs Climate Change, 2(6), 851–870.',
-  dhm:
-    'Department of Hydrology and Meteorology (DHM), Government of Nepal. Daily precipitation records, 1980–2022, national rain-gauge network.',
   saaty1980:
     'Saaty, T. L. (1980). The Analytic Hierarchy Process: Planning, Priority Setting, Resource Allocation. McGraw-Hill, New York.',
   kazakis2015:
