@@ -616,6 +616,21 @@ input[type='radio'] {
   padding: 0.4rem 0.3rem;
 }
 
+/* A secondary toggle nested under one already-active tab (e.g. the
+   basin level 8/9 picker under "Select basin") -- visually subordinate
+   to the top-level mode-toggle it sits beneath: smaller, less padding,
+   no bottom margin of its own (the parent's <p>/legend below supplies
+   the spacing instead). */
+.mode-toggle--sub {
+  margin-bottom: var(--space-2);
+  padding: 0.15rem;
+}
+
+.mode-toggle--sub .mode-toggle__button {
+  font-size: var(--text-xs);
+  padding: 0.3rem 0.4rem;
+}
+
 .mode-toggle__button--active {
   background: var(--color-primary);
   border-color: var(--color-primary);

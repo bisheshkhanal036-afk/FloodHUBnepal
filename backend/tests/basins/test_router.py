@@ -86,3 +86,47 @@ def test_basins_endpoints_503_when_file_missing(monkeypatch, tmp_path):
 
     assert response.status_code == 503
     assert response.json()["detail"]["error"] == "basins_unavailable"
+
+
+# --- level query param ---
+
+BASIN_LEV09_FULLY_IN_NEPAL = 4090000010
+
+
+def test_list_basins_defaults_to_level_8():
+    response = client.get("/api/basins")
+    body = response.json()
+    assert all(f["properties"]["level"] == 8 for f in body["features"])
+    assert {f["properties"]["hybas_id"] for f in body["features"]} == {
+        BASIN_FULLY_IN_NEPAL, 4080000020, 4080000030, BASIN_SMALL,
+    }
+
+
+def test_list_basins_at_level_9():
+    response = client.get("/api/basins?level=9")
+    body = response.json()
+    assert all(f["properties"]["level"] == 9 for f in body["features"])
+    assert {f["properties"]["hybas_id"] for f in body["features"]} == {
+        BASIN_LEV09_FULLY_IN_NEPAL, 4090000020, 4090000030, 4090000040,
+    }
+
+
+def test_get_basin_detail_at_level_9():
+    response = client.get(f"/api/basins/{BASIN_LEV09_FULLY_IN_NEPAL}?level=9")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["hybas_id"] == BASIN_LEV09_FULLY_IN_NEPAL
+    assert body["level"] == 9
+
+
+def test_get_basin_detail_404s_for_a_level_8_id_requested_at_level_9():
+    # BASIN_FULLY_IN_NEPAL is a real level-8 ID, but doesn't exist in the
+    # level-9 fixture -- level must actually select which file is
+    # searched, not just be accepted and ignored.
+    response = client.get(f"/api/basins/{BASIN_FULLY_IN_NEPAL}?level=9")
+    assert response.status_code == 404
+
+
+def test_invalid_level_is_rejected_with_422():
+    response = client.get("/api/basins?level=7")
+    assert response.status_code == 422

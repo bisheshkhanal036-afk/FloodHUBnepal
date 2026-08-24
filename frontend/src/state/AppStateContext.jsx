@@ -49,12 +49,25 @@ function initialState() {
     basemapStyle: theme === 'dark' ? 'dark' : 'street',
     basemapVisible: true,
 
-    aoiMode: 'draw',
-    aoi: null, // { bbox: [minx,miny,maxx,maxy], polygon: geom|null, source: 'draw'|'basin', basinId?, label? }
+    aoiMode: 'draw', // 'draw' | 'basin' | 'district'
+    aoi: null, // { bbox: [minx,miny,maxx,maxy], polygon: geom|null, source: 'draw'|'basin'|'district', basinId?, basinLevel?, districtPcode?, label? }
     areaWarning: null,
 
+    // Which HydroBASINS resolution 'basin' mode browses/fetches -- 8
+    // (~547 basins over Nepal's rough extent, coarser/larger catchments,
+    // the original default) or 9 (finer sub-catchments). Independent of
+    // `basins` below: changing this resets that fetch back to 'idle' (see
+    // SET_BASIN_LEVEL) so AOIPanel's effect re-fetches at the new level.
+    basinLevel: 8,
     basins: { status: 'idle', data: null, error: null },
     selectedBasinId: null,
+
+    // District mode (an alternative AOI-selection path alongside basins,
+    // not a replacement for either) -- mirrors `basins`/`selectedBasinId`
+    // exactly, but has no level concept (Nepal has one fixed set of 77
+    // districts).
+    districts: { status: 'idle', data: null, error: null },
+    selectedDistrictPcode: null,
 
     criteriaEnabled: Object.fromEntries(CRITERIA.map((c) => [c.id, false])),
 
@@ -172,6 +185,7 @@ function reducer(state, action) {
         ...state,
         aoi: null,
         selectedBasinId: null,
+        selectedDistrictPcode: null,
         classification: {},
         overlay: { status: 'idle', result: null, error: null, criteriaUsed: null, weightsUsed: null, progressLog: [] },
       }
@@ -188,6 +202,31 @@ function reducer(state, action) {
 
     case 'SET_SELECTED_BASIN_ID':
       return { ...state, selectedBasinId: action.hybasId }
+
+    case 'SET_BASIN_LEVEL':
+      // A different level means a different basin set entirely -- reset
+      // the fetch back to 'idle' so AOIPanel's effect (keyed on
+      // aoiMode/basins.status) re-fetches at the new level, the same
+      // "reset status to trigger a refetch" mechanism SET_STREAM_
+      // THRESHOLD_CELLS uses for classification breaks below. Also drops
+      // any basin selected under the old level, since its polygon
+      // belongs to a layer that's about to be replaced.
+      return {
+        ...state,
+        basinLevel: action.level,
+        basins: { status: 'idle', data: null, error: null },
+        selectedBasinId: null,
+      }
+
+    case 'DISTRICTS_LOADING':
+      return { ...state, districts: { status: 'loading', data: null, error: null } }
+    case 'DISTRICTS_LOADED':
+      return { ...state, districts: { status: 'loaded', data: action.data, error: null } }
+    case 'DISTRICTS_ERROR':
+      return { ...state, districts: { status: 'error', data: null, error: action.error } }
+
+    case 'SET_SELECTED_DISTRICT':
+      return { ...state, selectedDistrictPcode: action.pcode }
 
     case 'SET_STREAM_THRESHOLD_CELLS': {
       // A changed threshold makes any already-fetched (or in-flight)

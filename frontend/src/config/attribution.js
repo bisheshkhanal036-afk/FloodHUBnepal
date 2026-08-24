@@ -29,25 +29,25 @@ export const SOURCE_ATTRIBUTIONS = [
   },
 ]
 
-// Two additional data sources used by this project (AOI/basin selection
-// and the Nepal boundary refinement) that don't go through overlay
-// compute's per-request attribution list, so they aren't in
-// SOURCE_ATTRIBUTIONS above -- credited separately here instead. Neither
-// has a formal attribution constant in the backend the way DEM/
-// WorldCover/OSM do (see backend/app/data/attribution.py), so these
-// descriptions are written from the source references already in
-// backend/app/data/basins.py and config.py's own comments, not a
-// verbatim copy of a backend string.
+// Three additional data sources used by this project (AOI/basin/
+// district selection and the Nepal boundary refinement) that don't go
+// through overlay compute's per-request attribution list, so they
+// aren't in SOURCE_ATTRIBUTIONS above -- credited separately here
+// instead. None has a formal attribution constant in the backend the
+// way DEM/WorldCover/OSM do (see backend/app/data/attribution.py), so
+// these descriptions are written from the source references already in
+// backend/app/data/basins.py, districts.py, and config.py's own
+// comments, not a verbatim copy of a backend string.
 export const ADDITIONAL_SOURCE_CREDITS = [
   {
     id: 'hydrobasins',
     name: 'HydroBASINS (HydroSHEDS)',
-    text: 'HydroBASINS Asia, level 8 — basin polygons used for basin-based AOI selection. hydrosheds.org/products/hydrobasins',
+    text: 'HydroBASINS Asia, levels 8 and 9 — basin polygons used for basin-based AOI selection, at a coarser or finer resolution respectively. hydrosheds.org/products/hydrobasins',
   },
   {
     id: 'nepal-boundary',
-    name: 'Nepal administrative boundary',
-    text: 'HERMES (download.hermes.com.np) — used locally, when available, to refine basin support-status classification near the border. Non-commercial use only; not redistributed with this project.',
+    name: 'Nepal administrative boundaries',
+    text: 'OCHA/HDX "Nepal - Subnational Administrative Boundaries" (COD-AB), produced by Nepal’s Survey Department and the UN Resident Coordinator’s Office (data.humdata.org/dataset/cod-ab-npl) — used to refine basin support-status classification near the border, and as the source for district-based AOI selection (77 districts). Licensed CC BY-IGO (attribution required; commercial use and redistribution permitted).',
   },
 ]
 

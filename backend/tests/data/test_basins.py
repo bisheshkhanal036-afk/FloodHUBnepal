@@ -1,7 +1,9 @@
 """Tests for app/data/basins.py — basin lookup, support-status
-classification, and basin_to_aoi(). Uses a tiny synthetic 4-basin
-fixture (tests/data/fixtures/basins/test_basins.shp), never the real
-~100MB HydroBASINS download.
+classification, and basin_to_aoi(). Uses tiny synthetic fixtures
+(tests/data/fixtures/basins/test_basins.shp for level 8,
+test_basins_lev09.shp for level 9 — same shapes, HYBAS_IDs prefixed
+"409…" instead of "408…", mirroring the real dataset's own encoding),
+never the real ~100MB HydroBASINS downloads.
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ import pytest
 from app.data import config
 from app.data.aoi import AOI
 from app.data.basins import (
+    SUPPORTED_BASIN_LEVELS,
     basin_area_km2,
     basin_to_aoi,
     classify_support_status,
@@ -26,6 +29,7 @@ from app.data.errors import BasinNotFoundError, DataSourceUnavailableError
 from tests.data.conftest import FIXTURES_DIR
 
 FIXTURE_PATH = FIXTURES_DIR / "basins" / "test_basins.shp"
+FIXTURE_LEV09_PATH = FIXTURES_DIR / "basins" / "test_basins_lev09.shp"
 
 # HYBAS_IDs in the fixture (see the generation script referenced in the
 # module docstring below) and their expected classification, empirically
@@ -38,10 +42,16 @@ BASIN_PARTIAL = 4080000020  # box(85.0, 30.0, 86.0, 30.7) -- straddles the 30.5N
 BASIN_DEGRADED = 4080000030  # box(85.0, 30.3, 86.0, 31.3) -- mostly north of the 30.5N edge, ~26% in
 BASIN_MATCHING_TEST_AOI = 4080000040  # box(85.3050, 27.7020, 85.3110, 27.7080) -- == tests/data's TEST_AOI_BBOX_4326
 
+# The level-9 fixture reuses the exact same geometries/classifications,
+# just under "409…" IDs instead of "408…" -- see this file's own
+# generation note above.
+BASIN_LEV09_FULLY_IN_NEPAL = 4090000010
+
 
 @pytest.fixture(autouse=True)
 def use_basin_fixture(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "LOCAL_BASINS_PATH", FIXTURE_PATH)
+    monkeypatch.setattr(config, "LOCAL_BASINS_LEV09_PATH", FIXTURE_LEV09_PATH)
     # No Nepal boundary file by default -> classification below exercises
     # (and its expected percentages were verified against) the
     # NEPAL_BBOX_4326 rectangle-proxy fallback. The true-boundary code
@@ -130,7 +140,7 @@ def test_raises_data_source_unavailable_when_basins_file_is_missing(monkeypatch,
     monkeypatch.setattr(config, "LOCAL_BASINS_PATH", tmp_path / "does_not_exist.shp")
     reset_basins_cache()
 
-    with pytest.raises(DataSourceUnavailableError, match="no HydroBASINS file"):
+    with pytest.raises(DataSourceUnavailableError, match="no HydroBASINS level-8 file"):
         get_basin(BASIN_FULLY_IN_NEPAL)
 
 
@@ -169,9 +179,9 @@ def test_get_basin_support_status_is_cached_across_calls(monkeypatch):
     calls = []
     real_get_basin = get_basin
 
-    def tracking_get_basin(hybas_id):
+    def tracking_get_basin(hybas_id, level=8):
         calls.append(hybas_id)
-        return real_get_basin(hybas_id)
+        return real_get_basin(hybas_id, level=level)
 
     monkeypatch.setattr("app.data.basins.get_basin", tracking_get_basin)
 
@@ -186,9 +196,9 @@ def test_get_basin_pct_in_nepal_is_cached_across_calls(monkeypatch):
     calls = []
     real_get_basin = get_basin
 
-    def tracking_get_basin(hybas_id):
+    def tracking_get_basin(hybas_id, level=8):
         calls.append(hybas_id)
-        return real_get_basin(hybas_id)
+        return real_get_basin(hybas_id, level=level)
 
     monkeypatch.setattr("app.data.basins.get_basin", tracking_get_basin)
 
@@ -285,3 +295,69 @@ def test_raises_clear_error_for_point_geometry_pour_points_file(monkeypatch, tmp
 
     with pytest.raises(DataSourceUnavailableError, match="Pour Points"):
         get_basin(1)
+
+
+# --- level 8 vs level 9 selection ---
+
+
+def test_supported_basin_levels_is_8_and_9():
+    assert SUPPORTED_BASIN_LEVELS == (8, 9)
+
+
+def test_get_basin_defaults_to_level_8():
+    row = get_basin(BASIN_FULLY_IN_NEPAL)
+    assert int(row.HYBAS_ID) == BASIN_FULLY_IN_NEPAL
+
+
+def test_get_basin_with_level_9_reads_the_level_9_file():
+    row = get_basin(BASIN_LEV09_FULLY_IN_NEPAL, level=9)
+    assert int(row.HYBAS_ID) == BASIN_LEV09_FULLY_IN_NEPAL
+
+
+def test_a_level_8_id_is_not_found_at_level_9_and_vice_versa():
+    # Confirms level really does select which file is searched, not just
+    # accepted-and-ignored: a level-8 ID doesn't exist in the level-9
+    # fixture, and a level-9 ID doesn't exist in the level-8 fixture.
+    with pytest.raises(BasinNotFoundError):
+        get_basin(BASIN_FULLY_IN_NEPAL, level=9)
+    with pytest.raises(BasinNotFoundError):
+        get_basin(BASIN_LEV09_FULLY_IN_NEPAL, level=8)
+
+
+def test_list_basins_overlapping_nepal_at_level_9():
+    gdf = list_basins_overlapping_nepal(level=9)
+    assert set(gdf["HYBAS_ID"].astype(int)) == {4090000010, 4090000020, 4090000030, 4090000040}
+
+
+def test_basin_to_aoi_at_level_9():
+    aoi = basin_to_aoi(BASIN_LEV09_FULLY_IN_NEPAL, level=9)
+    assert isinstance(aoi, AOI)
+    assert aoi.polygon is not None
+
+
+def test_classify_support_status_at_level_9_matches_the_equivalent_level_8_basin():
+    # Same geometry, different ID/level -- classification must agree,
+    # since it's purely a function of the polygon's own shape.
+    row8 = get_basin(BASIN_FULLY_IN_NEPAL, level=8)
+    row9 = get_basin(BASIN_LEV09_FULLY_IN_NEPAL, level=9)
+    assert classify_support_status(row8.geometry) == classify_support_status(row9.geometry) == "fully_in_nepal"
+
+
+def test_get_basin_raises_value_error_for_an_unsupported_level():
+    with pytest.raises(ValueError, match="not supported"):
+        get_basin(BASIN_FULLY_IN_NEPAL, level=7)
+
+
+def test_reset_basins_cache_clears_both_levels(monkeypatch, tmp_path):
+    # Populate both levels' caches.
+    get_basin(BASIN_FULLY_IN_NEPAL, level=8)
+    get_basin(BASIN_LEV09_FULLY_IN_NEPAL, level=9)
+
+    # Point level 8 at a missing file; if reset_basins_cache() only
+    # cleared one level's cache, a stale in-memory level-8 GeoDataFrame
+    # would let this lookup silently keep succeeding.
+    monkeypatch.setattr(config, "LOCAL_BASINS_PATH", tmp_path / "does_not_exist.shp")
+    reset_basins_cache()
+
+    with pytest.raises(DataSourceUnavailableError):
+        get_basin(BASIN_FULLY_IN_NEPAL, level=8)

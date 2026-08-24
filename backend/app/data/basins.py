@@ -1,14 +1,28 @@
-"""HydroBASINS Asia level-8 basin polygons: lookup by HYBAS_ID, listing
-basins overlapping Nepal, support-status classification, and
+"""HydroBASINS Asia basin polygons (levels 8 and 9): lookup by HYBAS_ID,
+listing basins overlapping Nepal, support-status classification, and
 basin_to_aoi() — the bridge from a selected basin into the existing AOI
 pipeline (aoi.py), so DEM/WorldCover fetch, reclassification, and the
 overlay engine all keep working completely unchanged (they only ever
 read AOI.bbox_4326 / AOI.bounds_utm, which basin_to_aoi populates from
 the basin's own bounding envelope).
 
-Expects config.LOCAL_BASINS_PATH to be a HydroBASINS "Standard" (polygon)
-shapefile — HYBAS_ID + Polygon/MultiPolygon geometry. Download the Asia
-("as") region, level 08, "Standard" format from
+Two resolutions are supported side by side, selected via a `level`
+argument on every public function here (default 8, so every pre-existing
+caller/test that never mentions a level keeps behaving exactly as
+before): level 8 (~28,907 basins Asia-wide, config.LOCAL_BASINS_PATH)
+and level 9 (~77,849 basins, finer sub-catchments,
+config.LOCAL_BASINS_LEV09_PATH). HYBAS_ID encodes region+level in its
+own leading digits (verified empirically against the real datasets:
+every level-8 ID here starts "408…", every level-9 ID "409…"), so the
+two levels' IDs never collide — get_basin/basin_to_aoi/etc. still take
+an explicit `level` rather than relying on that encoding, since decoding
+an ID's level from its digits is HydroBASINS-Asia-specific and would
+silently break for a different region/version.
+
+Expects each of config.LOCAL_BASINS_PATH / LOCAL_BASINS_LEV09_PATH to be
+a HydroBASINS "Standard" (polygon) shapefile — HYBAS_ID +
+Polygon/MultiPolygon geometry. Download the Asia ("as") region, the
+desired level, "Standard" format from
 https://www.hydrosheds.org/products/hydrobasins.
 
 IMPORTANT: this is NOT the same as HydroBASINS' "Pour Points" product
@@ -23,11 +37,17 @@ country boundary (ADM0) — for a more accurate support-status
 classification than the NEPAL_BBOX_4326 rectangle proxy. This file is
 genuinely optional: if it's absent, classification falls back to the
 proxy automatically (with a one-time logged warning), never an error.
-Source used during implementation: HERMES (https://download.hermes.com.np),
-whose license permits NON-COMMERCIAL USE ONLY and prohibits
-redistribution without consent — this repo never commits it
-(backend/data/raw/ is gitignored); swap in a commercially-usable source
-(e.g. OCHA/HDX, Natural Earth) before any commercial deployment.
+Source: OCHA/HDX's "Nepal - Subnational Administrative Boundaries"
+COD-AB dataset (https://data.humdata.org/dataset/cod-ab-npl), licensed
+CC BY-IGO — unlike the HERMES source used earlier in this project (or
+GADM), this one permits commercial use and redistribution, not just
+non-commercial use, so a future commercial deployment no longer needs to
+swap it out. Still kept out of version control like every other raw
+source under backend/data/raw/ (see that directory's own .gitignore
+rules) — this project's general local-data convention, not a
+license-driven exception the way HERMES was. The same file also backs
+app/data/districts.py's district-based AOI selection (its admin-level-2
+layer).
 """
 
 from __future__ import annotations
@@ -82,7 +102,10 @@ SUPPORT_STATUS_FULLY_IN_NEPAL = "fully_in_nepal"
 SUPPORT_STATUS_PARTIAL_ADEQUATE = "partial_likely_adequate"
 SUPPORT_STATUS_DEGRADED = "likely_degraded_at_edges"
 
-_basins_gdf: gpd.GeoDataFrame | None = None
+SUPPORTED_BASIN_LEVELS = (8, 9)
+DEFAULT_BASIN_LEVEL = 8
+
+_basins_gdf_by_level: dict[int, gpd.GeoDataFrame] = {}
 _nepal_boundary_load_attempted = False
 _nepal_reference_geom_utm: BaseGeometry | None = None
 
@@ -104,6 +127,27 @@ def _to_utm_geom(geom: BaseGeometry) -> BaseGeometry:
     return shapely_transform(_TO_UTM.transform, geom)
 
 
+def to_utm_geom(geom: BaseGeometry) -> BaseGeometry:
+    """Public alias of _to_utm_geom — reused by sibling admin-boundary
+    modules (app/data/districts.py) that need the same EPSG:4326 ->
+    EPSG:32645 reprojection this module already does, without a second
+    pyproj.Transformer instance.
+    """
+    return _to_utm_geom(geom)
+
+
+def _check_level(level: int) -> None:
+    if level not in SUPPORTED_BASIN_LEVELS:
+        raise ValueError(
+            f"basins: level={level} is not supported; SUPPORTED_BASIN_LEVELS is {SUPPORTED_BASIN_LEVELS}"
+        )
+
+
+def _path_for_level(level: int):
+    _check_level(level)
+    return config.LOCAL_BASINS_PATH if level == 8 else config.LOCAL_BASINS_LEV09_PATH
+
+
 def _validate_basins_schema(gdf: gpd.GeoDataFrame, path) -> None:
     if "HYBAS_ID" not in gdf.columns:
         raise DataSourceUnavailableError(
@@ -116,25 +160,26 @@ def _validate_basins_schema(gdf: gpd.GeoDataFrame, path) -> None:
             f"basins: {path} contains {sorted(geom_types)} geometry, not Polygon/MultiPolygon. "
             "This looks like the HydroBASINS 'Pour Points' product (point geometry marking basin "
             "outlets), not the basin-boundary 'Standard' product this module needs — download the "
-            "Asia ('as') region, level 08, 'Standard' format from "
+            "Asia ('as') region, the desired level, 'Standard' format from "
             "https://www.hydrosheds.org/products/hydrobasins instead."
         )
 
 
-def _load_basins() -> gpd.GeoDataFrame:
-    global _basins_gdf
-    if _basins_gdf is not None:
-        return _basins_gdf
+def _load_basins(level: int = DEFAULT_BASIN_LEVEL) -> gpd.GeoDataFrame:
+    _check_level(level)
+    if level in _basins_gdf_by_level:
+        return _basins_gdf_by_level[level]
 
-    path = config.LOCAL_BASINS_PATH
+    path = _path_for_level(level)
     if not path.exists():
         raise DataSourceUnavailableError(
-            f"basins: no HydroBASINS file at {path}. Download the Asia ('as') region, level 08, "
-            "'Standard' (polygon) format from https://www.hydrosheds.org/products/hydrobasins and "
-            "place it there, or set BASINS_SHAPEFILE_PATH to point at it."
+            f"basins: no HydroBASINS level-{level} file at {path}. Download the Asia ('as') region, "
+            f"level {level:02d}, 'Standard' (polygon) format from "
+            "https://www.hydrosheds.org/products/hydrobasins and place it there, or set "
+            f"{'BASINS_SHAPEFILE_PATH' if level == 8 else 'BASINS_LEV09_SHAPEFILE_PATH'} to point at it."
         )
 
-    logger.info("basins: loading HydroBASINS polygons from %s", path)
+    logger.info("basins: loading HydroBASINS level-%d polygons from %s", level, path)
     gdf = gpd.read_file(path)
     _validate_basins_schema(gdf, path)
 
@@ -144,21 +189,20 @@ def _load_basins() -> gpd.GeoDataFrame:
     gdf["HYBAS_ID"] = gdf["HYBAS_ID"].astype("int64")
     gdf = gdf.set_index("HYBAS_ID", drop=False)
 
-    logger.info("basins: loaded %d basin polygons", len(gdf))
-    _basins_gdf = gdf
-    return _basins_gdf
+    logger.info("basins: loaded %d level-%d basin polygons", len(gdf), level)
+    _basins_gdf_by_level[level] = gdf
+    return gdf
 
 
 def reset_basins_cache() -> None:
-    """Test-only: drop the in-memory cache so a subsequent call to
-    _load_basins() re-reads from (a possibly newly-monkeypatched)
-    config.LOCAL_BASINS_PATH instead of reusing whatever was loaded by an
-    earlier test. Also clears the per-HYBAS_ID classification cache below,
-    since a different basins file can change what a given HYBAS_ID even
-    refers to.
+    """Test-only: drop the in-memory cache (both levels) so a subsequent
+    call to _load_basins() re-reads from (possibly newly-monkeypatched)
+    config.LOCAL_BASINS_PATH / LOCAL_BASINS_LEV09_PATH instead of reusing
+    whatever was loaded by an earlier test. Also clears the per-HYBAS_ID
+    classification cache below, since a different basins file can change
+    what a given HYBAS_ID even refers to.
     """
-    global _basins_gdf
-    _basins_gdf = None
+    _basins_gdf_by_level.clear()
     _support_status_cache.clear()
     _pct_in_nepal_cache.clear()
 
@@ -243,23 +287,26 @@ def classify_support_status(polygon: BaseGeometry) -> str:
     return SUPPORT_STATUS_DEGRADED
 
 
-def get_basin_pct_in_nepal(hybas_id: int) -> float:
+def get_basin_pct_in_nepal(hybas_id: int, level: int = DEFAULT_BASIN_LEVEL) -> float:
     """pct_area_in_nepal(basin.geometry) for the basin identified by
-    hybas_id, cached — see the module-level cache comment above.
+    hybas_id, cached — see the module-level cache comment above. `level`
+    only matters for the initial lookup (which file to search); the
+    resulting cache entry is keyed on hybas_id alone, safe because
+    HYBAS_IDs never collide across levels (module docstring).
     """
     if hybas_id not in _pct_in_nepal_cache:
-        _pct_in_nepal_cache[hybas_id] = pct_area_in_nepal(get_basin(hybas_id).geometry)
+        _pct_in_nepal_cache[hybas_id] = pct_area_in_nepal(get_basin(hybas_id, level=level).geometry)
     return _pct_in_nepal_cache[hybas_id]
 
 
-def get_basin_support_status(hybas_id: int) -> str:
+def get_basin_support_status(hybas_id: int, level: int = DEFAULT_BASIN_LEVEL) -> str:
     """classify_support_status(basin.geometry) for the basin identified by
     hybas_id, cached — see the module-level cache comment above. This is
     what GET /api/basins and GET /api/basins/{hybas_id} actually call,
     not classify_support_status directly.
     """
     if hybas_id not in _support_status_cache:
-        pct = get_basin_pct_in_nepal(hybas_id)  # populates/reuses that cache too
+        pct = get_basin_pct_in_nepal(hybas_id, level=level)  # populates/reuses that cache too
         if pct >= FULLY_IN_NEPAL_THRESHOLD:
             status = SUPPORT_STATUS_FULLY_IN_NEPAL
         elif pct >= PARTIAL_ADEQUATE_THRESHOLD:
@@ -270,27 +317,28 @@ def get_basin_support_status(hybas_id: int) -> str:
     return _support_status_cache[hybas_id]
 
 
-def list_basins_overlapping_nepal() -> gpd.GeoDataFrame:
-    """All basins whose geometry intersects NEPAL_BBOX_4326 at all — a
-    deliberately generous, rough filter, not a hard restriction:
-    cross-border basins are kept in full (their true geometry, not
-    clipped to Nepal), per SPEC.md.
+def list_basins_overlapping_nepal(level: int = DEFAULT_BASIN_LEVEL) -> gpd.GeoDataFrame:
+    """All basins at the given level whose geometry intersects
+    NEPAL_BBOX_4326 at all — a deliberately generous, rough filter, not a
+    hard restriction: cross-border basins are kept in full (their true
+    geometry, not clipped to Nepal), per SPEC.md.
     """
-    gdf = _load_basins()
+    gdf = _load_basins(level=level)
     nepal_box = box(*NEPAL_BBOX_4326)
     return gdf[gdf.intersects(nepal_box)]
 
 
-def get_basin(hybas_id: int):
+def get_basin(hybas_id: int, level: int = DEFAULT_BASIN_LEVEL):
     """A single basin row (HYBAS_ID + geometry, plus whatever other
-    HydroBASINS attribute columns the source file carries). Raises
-    BasinNotFoundError if hybas_id isn't in the loaded dataset.
+    HydroBASINS attribute columns the source file carries), looked up in
+    the given level's file. Raises BasinNotFoundError if hybas_id isn't
+    in that dataset.
     """
-    gdf = _load_basins()
+    gdf = _load_basins(level=level)
     try:
         row = gdf.loc[hybas_id]
     except KeyError:
-        raise BasinNotFoundError(f"no basin with HYBAS_ID={hybas_id}") from None
+        raise BasinNotFoundError(f"no level-{level} basin with HYBAS_ID={hybas_id}") from None
     # .loc on a non-unique index could return a DataFrame; HYBAS_ID is
     # documented as unique per level, but guard against a malformed
     # source file anyway rather than silently returning the wrong shape.
@@ -299,14 +347,14 @@ def get_basin(hybas_id: int):
     return row
 
 
-def basin_to_aoi(hybas_id: int) -> AOI:
+def basin_to_aoi(hybas_id: int, level: int = DEFAULT_BASIN_LEVEL) -> AOI:
     """The bridge from a selected basin to the existing AOI pipeline:
     bbox_4326 is the basin polygon's bounding envelope (derived
     automatically), polygon is the true basin geometry. Every existing
     AOI-consuming function keeps operating on bbox_4326/bounds_utm
     exactly as it does for a hand-drawn bbox AOI.
     """
-    basin = get_basin(hybas_id)
+    basin = get_basin(hybas_id, level=level)
     polygon = basin.geometry
     minx, miny, maxx, maxy = polygon.bounds
     return AOI(bbox_4326=(minx, miny, maxx, maxy), polygon=polygon)

@@ -1,13 +1,16 @@
 // AOI selection: "Draw area" (click-drag a rectangle on the map, handled
-// by MapView) vs "Select basin" (fetch GET /api/basins once, click a
-// polygon on the map). This panel owns the tab toggle, the basins fetch
-// (triggered lazily -- only once the user actually opens this tab, so
-// "Draw area" never waits on it), and the area-cap / selection summary
-// text; MapView owns the actual map-canvas drawing/click interactions.
+// by MapView) vs "Select basin" (fetch GET /api/basins once per level,
+// click a polygon on the map) vs "Select district" (fetch GET
+// /api/districts once, click a polygon on the map). This panel owns the
+// tab toggle, the basin-level toggle, the basins/districts fetches
+// (each triggered lazily -- only once the user actually opens that tab,
+// so "Draw area" never waits on either), and the area-cap / selection
+// summary text; MapView owns the actual map-canvas drawing/click
+// interactions.
 import { useEffect } from 'react'
-import { listBasins } from '../api/client'
+import { listBasins, listDistricts } from '../api/client'
 import { AREA_CAP_KM2 } from '../lib/geo'
-import { SUPPORT_STATUS_COLORS, SUPPORT_STATUS_LABELS } from '../lib/colorRamp'
+import { SUPPORT_STATUS_COLORS, SUPPORT_STATUS_LABELS, DISTRICT_FILL_COLOR } from '../lib/colorRamp'
 import { useAppState } from '../state/AppStateContext'
 
 export default function AOIPanel() {
@@ -16,14 +19,22 @@ export default function AOIPanel() {
   useEffect(() => {
     if (state.aoiMode !== 'basin' || state.basins.status !== 'idle') return
     dispatch({ type: 'BASINS_LOADING' })
-    listBasins()
+    listBasins(state.basinLevel)
       .then((data) => dispatch({ type: 'BASINS_LOADED', data }))
       .catch((error) => dispatch({ type: 'BASINS_ERROR', error }))
-  }, [state.aoiMode, state.basins.status, dispatch])
+  }, [state.aoiMode, state.basinLevel, state.basins.status, dispatch])
+
+  useEffect(() => {
+    if (state.aoiMode !== 'district' || state.districts.status !== 'idle') return
+    dispatch({ type: 'DISTRICTS_LOADING' })
+    listDistricts()
+      .then((data) => dispatch({ type: 'DISTRICTS_LOADED', data }))
+      .catch((error) => dispatch({ type: 'DISTRICTS_ERROR', error }))
+  }, [state.aoiMode, state.districts.status, dispatch])
 
   return (
     <div className="aoi-panel">
-      <div className="mode-toggle">
+      <div className="mode-toggle mode-toggle--triple">
         <button
           type="button"
           className={`mode-toggle__button ${state.aoiMode === 'draw' ? 'mode-toggle__button--active' : ''}`}
@@ -38,6 +49,13 @@ export default function AOIPanel() {
         >
           Select basin
         </button>
+        <button
+          type="button"
+          className={`mode-toggle__button ${state.aoiMode === 'district' ? 'mode-toggle__button--active' : ''}`}
+          onClick={() => dispatch({ type: 'SET_AOI_MODE', mode: 'district' })}
+        >
+          Select district
+        </button>
       </div>
 
       {state.aoiMode === 'draw' && (
@@ -45,7 +63,23 @@ export default function AOIPanel() {
       )}
       {state.aoiMode === 'basin' && (
         <>
-          {state.basins.status === 'loading' && <p className="panel__hint">Loading basins (~3.9 MB)…</p>}
+          <div className="mode-toggle mode-toggle--sub">
+            <button
+              type="button"
+              className={`mode-toggle__button ${state.basinLevel === 8 ? 'mode-toggle__button--active' : ''}`}
+              onClick={() => state.basinLevel !== 8 && dispatch({ type: 'SET_BASIN_LEVEL', level: 8 })}
+            >
+              Level 8 (coarser)
+            </button>
+            <button
+              type="button"
+              className={`mode-toggle__button ${state.basinLevel === 9 ? 'mode-toggle__button--active' : ''}`}
+              onClick={() => state.basinLevel !== 9 && dispatch({ type: 'SET_BASIN_LEVEL', level: 9 })}
+            >
+              Level 9 (finer)
+            </button>
+          </div>
+          {state.basins.status === 'loading' && <p className="panel__hint">Loading basins…</p>}
           {state.basins.status === 'error' && (
             <p className="field-error">{state.basins.error?.message || 'Could not load basins.'}</p>
           )}
@@ -64,12 +98,37 @@ export default function AOIPanel() {
           )}
         </>
       )}
+      {state.aoiMode === 'district' && (
+        <>
+          {state.districts.status === 'loading' && <p className="panel__hint">Loading districts…</p>}
+          {state.districts.status === 'error' && (
+            <p className="field-error">{state.districts.error?.message || 'Could not load districts.'}</p>
+          )}
+          {state.districts.status === 'loaded' && (
+            <>
+              <p className="panel__hint">Click one of Nepal's 77 districts on the map to select it as the AOI.</p>
+              <ul className="legend legend--inline">
+                <li>
+                  <span className="legend__swatch" style={{ background: DISTRICT_FILL_COLOR }} />
+                  District
+                </li>
+              </ul>
+            </>
+          )}
+        </>
+      )}
 
       {state.areaWarning && <p className="field-error">{state.areaWarning}</p>}
 
       {state.aoi && (
         <div className="aoi-summary">
-          <strong>AOI set</strong> ({state.aoi.source === 'basin' ? `basin ${state.aoi.basinId}` : 'drawn area'})
+          <strong>AOI set</strong> (
+          {state.aoi.source === 'basin'
+            ? `basin ${state.aoi.basinId} (level ${state.aoi.basinLevel})`
+            : state.aoi.source === 'district'
+              ? `district ${state.aoi.districtPcode}`
+              : 'drawn area'}
+          )
           <div className="aoi-summary__bbox">
             bbox: [{state.aoi.bbox.map((v) => v.toFixed(4)).join(', ')}]
           </div>

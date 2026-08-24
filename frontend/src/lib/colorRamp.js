@@ -54,3 +54,11 @@ export const SUPPORT_STATUS_LABELS = {
   partial_likely_adequate: 'Partial (likely adequate)',
   likely_degraded_at_edges: 'Likely degraded at edges',
 }
+
+// District fill color: a single flat color, not a support_status ramp --
+// unlike a basin, a district is by definition entirely within Nepal
+// (backend/app/data/districts.py's module docstring), so there's no
+// per-feature status to distinguish by color. A blue distinct from every
+// support_status color above and from the risk ramp itself, so a
+// district layer is never mistaken for either.
+export const DISTRICT_FILL_COLOR = '#3b82c4'

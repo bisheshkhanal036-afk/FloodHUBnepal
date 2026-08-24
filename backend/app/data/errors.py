@@ -34,3 +34,10 @@ class BasinNotFoundError(ValueError):
     missing/unreadable/wrong-shaped — this is "the data's fine, that ID
     just isn't in it" (a 404, not a 503).
     """
+
+
+class DistrictNotFoundError(ValueError):
+    """Mirrors BasinNotFoundError, for app/data/districts.py: the admin
+    boundaries file loaded successfully, but no district with the
+    requested pcode exists in it — a 404, not a 503.
+    """

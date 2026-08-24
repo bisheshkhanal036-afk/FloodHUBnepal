@@ -1,11 +1,12 @@
 """FastAPI entrypoint.
 
-Mounts the AHP engine (app/ahp/), the basins API (app/basins/) — an
-alternative AOI-selection path alongside hand-drawn bboxes — and the
-overlay engine (app/overlay/), which combines AHP weights with Phase 2
-data regardless of which AOI-selection path produced the AOI. Shelter-
-identification logic described in SPEC.md is still not implemented —
-that's a later phase.
+Mounts the AHP engine (app/ahp/), the basins API (app/basins/, basin
+levels 8 and 9) and the districts API (app/districts/, Nepal's 77 admin
+districts) — two alternative AOI-selection paths alongside hand-drawn
+bboxes — and the overlay engine (app/overlay/), which combines AHP
+weights with Phase 2 data regardless of which AOI-selection path
+produced the AOI. Shelter-identification logic described in SPEC.md is
+still not implemented — that's a later phase.
 """
 
 import os
@@ -15,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.ahp import router as ahp_router
 from app.basins import router as basins_router
+from app.districts import router as districts_router
 from app.overlay import router as overlay_router
 
 app = FastAPI(
@@ -47,6 +49,7 @@ app.add_middleware(
 
 app.include_router(ahp_router)
 app.include_router(basins_router)
+app.include_router(districts_router)
 app.include_router(overlay_router)
 
 

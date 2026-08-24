@@ -211,21 +211,36 @@ for the full reasoning (this was a deliberate scoping decision, not a
 limitation worth lifting later) and `backend/app/overlay/report.py`'s
 docstring for the mechanics.
 
-### 3.5 Basin-based AOI selection — `backend/app/data/basins.py`, `backend/app/basins/`
+### 3.5 Basin- and district-based AOI selection — `backend/app/data/basins.py`, `backend/app/basins/`, `backend/app/data/districts.py`, `backend/app/districts/`
 
-An **alternative** way to produce an AOI, alongside hand-drawing a bbox —
-not a replacement. Backed by HydroBASINS Asia, level 8 (polygon
-watershed boundaries — 28,907 basins; ~547 overlap Nepal's rough
-extent), loaded once from a local shapefile (`config.LOCAL_BASINS_PATH`,
-override via `BASINS_SHAPEFILE_PATH`) and cached in memory; there is no
-cloud fallback for basins (unlike DEM/WorldCover/OSM) — a missing/invalid
-file is a clear 503, not a degraded live-query path.
+Two **alternatives** to hand-drawing a bbox — not replacements for it or
+for each other; all three (drawn bbox, selected basin, selected
+district) produce the same `AOI` shape and flow through every later
+stage identically.
+
+**Basins.** Backed by HydroBASINS Asia, selectable at **level 8**
+(coarser — 28,907 basins; ~547 overlap Nepal's rough extent) or **level
+9** (finer sub-catchments — 77,849 basins; ~1,495 overlap Nepal's rough
+extent), each loaded once from its own local shapefile
+(`config.LOCAL_BASINS_PATH` / `LOCAL_BASINS_LEV09_PATH`, override via
+`BASINS_SHAPEFILE_PATH` / `BASINS_LEV09_SHAPEFILE_PATH`) and cached in
+memory per level. HYBAS_ID encodes region+level in its own leading
+digits (verified empirically: every level-8 ID in this dataset starts
+"408…", every level-9 ID "409…"), so the two levels' IDs never collide —
+`GET /api/basins/{hybas_id}` still requires an explicit `level` query
+param rather than relying on that encoding, since decoding a level from
+an ID's digits is HydroBASINS-Asia-specific. There is no cloud fallback
+for basins (unlike DEM/WorldCover/OSM) — a missing/invalid file is a
+clear 503, not a degraded live-query path.
 
 | Endpoint | Returns |
 |---|---|
-| `GET /api/basins` | GeoJSON `FeatureCollection` of basins overlapping Nepal's *rough* extent (a generous bbox screen, not a hard restriction — cross-border basins are kept whole, never clipped), each tagged with `support_status`. Real-data payload is ~3.9 MB at full geometry resolution regardless of caching (no simplification/pagination implemented — deferred, no clear need yet); response time is ~4s cold, ~0.17s once `get_basin_support_status`/`get_basin_pct_in_nepal`'s per-HYBAS_ID cache is warm (§ below). |
-| `GET /api/basins/{hybas_id}` | One basin's detail: area (true polygon area, km²), `pct_in_nepal`, `support_status`, geometry. |
-| `GET /api/basins/{hybas_id}/aoi` | `{bbox, polygon}` — the exact shape `AOIInput` (§3.1) accepts, so a selected basin drops straight into `POST /api/overlay/compute`'s `aoi` field unchanged. |
+| `GET /api/basins?level=8\|9` | GeoJSON `FeatureCollection` of basins overlapping Nepal's *rough* extent (a generous bbox screen, not a hard restriction — cross-border basins are kept whole, never clipped) at the given level (default 8), each tagged with `hybas_id`, `level`, and `support_status`. Real-data payload at level 8 is ~3.9 MB at full geometry resolution regardless of caching (no simplification/pagination implemented — deferred, no clear need yet); response time is ~4s cold, ~0.17s once `get_basin_support_status`/`get_basin_pct_in_nepal`'s per-HYBAS_ID cache is warm (§ below). Level 9's larger feature count makes for a noticeably bigger payload than level 8's. |
+| `GET /api/basins/{hybas_id}?level=8\|9` | One basin's detail: area (true polygon area, km²), `pct_in_nepal`, `support_status`, `level`, geometry. |
+| `GET /api/basins/{hybas_id}/aoi?level=8\|9` | `{bbox, polygon}` — the exact shape `AOIInput` (§3.1) accepts, so a selected basin drops straight into `POST /api/overlay/compute`'s `aoi` field unchanged. |
+
+An unsupported `level` (anything other than 8 or 9) is rejected with a
+422 before any file lookup happens.
 
 **Support status** — the fraction of a basin's own true area (EPSG:32645,
 never raw degrees) that falls within Nepal's true country boundary
@@ -241,18 +256,28 @@ automatic fallback when it isn't:
 
 These thresholds are a judgment call, not derived from an external
 standard — see the basins-phase decisions-to-confirm record for the
-reasoning. Real-data breakdown across the ~547 basins overlapping
+reasoning. Real-data breakdown across the ~547 level-8 basins overlapping
 Nepal's rough extent: 155 `fully_in_nepal`, 41 `partial_likely_adequate`,
 351 `likely_degraded_at_edges` — expected for a rectangular screening
 filter against a mountainous country's actual (much smaller, irregular)
 territory.
 
-**Nepal's true boundary source**: HERMES
-(https://download.hermes.com.np) — **non-commercial use only, no
-redistribution without consent** per that site's license. Never
-committed to this repo (`backend/data/raw/` is gitignored); swap in a
-commercially-usable boundary (e.g. OCHA/HDX, Natural Earth) before any
-commercial deployment.
+**Nepal's true boundary source**: OCHA/HDX's "Nepal - Subnational
+Administrative Boundaries" COD-AB dataset
+(https://data.humdata.org/dataset/cod-ab-npl), produced by Nepal's own
+Survey Department + UN Resident Coordinator's Office, quality-assured by
+ITOS/USAID — licensed **CC BY-IGO** (attribution required, but
+**commercial use and redistribution are both permitted**), superseding
+this project's earlier HERMES source (non-commercial use only, no
+redistribution without consent) and evaluated against GADM (same
+non-commercial-only restriction as HERMES, so not actually a fix) before
+settling on HDX. Still kept out of version control like every other raw
+source under `backend/data/raw/` (that directory's own `.gitignore`
+rules) — this project's general local-data convention, not a
+license-driven exception the way HERMES was.
+
+The same file's admin-level-2 layer also backs district-based AOI
+selection, below.
 
 **Classification caching**: `classify_support_status`/`pct_area_in_nepal`
 are recomputed on a cache miss and cached per HYBAS_ID
@@ -264,6 +289,29 @@ boundary polygon) vs. ~0.17s once warm. Invalidated automatically by
 `reset_basins_cache()`/`reset_nepal_boundary_cache()`, since the
 classification is a function of both the basin's own geometry and
 whichever Nepal reference geometry is currently loaded.
+
+**Districts.** Backed by the same HDX COD-AB dataset's admin-level-2
+layer — Nepal's 77 districts (`config.LOCAL_ADMIN_DISTRICTS_PATH`,
+override via `ADMIN_DISTRICTS_SHAPEFILE_PATH`), loaded once and cached in
+memory, mirroring `basins.py`'s own shape (`app/data/districts.py`,
+`app/districts/`). Unlike a basin, a district is by definition entirely
+within Nepal, so there is no `support_status` concept here.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/districts` | GeoJSON `FeatureCollection` of all 77 districts, each tagged with `pcode` (e.g. `"NP0101"`), `name`, and `province` (the parent admin-1 name). |
+| `GET /api/districts/{pcode}` | One district's detail: `pcode`, `name`, `province`, area (true polygon area, km²), geometry. |
+| `GET /api/districts/{pcode}/aoi` | `{bbox, polygon}` — the exact shape `AOIInput` (§3.1) accepts, so a selected district drops straight into `POST /api/overlay/compute`'s `aoi` field unchanged, exactly like a selected basin. |
+
+Since a district selection carries a true `polygon` the same way a basin
+selection does, it automatically gets every existing polygon-aware
+behavior with zero district-specific code needed anywhere downstream of
+`district_to_aoi`: exemption from the bbox area cap (`app/common/aoi.py`),
+true-shape masking of the computed risk surface
+(`mask_risk_surface_to_polygon`), and basin-vs-bbox true-shape clipping
+in `twi`/`drainage_density`/`hand`'s flow-accumulation pipeline
+(§3.6) — that clipping logic checks `AOI.polygon is not None`, not
+"is this specifically a basin."
 
 ### 3.6 Criterion sources & the pluggable registry — `backend/app/overlay/sources.py`
 
@@ -1512,6 +1560,109 @@ them.
   (~26% nodata, matching the coverage rate measured directly against the
   raw source), and the frontend dev server serves the updated
   `criteria.js` with the new entry present, zero errors.
+- Backend + frontend: **swapped the Nepal boundary source (HERMES →
+  OCHA/HDX), added HydroBASINS level 9, and added district-based AOI
+  selection** — the user removed the gitignored HERMES file, placed the
+  new HDX COD-AB shapefile and a HydroBASINS level-9 download themselves,
+  and asked for the basin-level and district pieces to be wired up. See
+  §3.5 for the full endpoint/schema writeup; summarized here:
+  - `app/data/basins.py` generalized from a single hardcoded level to an
+    explicit `level` argument (default 8, so every pre-existing caller
+    keeps behaving exactly as before) threaded through every public
+    function and `GET /api/basins`/`{hybas_id}`/`{hybas_id}/aoi`'s own
+    `level` query param — validated against `SUPPORTED_BASIN_LEVELS`
+    (a 422 for anything else, checked by hand rather than typed as
+    `Literal[8, 9]`: this FastAPI/Pydantic version's Literal validation
+    doesn't coerce a query string like `"9"` into `9`, which was caught
+    live — every level=8/level=9 request 422'd until this was found and
+    fixed). `config.LOCAL_BASINS_LEV09_PATH` (env override
+    `BASINS_LEV09_SHAPEFILE_PATH`) is the new level-9 file's path,
+    alongside the existing level-8 `LOCAL_BASINS_PATH`.
+  - New `app/data/districts.py` + `app/districts/` (mirroring
+    `basins.py`/`app/basins/`'s own split exactly) for Nepal's 77
+    districts, reading the HDX file's admin-level-2 layer
+    (`config.LOCAL_ADMIN_DISTRICTS_PATH`). `district_to_aoi` produces the
+    same `AOI` shape `basin_to_aoi` does, so every existing polygon-aware
+    behavior (area-cap exemption, true-shape risk-surface masking,
+    hydrology's basin-vs-bbox flow-accumulation clipping) applies to a
+    district selection automatically, with zero district-specific code
+    anywhere downstream.
+  - `config.LOCAL_NEPAL_BOUNDARY_PATH`'s default now points at the HDX
+    file's admin-level-0 layer instead of the removed HERMES file;
+    GADM was evaluated as an alternative boundary source too (per an
+    earlier conversation) and rejected for the same reason HERMES was
+    being replaced — its license is non-commercial-use-only as well, so
+    it wouldn't actually have fixed the underlying licensing gap.
+  - Frontend: `AOIPanel.jsx` gained a third "Select district" tab
+    alongside "Draw area"/"Select basin" (now a `mode-toggle--triple`,
+    the same 3-button toggle style the weighting-mode picker already
+    established) and, within "Select basin", a level 8/9 sub-toggle
+    (new `.mode-toggle--sub` CSS, visually subordinate to the top-level
+    tabs). `AppStateContext.jsx` gained `basinLevel` (resets the basins
+    fetch back to `'idle'` on change, so switching levels re-fetches
+    the same way an AOI change already resets classification) and a
+    `districts` status slice mirroring `basins`'s own shape.
+    `MapView.jsx` gained a districts GeoJSON layer (flat-colored — a
+    district has no `support_status` concept — new
+    `DISTRICT_FILL_COLOR` in `lib/colorRamp.js`) mirroring the basins
+    layer's click-to-select/highlight-selected behavior, and the basins
+    click handler now reads `level` off the clicked feature's own
+    properties (baked in by `BasinFeatureProperties.level`) rather than
+    off possibly-stale component state, so it's correct even in the
+    instant right after a level switch.
+  - 20 new backend tests (level 8/9 lookup, cross-level ID isolation —
+    a level-8 ID genuinely 404s at level 9 and vice versa, confirming
+    `level` really selects which file is searched rather than being
+    accepted and ignored — invalid-level rejection, `reset_basins_cache`
+    clearing both levels at once, plus the full district-module/router
+    suite mirroring `test_basins.py`/`tests/basins/`'s own coverage
+    including a district-derived-AOI-vs-equivalent-bbox-AOI parity test
+    against the real unmodified DEM/WorldCover fetch functions) — 338
+    backend tests passing total, zero regressions. Verified live end to
+    end against the real placed data (not just the synthetic fixtures):
+    `GET /api/basins` returns 547 real level-8 / 1,495 real level-9
+    basins, `GET /api/districts` returns exactly Nepal's real 77
+    districts with correct names/provinces, an invalid `level` 422s, and
+    a district's `/aoi` response round-trips into `AOIInput` correctly.
+    Frontend verified via a clean `vite build` (catches import/syntax
+    errors across every edited file) and a headless-browser load of the
+    dev server with zero console errors; a full interactive click-through
+    of the new tabs was not run in this pass (no Playwright/Puppeteer
+    tooling was available in this environment) — worth a follow-up
+    Playwright-in-Docker pass before relying on this the way earlier
+    UI phases' own headless-browser verification did.
+- Frontend: **fixed a real layer-visibility bug** in the basin/district
+  AOI-selection tabs above, caught by the user through actual
+  interaction — exactly the class of bug the previous entry's own
+  "no interactive click-through was run" caveat flagged as a risk.
+  `MapView.jsx`'s basins/districts MapLibre layers are created lazily,
+  once, the first time each tab's data arrives (`state.basins.data` /
+  `state.districts.data`); every later visit to that tab just calls
+  `setData` on the same already-visible layer. Nothing ever hid a layer
+  again once created, so (a) switching from "Select basin" back to
+  "Draw area" left the basin polygons rendered over the map
+  indefinitely, and (b) switching from "Select basin" straight to
+  "Select district" showed both layers overlaid at once. Fixed with a
+  new effect that sets each layer set's MapLibre `visibility` layout
+  property from `state.aoiMode` directly (`'basin'` shows only the
+  basins layers, `'district'` only the districts layers, `'draw'`
+  neither) — the single place that reconciles visibility with the
+  active mode, independent of when each layer happened to be created;
+  each `addLayer` call also now sets its own correct initial
+  `visibility` at creation time (covering the edge case where a layer
+  is created, via a deferred map `'load'` event, after the user has
+  already switched to a different tab). Verified via a clean `vite
+  build` and a headless-browser reload with zero console errors: no
+  automated test previously existed for this UI-only interaction path,
+  and none was added here either (this project's frontend has no
+  Playwright/Puppeteer harness set up yet — see the previous entry).
+- Frontend: **updated the additional-source credits text**
+  (`config/attribution.js`) to match the HERMES→HDX swap and the new
+  basin levels — the HydroBASINS entry now says "levels 8 and 9"
+  instead of just "level 8", and the Nepal-boundary entry now describes
+  the OCHA/HDX COD-AB source (CC BY-IGO, commercial-use-safe) and its
+  dual role (basin support-status refinement *and* district-based AOI
+  selection) instead of the removed HERMES source.
 - Not yet implemented: AOI persistence, and shelter identification. The
   GeoTIFF file route is a simple
   direct-read endpoint, not a general static-asset server or CDN — fine

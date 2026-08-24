@@ -136,13 +136,20 @@ infrastructure doesn't exist yet.**
 ### Important existing files (backend)
 
 - `app/main.py` — FastAPI app, CORS (allows `localhost:5173`/
-  `127.0.0.1:5173` + `CORS_EXTRA_ORIGINS` env var), mounts 3 routers.
+  `127.0.0.1:5173` + `CORS_EXTRA_ORIGINS` env var), mounts 4 routers.
 - `app/ahp/` — `core.py` (eigenvector/consistency math), `hierarchy.py`
   (2-level composition), `constants.py` (Random Index table, the 5
   canonical cluster names), `models.py`/`router.py` (API layer).
-- `app/basins/` — `models.py`/`router.py`, backed by
-  `app/data/basins.py` (HydroBASINS shapefile + a HERMES Nepal-boundary
-  refinement for edge-basin support-status classification).
+- `app/basins/` — `models.py`/`router.py` (both level 8 and level 9,
+  selected via a `level` query param), backed by `app/data/basins.py`
+  (HydroBASINS shapefiles + an OCHA/HDX Nepal-boundary refinement — CC
+  BY-IGO, commercial-use-safe, replacing an earlier HERMES source that
+  was non-commercial-use-only — for edge-basin support-status
+  classification).
+- `app/districts/` — `models.py`/`router.py`, backed by
+  `app/data/districts.py` (Nepal's 77 districts, from the same HDX file's
+  admin-level-2 layer) — a second AOI-selection alternative alongside
+  basins, mirroring that package's own split.
 - `app/common/aoi.py` — `AOIInput` Pydantic model shared by every
   endpoint that accepts an AOI; enforces the 1000 km² cap (bbox-only
   AOIs; polygon-bearing/basin AOIs are exempt).

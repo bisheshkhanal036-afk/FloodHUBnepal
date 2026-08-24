@@ -8,11 +8,13 @@ from app.data import config
 from app.data.basins import reset_basins_cache, reset_nepal_boundary_cache
 
 FIXTURE_PATH = Path(__file__).parent.parent / "data" / "fixtures" / "basins" / "test_basins.shp"
+FIXTURE_LEV09_PATH = Path(__file__).parent.parent / "data" / "fixtures" / "basins" / "test_basins_lev09.shp"
 
 
 @pytest.fixture(autouse=True)
 def use_basin_fixture(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "LOCAL_BASINS_PATH", FIXTURE_PATH)
+    monkeypatch.setattr(config, "LOCAL_BASINS_LEV09_PATH", FIXTURE_LEV09_PATH)
     # No Nepal boundary file by default -> these tests' expected
     # support_status/pct_in_nepal values are against the NEPAL_BBOX_4326
     # fallback proxy (the true-boundary path has its own dedicated test

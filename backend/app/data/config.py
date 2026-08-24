@@ -96,34 +96,63 @@ LOCAL_OSM_DIR = Path(os.environ.get("OSM_PBF_DIR", str(DATA_DIR / "raw" / "osm")
 # local files of either kind.
 LOCAL_OSM_PROCESSED_DIR = Path(os.environ.get("OSM_PROCESSED_DIR", str(LOCAL_OSM_DIR / "processed")))
 
-# HydroBASINS Asia (region "as"), level 8, "Standard" (polygon) product —
-# NOT the "Pour Points" product, which is point geometry and can't
-# represent a basin boundary. Download from
-# https://www.hydrosheds.org/products/hydrobasins. Overridable since the
-# actual downloaded filename may differ from HydroSHEDS' own naming
-# convention depending on how/when it was obtained. Default path verified
-# against the actual placed download during implementation: HydroSHEDS'
-# own zip layout nests the shapefile in a same-named subdirectory.
+# HydroBASINS Asia (region "as"), "Standard" (polygon) product — NOT the
+# "Pour Points" product, which is point geometry and can't represent a
+# basin boundary. Download from
+# https://www.hydrosheds.org/products/hydrobasins. Two resolutions are
+# supported side by side (app/data/basins.py's SUPPORTED_BASIN_LEVELS):
+# level 8 (~28,907 basins Asia-wide, coarser/larger catchments — the
+# original, still-default level) and level 9 (~77,849 basins, finer
+# sub-catchments — added so a user can pick whichever granularity suits
+# their AOI, e.g. a small urban catchment vs. a whole valley). HYBAS_ID
+# encodes region+level in its own digits (verified empirically: every
+# level-8 ID in this dataset starts "408…", every level-9 ID "409…"), so
+# the two levels' IDs never collide and can be looked up by ID alone once
+# the caller states which level's file to search.
+# Overridable since the actual downloaded filename may differ from
+# HydroSHEDS' own naming convention depending on how/when it was
+# obtained. Default paths verified against the actual placed downloads
+# during implementation: HydroSHEDS' own zip layout nests each
+# shapefile in a same-named subdirectory.
 LOCAL_BASINS_PATH = Path(
     os.environ.get(
         "BASINS_SHAPEFILE_PATH",
         str(DATA_DIR / "raw" / "basins" / "hybas_as_lev08_v1c" / "hybas_as_lev08_v1c.shp"),
     )
 )
+LOCAL_BASINS_LEV09_PATH = Path(
+    os.environ.get(
+        "BASINS_LEV09_SHAPEFILE_PATH",
+        str(DATA_DIR / "raw" / "basins" / "hybas_as_lev09_v1c" / "hybas_as_lev09_v1c.shp"),
+    )
+)
 
-# Nepal's true country boundary (ADM0), used to compute an accurate
-# support-status area-percentage for basins.classify_support_status —
-# optional: if absent, that classification falls back to the rough
-# NEPAL_BBOX_4326 rectangle proxy (basins.py) rather than failing.
-# Source: HERMES (https://download.hermes.com.np) — NON-COMMERCIAL USE
-# ONLY per that site's license terms; not redistributed by this repo
-# (backend/data/raw/ is gitignored). If this project ever needs a
-# commercially-usable boundary, swap in one from e.g. OCHA/HDX or
-# Natural Earth instead.
+# Nepal's true country boundary (ADM0) plus its administrative
+# subdivisions, used both (a) to compute an accurate support-status
+# area-percentage for basins.classify_support_status (optional: if
+# LOCAL_NEPAL_BOUNDARY_PATH is absent, that classification falls back to
+# the rough NEPAL_BBOX_4326 rectangle proxy in basins.py rather than
+# failing) and (b) as the source for district-based AOI selection
+# (app/data/districts.py). Source: OCHA/HDX's "Nepal - Subnational
+# Administrative Boundaries" COD-AB dataset
+# (https://data.humdata.org/dataset/cod-ab-npl), produced by Nepal's own
+# Survey Department + UN Resident Coordinator's Office, quality-assured
+# by ITOS/USAID — licensed CC BY-IGO (attribution required; unlike the
+# HERMES source used earlier in this project, or GADM, both of which
+# permit non-commercial use only, this one permits commercial use and
+# redistribution too). The one file covers admin levels 0 (country) —
+# 3 (local level); this project uses level 0 for the Nepal boundary and
+# level 2 (77 districts) for district-based AOI selection.
 LOCAL_NEPAL_BOUNDARY_PATH = Path(
     os.environ.get(
         "NEPAL_BOUNDARY_SHAPEFILE_PATH",
-        str(DATA_DIR / "raw" / "basins" / "hermes_NPL_new_wgs" / "hermes_NPL_new_wgs_0.shp"),
+        str(DATA_DIR / "raw" / "basins" / "npl_admin_boundaries.shp" / "npl_admin0.shp"),
+    )
+)
+LOCAL_ADMIN_DISTRICTS_PATH = Path(
+    os.environ.get(
+        "ADMIN_DISTRICTS_SHAPEFILE_PATH",
+        str(DATA_DIR / "raw" / "basins" / "npl_admin_boundaries.shp" / "npl_admin2.shp"),
     )
 )
 

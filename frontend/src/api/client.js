@@ -1,4 +1,4 @@
-// Thin fetch wrappers around the 5 real backend endpoints this app uses.
+// Thin fetch wrappers around the real backend endpoints this app uses.
 // No mocking/stubbing anywhere in this module — every function here
 // hits the actual FastAPI service.
 import { ApiError, parseErrorDetail } from './apiError'
@@ -46,14 +46,32 @@ export function computeAHP(payload) {
   return requestJson('/api/ahp/compute', { method: 'POST', body: JSON.stringify(payload) })
 }
 
-/** GET /api/basins -- a GeoJSON FeatureCollection, ~3.9MB uncompressed. */
-export function listBasins() {
-  return requestJson('/api/basins')
+/**
+ * GET /api/basins?level=8|9 -- a GeoJSON FeatureCollection. `level`
+ * selects which HydroBASINS resolution to fetch: 8 (~547 basins over
+ * Nepal's rough extent, coarser/larger catchments) or 9 (finer
+ * sub-catchments, more/smaller features -- a noticeably bigger payload).
+ * Defaults to 8, matching the backend's own default
+ * (app.data.basins.DEFAULT_BASIN_LEVEL) so an omitted level behaves
+ * exactly as before this parameter existed.
+ */
+export function listBasins(level = 8) {
+  return requestJson(`/api/basins?level=${level}`)
 }
 
-/** GET /api/basins/{hybas_id}/aoi -- {bbox, polygon}, ready for AOIInput. */
-export function getBasinAOI(hybasId) {
-  return requestJson(`/api/basins/${hybasId}/aoi`)
+/** GET /api/basins/{hybas_id}/aoi?level=8|9 -- {bbox, polygon}, ready for AOIInput. `level` must match whichever level `hybasId` was listed at (HYBAS_IDs never collide across levels, but the backend only searches the requested level's file). */
+export function getBasinAOI(hybasId, level = 8) {
+  return requestJson(`/api/basins/${hybasId}/aoi?level=${level}`)
+}
+
+/** GET /api/districts -- a GeoJSON FeatureCollection of all 77 of Nepal's districts. */
+export function listDistricts() {
+  return requestJson('/api/districts')
+}
+
+/** GET /api/districts/{pcode}/aoi -- {bbox, polygon}, ready for AOIInput. */
+export function getDistrictAOI(pcode) {
+  return requestJson(`/api/districts/${pcode}/aoi`)
 }
 
 /** POST /api/overlay/compute -- see backend/app/overlay/models.py. */

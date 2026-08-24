@@ -1,14 +1,15 @@
 // The map: basemap, draw-rectangle AOI interaction, basin polygon layer
-// (color-coded by support_status, clickable), and the computed risk
-// surface rendered as a colorized raster overlay. All MapLibre-specific
-// code lives here, kept separate from the panels so a future phase
-// (shelter markers, vulnerability classes) can add its own layers here
-// without touching the state/panel logic.
+// (color-coded by support_status, clickable), district polygon layer
+// (flat-colored, clickable), and the computed risk surface rendered as a
+// colorized raster overlay. All MapLibre-specific code lives here, kept
+// separate from the panels so a future phase (shelter markers,
+// vulnerability classes) can add its own layers here without touching
+// the state/panel logic.
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useEffect, useRef } from 'react'
-import { fetchRiskSurfaceBytes, getBasinAOI } from '../api/client'
-import { riskValueToRgb, SUPPORT_STATUS_COLORS } from '../lib/colorRamp'
+import { fetchRiskSurfaceBytes, getBasinAOI, getDistrictAOI } from '../api/client'
+import { riskValueToRgb, SUPPORT_STATUS_COLORS, DISTRICT_FILL_COLOR } from '../lib/colorRamp'
 import { AREA_CAP_KM2, approxBboxAreaKm2, bboxToPolygon, cornersToBbox } from '../lib/geo'
 import { gridCornersToWgs84 } from '../lib/proj'
 import { decodeGeoTiffToDataUrl } from '../lib/rasterPreview'
@@ -178,6 +179,7 @@ class CoordinateReadoutControl {
 
 const DRAW_PREVIEW_SOURCE = 'draw-preview'
 const BASINS_SOURCE = 'basins'
+const DISTRICTS_SOURCE = 'districts'
 const RISK_SURFACE_SOURCE = 'risk-surface'
 
 export default function MapView() {
@@ -351,10 +353,18 @@ export default function MapView() {
         map.getSource(BASINS_SOURCE).setData(state.basins.data)
       } else {
         map.addSource(BASINS_SOURCE, { type: 'geojson', data: state.basins.data })
+        // Initial visibility matches whatever mode is active right now
+        // (not always 'basin' -- this effect can run after the user has
+        // already switched away, if the style's own 'load' event was
+        // still pending when the data arrived). The visibility-sync
+        // effect further below keeps it correct on every later mode
+        // switch; this is just the correct value at creation time.
+        const initialVisibility = stateRef.current.aoiMode === 'basin' ? 'visible' : 'none'
         map.addLayer({
           id: 'basins-fill',
           type: 'fill',
           source: BASINS_SOURCE,
+          layout: { visibility: initialVisibility },
           paint: {
             'fill-color': [
               'match',
@@ -374,12 +384,14 @@ export default function MapView() {
           id: 'basins-line',
           type: 'line',
           source: BASINS_SOURCE,
+          layout: { visibility: initialVisibility },
           paint: { 'line-color': '#333333', 'line-width': 0.5 },
         })
         map.addLayer({
           id: 'basins-selected',
           type: 'line',
           source: BASINS_SOURCE,
+          layout: { visibility: initialVisibility },
           paint: { 'line-color': '#111827', 'line-width': 3 },
           filter: ['==', ['get', 'hybas_id'], -1],
         })
@@ -387,10 +399,21 @@ export default function MapView() {
         map.on('click', 'basins-fill', async (e) => {
           if (stateRef.current.aoiMode !== 'basin') return
           const hybasId = e.features[0].properties.hybas_id
+          // The clicked feature's own `level` property (baked into it by
+          // the GeoJSON the FeatureCollection was fetched at, per
+          // BasinFeatureProperties.level), not stateRef.current.basinLevel
+          // -- a level switch resets basins.data to null (SET_BASIN_LEVEL)
+          // before a new fetch lands, so by the time this layer's own
+          // data could be stale enough to matter, the feature's own level
+          // is always the ground truth for what was actually clicked.
+          const level = e.features[0].properties.level
           dispatch({ type: 'SET_SELECTED_BASIN_ID', hybasId })
           try {
-            const aoi = await getBasinAOI(hybasId)
-            dispatch({ type: 'SET_AOI', aoi: { bbox: aoi.bbox, polygon: aoi.polygon, source: 'basin', basinId: hybasId } })
+            const aoi = await getBasinAOI(hybasId, level)
+            dispatch({
+              type: 'SET_AOI',
+              aoi: { bbox: aoi.bbox, polygon: aoi.polygon, source: 'basin', basinId: hybasId, basinLevel: level },
+            })
           } catch (error) {
             dispatch({ type: 'SET_AREA_WARNING', message: error.message })
           }
@@ -414,6 +437,107 @@ export default function MapView() {
     if (!map || !map.getLayer('basins-selected')) return
     map.setFilter('basins-selected', ['==', ['get', 'hybas_id'], state.selectedBasinId ?? -1])
   }, [state.selectedBasinId])
+
+  // --- districts layer --- (mirrors the basins layer above, minus the
+  // support_status color-coding -- a district has no such concept, see
+  // lib/colorRamp.js's DISTRICT_FILL_COLOR comment)
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !state.districts.data) return
+
+    const render = () => {
+      if (map.getSource(DISTRICTS_SOURCE)) {
+        map.getSource(DISTRICTS_SOURCE).setData(state.districts.data)
+      } else {
+        map.addSource(DISTRICTS_SOURCE, { type: 'geojson', data: state.districts.data })
+        // See the matching comment on the basins layer above -- same
+        // "correct value at creation time" reasoning.
+        const initialVisibility = stateRef.current.aoiMode === 'district' ? 'visible' : 'none'
+        map.addLayer({
+          id: 'districts-fill',
+          type: 'fill',
+          source: DISTRICTS_SOURCE,
+          layout: { visibility: initialVisibility },
+          paint: { 'fill-color': DISTRICT_FILL_COLOR, 'fill-opacity': 0.35 },
+        })
+        map.addLayer({
+          id: 'districts-line',
+          type: 'line',
+          source: DISTRICTS_SOURCE,
+          layout: { visibility: initialVisibility },
+          paint: { 'line-color': '#333333', 'line-width': 0.5 },
+        })
+        map.addLayer({
+          id: 'districts-selected',
+          type: 'line',
+          source: DISTRICTS_SOURCE,
+          layout: { visibility: initialVisibility },
+          paint: { 'line-color': '#111827', 'line-width': 3 },
+          filter: ['==', ['get', 'pcode'], ''],
+        })
+
+        map.on('click', 'districts-fill', async (e) => {
+          if (stateRef.current.aoiMode !== 'district') return
+          const pcode = e.features[0].properties.pcode
+          dispatch({ type: 'SET_SELECTED_DISTRICT', pcode })
+          try {
+            const aoi = await getDistrictAOI(pcode)
+            dispatch({
+              type: 'SET_AOI',
+              aoi: { bbox: aoi.bbox, polygon: aoi.polygon, source: 'district', districtPcode: pcode },
+            })
+          } catch (error) {
+            dispatch({ type: 'SET_AREA_WARNING', message: error.message })
+          }
+        })
+        map.on('mouseenter', 'districts-fill', () => {
+          if (stateRef.current.aoiMode === 'district') map.getCanvas().style.cursor = 'pointer'
+        })
+        map.on('mouseleave', 'districts-fill', () => {
+          map.getCanvas().style.cursor = stateRef.current.aoiMode === 'draw' ? 'crosshair' : 'grab'
+        })
+      }
+    }
+
+    if (map.isStyleLoaded()) render()
+    else map.once('load', render)
+  }, [state.districts.data, dispatch])
+
+  // highlight the selected district
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !map.getLayer('districts-selected')) return
+    map.setFilter('districts-selected', ['==', ['get', 'pcode'], state.selectedDistrictPcode ?? ''])
+  }, [state.selectedDistrictPcode])
+
+  // --- show only the layer set matching the current AOI mode ---
+  // Layer creation above happens once, the first time each tab's data
+  // arrives, and is otherwise a no-op on every later visit (the
+  // `if (map.getSource(...))` branch just calls setData) -- so switching
+  // aoiMode alone was never enough to hide a layer that's already been
+  // created: a basin selection stayed rendered after switching back to
+  // "Draw area", and switching from "Select basin" straight to "Select
+  // district" showed both layers overlaid at once. This effect is the
+  // single place that reconciles visibility with the active mode,
+  // independent of *when* each layer happened to be created; it re-runs
+  // on every mode switch, and also whenever basins/districts data first
+  // arrives (covering a layer created after the mode had already
+  // changed, e.g. a deferred map 'load' -- see the "initial visibility"
+  // comments on each addLayer call above).
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    const setVisible = (layerId, visible) => {
+      if (!map.getLayer(layerId)) return
+      map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none')
+    }
+
+    const basinsVisible = state.aoiMode === 'basin'
+    const districtsVisible = state.aoiMode === 'district'
+    for (const id of ['basins-fill', 'basins-line', 'basins-selected']) setVisible(id, basinsVisible)
+    for (const id of ['districts-fill', 'districts-line', 'districts-selected']) setVisible(id, districtsVisible)
+  }, [state.aoiMode, state.basins.data, state.districts.data])
 
   // --- fit view to the current AOI ---
   useEffect(() => {
