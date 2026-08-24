@@ -144,11 +144,11 @@ body {
 }
 
 /* Display face reserved for brand/hero moments only (landing hero,
-   credits heading) -- UI chrome headings (sidebar sections, cards, the
-   modal title) use the body face at a heavier weight with tight tracking
-   instead, matching Linear's own "no separate display face for chrome"
-   approach. See .hero__title / .landing__credits-heading / .modal__title
-   for where --font-display is actually applied now. */
+   zoom-section headings) -- UI chrome headings (sidebar sections, cards,
+   the modal title) use the body face at a heavier weight with tight
+   tracking instead, matching Linear's own "no separate display face for
+   chrome" approach. See .hero__title / .zoom-section__heading /
+   .modal__title for where --font-display is actually applied now. */
 h1,
 h2,
 h3,
@@ -1829,22 +1829,181 @@ input[type='radio'] {
   flex-shrink: 0;
 }
 
-.landing__credits {
-  max-width: 84rem;
-  margin: 0 auto;
+/* ==========================================================================
+   Scroll-zoom sections (LandingPage.jsx's hero/team/sources sequence) --
+   see lib/useScrollZoom.js for the IntersectionObserver mechanics this
+   drives. Each section starts scaled down and transparent, then scales/
+   fades up to full size once substantially in view, reversing if
+   scrolled back out. The hero gets its "zoomed" state immediately on
+   load with no special-casing (it's in the viewport at mount, so the
+   observer's very first callback already reports it visible).
+   ========================================================================== */
+.zoom-section {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   padding: var(--space-10) var(--space-8);
   border-top: 1px solid var(--color-border);
 }
 
-.landing__credits-heading {
+.zoom-section--hero {
+  border-top: none;
+  min-height: 90vh;
+}
+
+.zoom-section__inner {
+  width: 100%;
+  max-width: 84rem;
+  transform: scale(0.88);
+  opacity: 0;
+  transition: transform 0.9s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.9s ease;
+  will-change: transform, opacity;
+}
+
+.zoom-section--active .zoom-section__inner {
+  transform: scale(1);
+  opacity: 1;
+}
+
+/* Motion is purely decorative -- a reduced-motion viewer must never be
+   left with hidden (scale/opacity-suppressed) content, regardless of
+   whether the JS side has toggled the --active class yet. */
+@media (prefers-reduced-motion: reduce) {
+  .zoom-section__inner {
+    transform: none !important;
+    opacity: 1 !important;
+    transition: none !important;
+  }
+}
+
+.zoom-section__heading {
+  text-align: center;
   font-size: clamp(2rem, 3.2vw, 2.75rem);
   margin-bottom: var(--space-3);
 }
 
-.landing__credits-sub {
+.zoom-section__sub {
+  text-align: center;
   color: var(--color-text-muted);
   font-size: var(--text-lg);
   margin: 0 0 var(--space-8);
+}
+
+/* Team: exactly 3 members, deliberately large and spacious -- one row
+   of 3 on a wide screen, meant to genuinely fill most of the viewport
+   rather than read as a compact directory listing. */
+.team-showcase {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-6);
+  max-width: 64rem;
+  margin: 0 auto;
+}
+
+.team-showcase__card {
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-8) var(--space-5);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.team-showcase__avatar,
+.team-showcase__photo {
+  width: 9rem;
+  height: 9rem;
+  border-radius: var(--radius-full);
+  margin-bottom: var(--space-5);
+}
+
+.team-showcase__avatar {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-2xl);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.team-showcase__photo {
+  object-fit: cover;
+  border: 2px solid var(--color-border);
+}
+
+.team-showcase__name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-xl);
+  margin-bottom: 0.3rem;
+}
+
+.team-showcase__email {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: var(--text-base);
+  text-decoration: none;
+}
+
+.team-showcase__email:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.team-showcase__linkedin {
+  display: inline-block;
+  margin-top: var(--space-2);
+  color: var(--color-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.team-showcase__linkedin:hover {
+  text-decoration: underline;
+}
+
+/* Data sources: every registered criterion source plus the basin/
+   boundary infra credits (see config/attribution.js) -- a real content
+   gap closed alongside this redesign (only DEM/WorldCover/OSM were ever
+   mirrored here before, missing NDVI/population/soil/rainfall/CHIRPS
+   entirely). More cards than the team grid, so this stays a flowing
+   grid rather than a fixed 3-column layout. */
+.source-showcase {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: var(--space-4);
+  max-width: 84rem;
+  margin: 0 auto;
+}
+
+.source-showcase__card {
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.source-showcase__name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-base);
+  margin-bottom: var(--space-2);
+}
+
+.source-showcase__text {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  margin: 0;
 }
 
 .landing__footer {
@@ -2001,8 +2160,13 @@ input[type='radio'] {
     padding: var(--space-4) var(--space-5);
   }
 
-  .landing__credits {
-    padding: var(--space-5);
+  .zoom-section {
+    padding: var(--space-6) var(--space-5);
+  }
+
+  .team-showcase {
+    grid-template-columns: 1fr;
+    max-width: 24rem;
   }
 }
 

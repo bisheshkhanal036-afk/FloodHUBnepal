@@ -1885,6 +1885,65 @@ them.
     across Nepal's actual climate range during implementation (~670mm
     dry western hills to ~3340mm wet mid-hills — Jumla and Pokhara
     respectively), not guessed blindly.
+- Frontend: **landing-page redesign — a scroll-driven "zoom" sequence**,
+  at the user's request: hero (zoomed in immediately, no scroll needed),
+  team (zoomed in to fill most of the screen, exactly three members),
+  then data sources (zoomed in last).
+  - New `lib/useScrollZoom.js`: an IntersectionObserver-driven reveal
+    hook (not a continuous scroll-position scrub, and deliberately not
+    CSS `animation-timeline: view()` scroll-driven animations, which
+    are Chromium-only as of this writing) — a section's wrapped content
+    starts at `scale(0.88)`/`opacity: 0` and transitions to
+    `scale(1)`/`opacity: 1` once substantially inside the viewport,
+    reversing if scrolled back out (a live relationship with scroll
+    position, not a one-shot animation — verified live both directions).
+    The hero gets its "zoomed" state with zero special-casing: the
+    observer's first callback fires immediately on `observe()` with
+    whatever the current intersection state already is, and the hero is
+    in the viewport the instant the page loads. Respects
+    `prefers-reduced-motion: reduce` two ways — the hook skips the
+    observer and jumps straight to the visible end state, and a
+    belt-and-suspenders CSS media query forces full visibility
+    regardless of class/timing, so a reduced-motion viewer is never left
+    looking at suppressed (scaled-down/transparent) content. Verified
+    live via emulated media (`Emulation.setEmulatedMedia`): the team
+    section, never scrolled to, came back fully visible
+    (`transform: none`, `opacity: 1`, `transitionDuration: 0s`).
+  - `LandingPage.jsx`'s team and data-sources sections are new, bespoke
+    markup (`team-showcase`/`source-showcase` in `index.css`) reading
+    the same `config/attribution.js` data the existing `CreditsSection`
+    component already did — deliberately NOT built on top of
+    `CreditsSection` itself, since that component's compact, all-in-one
+    grid (shared with `AboutModal`'s in-tool popup) is the right shape
+    for a modal, not for a page section meant to "fill most of the
+    screen": the team section is a fixed 3-column layout (exactly 3
+    members, meant to read as one deliberate row, not a directory
+    listing) with noticeably larger photos/cards than the old compact
+    credit-card treatment. `AboutModal`/`CreditsSection` are unchanged
+    and unaffected by this restructuring.
+  - **A real, pre-existing data gap closed alongside this** (the actual
+    ask behind "update the data sources section too"): `config/
+    attribution.js`'s `SOURCE_ATTRIBUTIONS` only ever mirrored DEM/
+    WorldCover/OSM, even after `ndvi`, `population_density`,
+    `soil_infiltration`, `rainfall`, and `precipitation_chirps` were
+    each added as registered criterion sources with their own backend
+    `attribution.py` constants (§3.6) — all five were missing from both
+    the landing page *and* the in-tool About modal entirely, silently,
+    since nothing ever re-synced the two files. Fixed by mirroring all
+    5 additional constants verbatim (this file's own established
+    convention — no automated link to the backend constants, so this is
+    a manual sync, flagged the same way the file's own header comment
+    already flags the DEM/WorldCover/OSM entries). Total credited data
+    sources: 8 (was 3) + the existing 2 basin/boundary infra credits =
+    10. Verified live that both surfaces picked up all 10 automatically
+    (`AboutModal` reads the identical `SOURCE_ATTRIBUTIONS` array, so
+    this fix benefits it for free, not just the landing page).
+  - Verified live end to end: hero zoomed on load with no scroll: team
+    section zooms in and hero zooms out on scrolling to it; sources
+    section zooms in and team zooms out on scrolling further; scrolling
+    back to the top correctly re-triggers both sections back to their
+    scaled-down/transparent starting state, confirming the reveal is
+    genuinely bidirectional, not a one-shot "seen once, stays" reveal.
 - Not yet implemented: AOI persistence, and shelter identification. The
   GeoTIFF file route is a simple
   direct-read endpoint, not a general static-asset server or CDN — fine

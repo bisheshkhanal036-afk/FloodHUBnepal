@@ -4,13 +4,19 @@
 // there is no request in flight yet to read attribution off of.
 //
 // SOURCE_ATTRIBUTIONS below are copied VERBATIM from
-// backend/app/data/attribution.py's own constants (DEM_ATTRIBUTION,
-// WORLDCOVER_ATTRIBUTION, OSM_ATTRIBUTION) -- the same strings
+// backend/app/data/attribution.py's own constants -- the same strings
 // ResultPanel already renders from a live compute response's
 // `result.attribution`. If those backend constants ever change, this
 // file needs a matching update to stay in sync (there's no automated
 // link between the two, since this file exists precisely so the credits
 // page doesn't need a backend round-trip).
+//
+// Real gap closed here: only DEM/WorldCover/OSM were ever mirrored to
+// this file, even after NDVI, population_density, soil_infiltration,
+// rainfall, and precipitation_chirps were each added as registered
+// criterion sources (backend/app/overlay/sources.py) with their own
+// attribution constants (backend/app/data/attribution.py) -- all five
+// were missing from the landing page / About modal credits entirely.
 export const SOURCE_ATTRIBUTIONS = [
   {
     id: 'dem',
@@ -26,6 +32,31 @@ export const SOURCE_ATTRIBUTIONS = [
     id: 'osm',
     name: 'OpenStreetMap',
     text: '© OpenStreetMap contributors. Buildings, road network, and waterways (rivers/streams/canals) for exposure and hydrological criteria.',
+  },
+  {
+    id: 'ndvi',
+    name: 'Sentinel-2 (NDVI)',
+    text: 'Contains modified Copernicus Sentinel-2 L2A data, processed by ESA; accessed via Element 84 Earth Search (AWS Open Data). NDVI computed from the near-infrared (B08) and red (B04) bands.',
+  },
+  {
+    id: 'population',
+    name: 'Meta/CIESIN HRSL',
+    text: 'Meta and Center for International Earth Science Information Network - CIESIN - Columbia University. 2022. High Resolution Settlement Layer (HRSL). Source imagery for HRSL © 2016 Maxar.',
+  },
+  {
+    id: 'soil',
+    name: 'ISRIC SoilGrids 2.0',
+    text: 'Poggio, L., de Sousa, L. M., Batjes, N. H., Heuvelink, G. B. M., Kempen, B., Ribeiro, E., and Rossiter, D. (2021). SoilGrids 2.0: producing soil information for the globe with quantified spatial uncertainty. SOIL, 7, 217-240. https://doi.org/10.5194/soil-7-217-2021. © ISRIC — World Soil Information, licensed under CC BY 4.0.',
+  },
+  {
+    id: 'rainfall',
+    name: 'DHM rain-gauge network',
+    text: 'Precipitation: Department of Hydrology and Meteorology (DHM), Government of Nepal — daily rain-gauge record 1980-2022, 254 stations. ETCCDI climatological indices (Rx1day, Rx5day, PRCPTOT, R95pTOT) derived from that record and interpolated to the analysis grid by inverse distance weighting.',
+  },
+  {
+    id: 'chirps',
+    name: 'CHIRPS satellite precipitation',
+    text: 'Funk, C., Peterson, P., Landsfeld, M., Pedreros, D., Verdin, J., Shukla, S., Husak, G., Rowland, J., Harrison, L., Hoell, A., and Michaelsen, J. (2015). The climate hazards infrared precipitation with stations—a new environmental record for monitoring extremes. Scientific Data, 2, 150066. https://doi.org/10.1038/sdata.2015.66. Climate Hazards Center, UC Santa Barbara — public domain.',
   },
 ]
 
