@@ -86,6 +86,38 @@ CHIRPS_ATTRIBUTION = (
 )
 
 
+# METEOR Project's Nepal flood hazard maps (modeled water depth, Fathom
+# global flood hazard framework). License verified directly against the
+# flood map's own page HTML during implementation, not a summarized
+# secondhand read: two independent confirmations on that page --
+# `<li>Map licensed under <strong><a href="https://opendatacommons.org/
+# licenses/odbl/index.html">ODbL</a></strong></li>` and a dedicated
+# `<h5>License</h5>` section naming the Open Data Commons Open Database
+# License -- distinct from the CC BY-NC-SA 4.0 that covers METEOR's
+# separate Exposure Data (building-count) product on a different page,
+# an easy conflation this project's own first-pass research fell into
+# and then corrected. metadata.txt itself gives only author/year/DOI for
+# its four cited papers, not full titles -- those below were confirmed
+# separately (by DOI lookup) during implementation, not invented.
+METEOR_FLOOD_ATTRIBUTION = (
+    "Nepal flood hazard maps: METEOR Project Consortium (published 2019-03-06), produced using "
+    "the Fathom global flood hazard modelling framework: Sampson, C. C., Smith, A. M., Bates, P. D., "
+    "Neal, J. C., Alfieri, L., & Freer, J. E. (2015). A high-resolution global flood hazard model. "
+    "Water Resources Research, 51(9), 7358-7381. https://doi.org/10.1002/2015WR016954; "
+    "Smith, A., Sampson, C., & Bates, P. (2015). Regional flood frequency analysis at the global "
+    "scale. Water Resources Research, 51(1), 539-553. https://doi.org/10.1002/2014WR015814. "
+    "MERIT global DEM/hydrography: Yamazaki, D., Ikeshima, D., Tawatari, R., Yamaguchi, T., "
+    "O'Loughlin, F., Neal, J. C., Sampson, C. C., Kanae, S., & Bates, P. D. (2017). A high accuracy "
+    "map of global terrain elevations. Geophysical Research Letters, 44(11), 5844-5853. "
+    "https://doi.org/10.1002/2017GL072874; Yamazaki, D., Ikeshima, D., Sosa, J., Bates, P. D., "
+    "Allen, G. H., & Pavelsky, T. M. (2019). MERIT Hydro: A high-resolution global hydrography map "
+    "based on latest topography datasets. Water Resources Research, 55(6), 5053-5073. "
+    "https://doi.org/10.1029/2019WR024873. Licensed under the Open Data Commons Open Database "
+    "License (ODbL): https://opendatacommons.org/licenses/odbl/index.html. Source: "
+    "https://maps.meteor-project.org/map/flood-npl/"
+)
+
+
 # Methodology references, as distinct from the data-source attributions
 # above: these credit the *method* this project implements, not a
 # dataset it reads. Kept here so there is exactly one place in the

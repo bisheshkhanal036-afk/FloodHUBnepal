@@ -20,6 +20,7 @@ import MapView from './components/MapView'
 import Sidebar from './components/Sidebar'
 import ReportOverlay from './components/ReportOverlay'
 import DataGapNotice from './components/DataGapNotice'
+import MeteorFloodLegend from './components/MeteorFloodLegend'
 
 function App() {
   const [view, setView] = useState('landing')
@@ -39,6 +40,7 @@ function App() {
             <MapView />
             <ReportOverlay />
             <DataGapNotice />
+            <MeteorFloodLegend />
           </div>
         </div>
       )}

@@ -14,6 +14,14 @@ RISK_SURFACE_PATH_PATTERN = "/risk_surface/{cache_key}.tif"
 HAZARD_CLASSES_PATH_PATTERN = "/hazard_classes/{cache_key}.tif"
 CRITERION_RASTER_PATH_PATTERN = "/criterion_raster/{cache_key}/{criterion_id}.tif"
 
+# meteor_tile_proxy.py's own tile-forwarding route -- {z}/{x}/{y} stay as
+# literal placeholders in the frontend's own tile URL *template* (handed
+# straight to MapLibre, which substitutes them itself, the same way it
+# already does for every other raster source's `tiles` array in
+# MapView.jsx's BASEMAPS), unlike flood_type/return_period, which the
+# frontend always fills in concretely before building the template.
+METEOR_FLOOD_TILE_PATH_PATTERN = "/meteor_flood_tile/{flood_type}/{return_period}/{z}/{x}/{y}.png"
+
 
 def risk_surface_url(cache_key: str) -> str:
     return f"{ROUTER_PREFIX}/risk_surface/{cache_key}.tif"

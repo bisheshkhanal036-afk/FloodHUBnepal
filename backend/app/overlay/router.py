@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 from fastapi import Path as PathParam
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from app.ahp.errors import AHPConsistencyError, AHPValidationError
 from app.data import config
@@ -17,6 +17,7 @@ from app.data.errors import DataSourceUnavailableError, NodataValidationError, R
 from .breaks import compute_criterion_breaks
 from .errors import OverlayValidationError
 from .hazard_classes import materialize_hazard_classes_from_risk_surface_tif
+from .meteor_tile_proxy import MeteorTileNotFoundError, fetch_meteor_flood_tile
 from .models import (
     CriterionBreaksRequest,
     CriterionBreaksResponse,
@@ -31,6 +32,7 @@ from .service import compute_overlay
 from .urls import (
     CRITERION_RASTER_PATH_PATTERN,
     HAZARD_CLASSES_PATH_PATTERN,
+    METEOR_FLOOD_TILE_PATH_PATTERN,
     RISK_SURFACE_PATH_PATTERN,
     ROUTER_PREFIX,
 )
@@ -211,6 +213,55 @@ def get_criterion_raster_file(
             },
         )
     return FileResponse(path, media_type="image/tiff", filename=f"{cache_key}_{criterion_id}.tif")
+
+
+@router.get(METEOR_FLOOD_TILE_PATH_PATTERN)
+def get_meteor_flood_tile(
+    flood_type: str = PathParam(..., pattern=r"^(fd|fu|p)$"),
+    return_period: int = PathParam(...),
+    z: int = PathParam(...),
+    x: int = PathParam(...),
+    y: int = PathParam(...),
+) -> Response:
+    """Proxies one tile from METEOR's live WMTS flood-hazard service —
+    see meteor_tile_proxy.py's own module docstring for why this exists
+    at all: METEOR's tile server sends no CORS headers, so MapLibre GL
+    (which needs `crossOrigin` to read tile pixels into a WebGL texture)
+    can never load them directly from the browser. This backend has no
+    such restriction (browsers, not servers, enforce CORS), so it fetches
+    the real tile server-side and hands the bytes back from an origin
+    the frontend already trusts.
+
+    `flood_type`'s charset is pattern-constrained here too (defense in
+    depth, same reasoning as CRITERION_RASTER_PATH_PATTERN's own
+    `criterion_id` pattern); the real allow-list check (both
+    flood_type and return_period, against METEOR's actual live catalog)
+    happens inside fetch_meteor_flood_tile itself.
+
+    Responds 422 for a flood_type/return_period outside METEOR's real
+    catalog. Responds 404 for a z/x/y the upstream itself rejects as
+    outside its own tile matrix — a normal, routine condition at the
+    edges of a raster tile source's coverage/zoom range, not a service
+    failure. Responds 503 only for a genuine upstream failure (network
+    error, timeout, or a 5xx from METEOR's own server).
+    """
+    try:
+        tile_bytes = fetch_meteor_flood_tile(flood_type, return_period, z, x, y)
+    except OverlayValidationError as exc:
+        raise HTTPException(status_code=422, detail={"error": "overlay_validation_error", "message": str(exc)}) from exc
+    except MeteorTileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail={"error": "meteor_tile_not_found", "message": str(exc)}) from exc
+    except DataSourceUnavailableError as exc:
+        raise HTTPException(status_code=503, detail={"error": "data_source_unavailable", "message": str(exc)}) from exc
+
+    return Response(
+        content=tile_bytes,
+        media_type="image/png",
+        # METEOR's own tiles are static (a fixed pre-run model output,
+        # not live/time-varying data) -- safe for the browser to cache
+        # aggressively rather than re-fetching on every pan/zoom.
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @router.post("/report", response_model=VulnerabilityReportResponse)

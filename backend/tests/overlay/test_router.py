@@ -267,3 +267,84 @@ def test_criteria_breaks_endpoint_surfaces_data_source_unavailable_as_503(monkey
 
     assert response.status_code == 503
     assert response.json()["detail"]["error"] == "data_source_unavailable"
+
+
+# --- GET /api/overlay/meteor_flood_tile/{flood_type}/{return_period}/{z}/{x}/{y}.png ---
+# fetch_meteor_flood_tile itself is mocked here (network + the real
+# allow-list/error-mapping logic are covered by test_meteor_tile_proxy.py);
+# these tests are about the route's own request/response wiring: path
+# param parsing and status-code mapping.
+
+
+def _patch_fetch_meteor_flood_tile(monkeypatch, fn):
+    import sys
+    overlay_router_module = sys.modules["app.overlay.router"]
+    monkeypatch.setattr(overlay_router_module, "fetch_meteor_flood_tile", fn)
+
+
+def test_meteor_flood_tile_endpoint_returns_the_proxied_bytes(monkeypatch):
+    seen_args = {}
+
+    def fake(flood_type, return_period, z, x, y):
+        seen_args.update(flood_type=flood_type, return_period=return_period, z=z, x=x, y=y)
+        return b"fake-png-bytes"
+
+    _patch_fetch_meteor_flood_tile(monkeypatch, fake)
+
+    response = client.get("/api/overlay/meteor_flood_tile/fd/100/12/3018/1719.png")
+
+    assert response.status_code == 200
+    assert response.content == b"fake-png-bytes"
+    assert response.headers["content-type"] == "image/png"
+    assert "max-age" in response.headers["cache-control"]
+    assert seen_args == {"flood_type": "fd", "return_period": 100, "z": 12, "x": 3018, "y": 1719}
+
+
+def test_meteor_flood_tile_endpoint_rejects_a_bad_flood_type_via_path_pattern():
+    # "xx" never reaches fetch_meteor_flood_tile at all -- FastAPI's own
+    # path pattern (r"^(fd|fu|p)$") rejects it first.
+    response = client.get("/api/overlay/meteor_flood_tile/xx/100/12/3018/1719.png")
+
+    assert response.status_code == 422
+
+
+def test_meteor_flood_tile_endpoint_surfaces_validation_error_as_422(monkeypatch):
+    from app.overlay.errors import OverlayValidationError
+
+    def fake(flood_type, return_period, z, x, y):
+        raise OverlayValidationError("simulated: unrecognized return_period")
+
+    _patch_fetch_meteor_flood_tile(monkeypatch, fake)
+
+    response = client.get("/api/overlay/meteor_flood_tile/fd/999/12/3018/1719.png")
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["error"] == "overlay_validation_error"
+
+
+def test_meteor_flood_tile_endpoint_surfaces_tile_not_found_as_404(monkeypatch):
+    from app.overlay.meteor_tile_proxy import MeteorTileNotFoundError
+
+    def fake(flood_type, return_period, z, x, y):
+        raise MeteorTileNotFoundError("simulated: z/x/y outside METEOR's tile matrix")
+
+    _patch_fetch_meteor_flood_tile(monkeypatch, fake)
+
+    response = client.get("/api/overlay/meteor_flood_tile/fd/100/30/999999999/999999999.png")
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["error"] == "meteor_tile_not_found"
+
+
+def test_meteor_flood_tile_endpoint_surfaces_upstream_failure_as_503(monkeypatch):
+    from app.data.errors import DataSourceUnavailableError
+
+    def fake(flood_type, return_period, z, x, y):
+        raise DataSourceUnavailableError("simulated: METEOR's WMTS service unreachable")
+
+    _patch_fetch_meteor_flood_tile(monkeypatch, fake)
+
+    response = client.get("/api/overlay/meteor_flood_tile/fd/100/12/3018/1719.png")
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["error"] == "data_source_unavailable"

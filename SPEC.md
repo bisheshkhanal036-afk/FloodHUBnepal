@@ -318,8 +318,12 @@ in `twi`/`drainage_density`/`hand`'s flow-accumulation pipeline
 A `Criterion.source` (§3.2) is resolved to its raw physical layer through
 a small, explicit, **pluggable** registry — `register_source(name, fn)`
 maps a source name to a `(AOI) -> (raw_array, grid, nodata, attribution,
-warning)` function (`warning` is `str | None`, `None` for every source
-except `twi`/`drainage_density`, see below); `resolve_criterion_raster`
+warning)` function (`warning` is `str | None`, `None` for most sources;
+non-`None` for `twi`/`drainage_density`/`hand` (AOI-edge flow-routing
+reliability), `rainfall` (elevation-blind IDW interpolation), and
+`flood_hazard_meteor` (below the modeled-domain coverage threshold) —
+see each source's own module for its exact condition);
+`resolve_criterion_raster`
 looks a criterion's declared `source` up in it, then applies
 `reclassification_rules` (§2.3, §3.2). Adding a new source needs only a
 matching function + one `register_source()` call — see `sources.py`'s
@@ -344,6 +348,7 @@ with zero changes to `sources.py` or any other `overlay/` file.
 | `soil_infiltration` | ISRIC SoilGrids topsoil (0-5cm) sand content (%), used as an infiltration-capacity proxy | Continuous | `app/data/soil.py` |
 | `rainfall` | Precipitation ETCCDI index (default Rx1day, configurable), interpolated (IDW) from Nepal's DHM rain-gauge network | Continuous | `app/data/rainfall.py` |
 | `precipitation_chirps` | CHIRPS-2.0 satellite precipitation, 1981-2024 mean-annual climatology | Continuous | `app/data/chirps.py` |
+| `flood_hazard_meteor` | METEOR Project modeled flood water depth (m), Fathom global flood hazard framework, default Fluvial Defended 1-in-100y | Continuous | `app/data/meteor_flood.py` |
 
 **Distance rasters** (`distance_raster.py`): a generic
 `compute_distance_raster(features, grid)` rasterizes arbitrary vector
@@ -2023,6 +2028,237 @@ them.
     helper (waits for transitions to settle, screenshots the *same*
     already-scrolled tab rather than a fresh navigation) instead of
     re-deriving one-off scripts each time.
+- **METEOR Project Nepal flood hazard maps**, investigated after the user
+  linked `https://maps.meteor-project.org/map/flood-npl/` and asked
+  whether it could be used in this project — added as both a live
+  reference overlay and a new criterion source (§3.6), per explicit
+  request ("both, do it").
+  - **Licensing was investigated twice.** The first pass, based on a
+    WebFetch summary of `meteor-project.org/data/`, wrongly reported the
+    flood hazard maps as possibly CC BY-NC-SA 4.0 (non-commercial-only).
+    Told explicitly to "be completely sure about it," the second pass
+    fetched the flood map's own page HTML directly via `curl` (bypassing
+    the summarizer) and found the CC BY-NC-SA 4.0 text actually belongs
+    to a *different* METEOR product — "Exposure Data" (building-count
+    CSVs, "Copyright (C) 2020 ImageCat Inc. and METEOR Project
+    Consortium") — not the flood hazard layers. The flood map's own page
+    states its license twice, unambiguously: `<li>Map licensed under
+    <strong><a href="...odbl/index.html">ODbL</a></strong></li>` and a
+    dedicated `<h5>License</h5>` section naming the Open Data Commons
+    Open Database License. ODbL is the same license OpenStreetMap itself
+    uses in this project (`OSM_ATTRIBUTION`) — commercial use and
+    redistribution both permitted, with attribution — so both the
+    overlay and the criterion are legitimately usable here.
+  - **Data format**, confirmed live by downloading METEOR's own
+    QGIS-project package (`.../map/flood-npl/download`, 335,192,259
+    bytes, no HTTP Range support — confirmed by sending a `Range:`
+    header and getting back a plain 200 with no `Accept-Ranges`, so no
+    partial-download shortcut exists) and inspecting the extracted
+    `metadata.txt` and one real layer (`layers/FD_1in100.tif`) via
+    rasterio: 30 GeoTIFFs total (3 flood types — Fluvial Defended `FD`,
+    Fluvial Undefended `FU`, Pluvial `P` — × 10 return periods each,
+    5/10/20/50/75/100/200/250/500/1000 years), CRS EPSG:4326, dtype
+    float32, ~90m (3 arcsecond) native resolution, values are modeled
+    water depth in meters (metadata.txt: "the maximum water depth that
+    would be expected if a flood event of the specified return period
+    were occurring"). Two sentinel values found by direct pixel
+    inspection, neither declared as a GDAL NoData tag: -9999.0 (97.2% of
+    `FD_1in100.tif`'s pixels — outside the Fathom model's simulated
+    floodplain domain entirely, e.g. hillslope/ridge terrain, not a
+    data-quality gap) and 999.0 (0.018% — a much rarer masked value).
+    Produced by the Fathom global flood hazard framework (2D shallow
+    water equations over the MERIT global DEM/hydrography) — the WMS/
+    WMTS/TMS/WFS tile endpoints (MapProxy) were confirmed live and
+    unauthenticated, and a real WMTS tile fetch at z=12/x=3018/y=1719
+    was visually confirmed to show genuine flood-extent geometry
+    tracing real river network structure near Kathmandu, not a
+    placeholder or broken image.
+  - **Live reference overlay** (`frontend/src/components/MapView.jsx`):
+    a new `MeteorFloodControl` (mirrors `BasemapControl`'s exact
+    onAdd/onRemove/dispatch shape) with a flood-type select, a
+    return-period select, and a visibility toggle, added top-left beside
+    the basemap control. Reads METEOR's live WMTS tile service directly
+    (`.../mapproxy/npl-flood/wmts/{type}-{years}/webmercator/{z}/{x}/{y}.png`)
+    — pre-styled RGB PNG, fine for a visual reference layer, off by
+    default, 0.7 opacity, drawn above the basemap but below the app's
+    own interactive layers (same bottom-insertion reasoning as the
+    basemap layer). New state: `meteorFloodVisible`/`meteorFloodType`/
+    `meteorFloodReturnPeriod` (`AppStateContext.jsx`), defaulting to
+    `fd`/100 to match the criterion's own default. Deliberately a
+    *separate* thing from the criterion below — this overlay always
+    reads METEOR's live service regardless of what's downloaded locally;
+    the criterion cannot use that service at all (next point).
+  - **New criterion source** `flood_hazard_meteor`
+    (`backend/app/data/meteor_flood.py`, registered in
+    `overlay/sources.py`) — **local-only, with no cloud fallback**,
+    unlike every other local-check-first module in this package: WMS/
+    WMTS only serve pre-styled PNG tiles (colorized RGB, not numeric
+    depth values), so there is no live windowed-read endpoint this
+    module could fall back to. A missing local file therefore raises
+    `DataSourceUnavailableError` with a direct download link, rather
+    than silently degrading. Defaults to `FD`/`1in100`
+    (`config.METEOR_FLOOD_TYPE`/`METEOR_FLOOD_RETURN_PERIOD`, env-
+    overridable, filename convention matches the zip's own
+    `layers/{TYPE}_{RETURN}.tif`) — "defended" reflects expected
+    flooding given Nepal's real flood-defence infrastructure, and
+    1-in-100 is the standard regulatory/planning benchmark return
+    period. Both sentinel nodata values are masked to NaN before
+    reprojection (`_mask_sentinels`); reuses chirps.py's
+    `_whole_pixel_window` fix (a small AOI against a coarse native pixel
+    size can produce a degenerate fractional read window) since
+    METEOR's ~90m pixels are coarser than DEM/WorldCover/SoilGrids.
+    Carries a genuinely new *kind* of caveat versus `twi`/
+    `drainage_density`/`hand`'s AOI-edge reliability warnings: below 10%
+    in-domain pixel coverage, `.warning` explains that most of Nepal is
+    legitimately outside the Fathom model's simulated floodplain domain
+    (not a data gap) — live-verified against the real downloaded
+    `FD_1in100.tif` with two real AOIs: a Kathmandu Valley floodplain
+    bbox came back 15.3% valid (mean depth 1.65m, no warning), and a
+    Shivapuri hillslope bbox north of Kathmandu came back 0.0% valid
+    (warning present). Also flagged in `config/criteria.js`'s
+    `DATA_GAP_DISCLAIMERS` (same transient-toast mechanism as `hand`/
+    `soil_infiltration`), since METEOR/Fathom's own documentation
+    explicitly recommends its output for regional guidance, not detailed
+    local-scale assessment — the same caveat class those two criteria's
+    disclaimers already exist for.
+  - Full citation (`attribution.py`'s `METEOR_FLOOD_ATTRIBUTION`,
+    mirrored in `frontend/src/config/attribution.js`): Sampson, Smith,
+    and both Yamazaki et al. papers metadata.txt cites by author/year/
+    DOI only — full titles confirmed separately by DOI lookup during
+    implementation, not invented, and added to `literature.js`'s
+    `REFERENCES` (`sampson2015`/`smith2015`/`yamazaki2017`/
+    `yamazaki2019`/`meteorproject`) for the criterion's own info-button
+    entry.
+  - 8 new backend tests (`tests/data/test_meteor_flood.py`, mirroring
+    `test_chirps.py`'s structure with the cloud-fallback tests swapped
+    for a hard-failure test): local-hit, missing-file failure, both
+    sentinels masked correctly, processed-cache reuse, the low-coverage
+    warning, type/return-period file selection, and the two
+    `_whole_pixel_window` regression tests. Full suite (370 tests,
+    excluding the `slow`-marked live-network ones) still green in the
+    real backend container after this addition.
+  - **Follow-up, reported by the user**: "toggling it on and off
+    doesn't work" — a real bug in the overlay's own WMTS URL, not the
+    toggle wiring itself (confirmed live in a headless-Chrome CDP
+    session: the layer/source were created correctly and their
+    `visibility` layout property genuinely did flip on click, but every
+    tile request 400'd). Root cause: `meteorFloodTiles`'s layer id was
+    built as `{type}-{years}` (e.g. `fd-100`), but the real WMTS layer
+    identifiers are `{type}-1in{years}` (e.g. `fd-1in100`) — confirmed
+    authoritatively against the live WMTS `GetCapabilities` XML's own
+    `ows:Identifier` entries, and by a direct tile fetch: `fd-100` → 400,
+    `fd-1in100` → 200. Also added the **legend the user asked for**:
+    `MeteorFloodLegend.jsx`, a plain React component (not a MapLibre
+    IControl, since — unlike `MeteorFloodControl` — it has no
+    interactive elements, just state-driven visibility) rendered as a
+    `.map-area` sibling of `MapView` exactly like `DataGapNotice`, shown
+    bottom-right whenever `meteorFloodVisible` is true. Rather than
+    hand-drawing swatches, it embeds METEOR's own real `GetLegendGraphic`
+    (WMS) output live, so it can never drift from whatever styling the
+    overlay tiles actually use — confirmed by direct request during
+    implementation (a real 102×198 PNG: color swatches for 0.1/1/2/3/4/5m
+    depth bins plus "Permanent" water). One more real bug here: the WMS
+    `GetCapabilities`'s own advertised `LegendURL` points at an internal
+    hostname (`https://gem/mapproxy/...`) that isn't publicly
+    resolvable — `meteorLegendUrl()` rebuilds the same query string
+    against the public host (`maps.meteor-project.org`) MapView.jsx's
+    WMTS tiles already use, confirmed live (`imgNaturalWidth: 102`, i.e.
+    the real image, not a broken-image placeholder). Both fixes verified
+    live in a headless-Chrome CDP session: layer-id fix confirmed via
+    `map.getLayoutProperty` flipping correctly; legend confirmed via
+    fresh load → legend absent → click toggle → legend present with the
+    correct title/image → click again → legend gone.
+  - **Second follow-up, reported by the user**: "the meteor flood map
+    doesn't show up." The verification above was real but incomplete —
+    it confirmed the layer/source existed and `visibility` flipped
+    correctly, and separately that the *legend* image loaded, but never
+    actually confirmed the overlay *tiles themselves* rendered on
+    screen, which is what the user meant by "doesn't show up." A wider
+    root cause than the layer-id bug: METEOR's tile server sends **no
+    `Access-Control-Allow-Origin` header at all** (confirmed live via
+    `curl -I`) and MapLibre GL sets `crossOrigin` on its raster tile
+    requests (needed to read pixel bytes into a WebGL texture — unlike
+    the legend's own plain `<img src>`, which has no `crossOrigin` and
+    was genuinely unaffected, which is exactly why it kept looking fine
+    through every earlier check). Every tile request therefore failed as
+    a browser-enforced CORS error — confirmed live via a fresh
+    headless-Chrome CDP session showing repeated "TypeError: Failed to
+    fetch" from inside maplibre-gl's own tile-loading code, for a URL
+    that succeeded via a server-side `curl` moments earlier (the
+    session's first pass had dismissed this exact error as unrelated
+    sandbox noise — it wasn't). Fixed by adding a same-origin proxy
+    route, since browsers don't apply CORS to server-to-server requests:
+    `GET /api/overlay/meteor_flood_tile/{flood_type}/{return_period}/{z}/{x}/{y}.png`
+    (`app/overlay/meteor_tile_proxy.py`, `fetch_meteor_flood_tile`,
+    registered in `router.py`) fetches the real tile from METEOR via
+    `httpx` and returns it from this app's own backend origin, which the
+    frontend already trusts (`app/main.py`'s `CORSMiddleware`).
+    `flood_type`/`return_period` are validated against the real 30-entry
+    catalog before being interpolated into the upstream URL — load-
+    bearing, since this is a public, unauthenticated route (an
+    unvalidated value would make it an open proxy for arbitrary paths
+    under `maps.meteor-project.org`). Upstream failures are split by
+    kind: a 4xx from METEOR (a z/x/y outside its own tile matrix — a
+    routine condition at the edges of any raster layer's zoom/coverage
+    range, not a bug) raises `MeteorTileNotFoundError` → 404; a 5xx or a
+    network failure raises `DataSourceUnavailableError` → 503, so
+    routine boundary tiles never get logged/surfaced as if the whole
+    service were down. `MapView.jsx`'s `meteorFloodTiles()` now points
+    at this proxy instead of `maps.meteor-project.org` directly; the
+    legend's `<img>` is untouched (it never needed a proxy). 51 new
+    backend tests (46 in `tests/overlay/test_meteor_tile_proxy.py` —
+    the allow-list, both error-kind splits, network-failure handling,
+    and a full 3×10 parametrization over the real catalog; 5 more
+    router-level request/response-wiring tests appended to
+    `test_router.py`), full suite (421 tests) green. Verified end-to-end in a fresh headless-Chrome CDP
+    session, jumped to a known Kathmandu-Valley floodplain bbox: real
+    flood-hazard geometry rendered on screen, tracing actual river
+    channels, colored to match the legend exactly, with zero console
+    fetch errors (down from dozens per interaction before the fix).
+- Frontend: new landing-page section, **"How it works"** — inserted
+  between the hero and the team section (`LandingPage.jsx`'s
+  `#how-it-works` `ZoomSection`, same scroll-zoom-reveal mechanism as
+  every other landing section), at explicit request: "how to use, what
+  is ahp, methods to follow, using meteors as a criteria vs validation
+  ... before the teams and credits." A 2×2 card grid
+  (`.method-showcase`, a new class — deliberately a FIXED
+  `repeat(2, ...)`, not `source-showcase`'s own `auto-fit`, which fit 3
+  unevenly-sized cards per row at ordinary desktop widths here and read
+  as unbalanced; `align-items: start` keeps each card sized to its own
+  content instead of stretching to its row's tallest neighbor):
+  - **How to use** — a numbered 5-step list (new
+    `.method-showcase__steps`, CSS-counter badges reusing
+    `--color-primary-soft`/`--color-primary`, the same accent
+    `team-showcase__avatar` already uses) mirroring the in-tool
+    sidebar's own 5 steps exactly: Area of interest, Criteria,
+    Weighting, Compute, Vulnerability report.
+  - **What is AHP?** — reuses `config/literature.js`'s
+    `METHOD_INTRO.body[0]` verbatim (imported, not re-written), the
+    same "one place holds the real text" discipline
+    `config/attribution.js`'s own `SOURCE_ATTRIBUTIONS` comment already
+    documents for its own verbatim-backend-string copy — keeps the
+    landing page and the in-tool `LiteratureModal` from ever drifting
+    apart on the same explanation.
+  - **The method** — the 5 canonical clusters (Topographic,
+    Hydrological, Land Use, Infrastructure, Exposure) and the Parajuli
+    et al. (2023) reference-method citation, both already established
+    facts (`config/criteria.js`'s `CANONICAL_CLUSTERS`,
+    `attribution.py`'s `METHODOLOGY_CITATIONS`), not new claims.
+  - **METEOR: criterion vs. validation** — the distinction from this
+    same session's earlier discussion, written out plainly for a first-
+    time visitor: as a *criterion* (`flood_hazard_meteor`), METEOR's
+    modeled depth is one weighted input blended into the composite AHP
+    score; as *validation* (the live WMTS reference overlay), the same
+    organization's data is shown independently on the map and never
+    blended into the score, specifically so a user can sanity-check
+    their own result against a third party's model.
+
+  Verified live in a fresh headless-Chrome CDP session: scrolled to
+  `#how-it-works`, confirmed the section's own `--active` class and all
+  4 card titles render, confirmed the full section order
+  (hero → how-it-works → team → sources) matches what was asked for,
+  and screenshotted the resulting layout both before and after the
+  grid-balance fix above. Frontend build clean throughout.
 - Not yet implemented: AOI persistence, and shelter identification. The
   GeoTIFF file route is a simple
   direct-read endpoint, not a general static-asset server or CDN — fine

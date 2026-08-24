@@ -58,6 +58,11 @@ export const SOURCE_ATTRIBUTIONS = [
     name: 'CHIRPS satellite precipitation',
     text: 'Funk, C., Peterson, P., Landsfeld, M., Pedreros, D., Verdin, J., Shukla, S., Husak, G., Rowland, J., Harrison, L., Hoell, A., and Michaelsen, J. (2015). The climate hazards infrared precipitation with stations—a new environmental record for monitoring extremes. Scientific Data, 2, 150066. https://doi.org/10.1038/sdata.2015.66. Climate Hazards Center, UC Santa Barbara — public domain.',
   },
+  {
+    id: 'meteor',
+    name: 'METEOR Project flood hazard maps',
+    text: 'Nepal flood hazard maps: METEOR Project Consortium (published 2019-03-06), produced using the Fathom global flood hazard modelling framework (Sampson et al., 2015, https://doi.org/10.1002/2015WR016954; Smith et al., 2015, https://doi.org/10.1002/2014WR015814) on the MERIT global DEM/hydrography (Yamazaki et al., 2017, https://doi.org/10.1002/2017GL072874; Yamazaki et al., 2019, https://doi.org/10.1029/2019WR024873). Licensed under the Open Data Commons Open Database License (ODbL): https://opendatacommons.org/licenses/odbl/index.html. Source: https://maps.meteor-project.org/map/flood-npl/',
+  },
 ]
 
 // Three additional data sources used by this project (AOI/basin/

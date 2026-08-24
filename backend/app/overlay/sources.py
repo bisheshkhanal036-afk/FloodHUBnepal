@@ -77,6 +77,7 @@ from app.data.density_raster import get_building_density
 from app.data.distance_raster import get_distance_to_river, get_distance_to_road
 from app.data.grid import AOIGrid
 from app.data.hydrology import get_drainage_density, get_hand, get_twi
+from app.data.meteor_flood import get_meteor_flood_hazard
 from app.data.ndvi import get_ndvi
 from app.data.population import get_population
 from app.data.rainfall import get_rainfall
@@ -199,6 +200,11 @@ def _precipitation_chirps(aoi: AOI, **_kwargs):
     return r.precipitation_mm, r.grid, r.nodata, r.attribution, None
 
 
+def _flood_hazard_meteor(aoi: AOI, **_kwargs):
+    r = get_meteor_flood_hazard(aoi)
+    return r.depth_m, r.grid, r.nodata, r.attribution, r.warning
+
+
 register_source("dem_elevation", _dem_elevation)
 register_source("dem_slope", _dem_slope)
 register_source("worldcover_land_cover", _worldcover_land_cover)
@@ -213,6 +219,7 @@ register_source("ndvi", _ndvi)
 register_source("rainfall", _rainfall)
 register_source("soil_infiltration", _soil_infiltration)
 register_source("precipitation_chirps", _precipitation_chirps)
+register_source("flood_hazard_meteor", _flood_hazard_meteor)
 
 # Snapshot at built-in-registration time, for display purposes only (e.g.
 # app/overlay/models.py's OverlayCriterionInput.source Field description)

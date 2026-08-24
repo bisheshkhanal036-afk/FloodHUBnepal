@@ -82,6 +82,15 @@ export const LITERATURE = {
       'Placeholder equal-interval-ish breaks (1000 / 1800 / 2600 / 3400 mm/yr), derived from real CHIRPS values sampled across Nepal’s actual climate range rather than guessed: from the dry western hills (Jumla, ~670 mm/yr) to the wet mid-hills (Pokhara, ~3,340 mm/yr), with Kathmandu Valley (~1,490 mm/yr) and the Terai plains (~1,890 mm/yr) both sitting mid-range. Like every other criterion here, these are a starting point pending calibration against an observed flood inventory, not a literature-derived threshold set.',
     refs: ['funk2015', 'parajuli2023', 'kazakis2015', 'tehrany2014'],
   },
+  flood_hazard_meteor: {
+    whatItIs:
+      'Modeled water depth (metres) for a fluvial-defended 1-in-100-year flood event, from the METEOR Project\'s Nepal flood hazard maps — produced with the Fathom global flood hazard modelling framework (Sampson et al., 2015) run over the MERIT global DEM/hydrography (Yamazaki et al., 2017, 2019), at ~90m (3 arcsecond) resolution.',
+    floodRole:
+      'Unlike every other criterion in this model, this is not a proxy correlated with flood risk (elevation, slope, distance-to-river, ...) — it is a third party\'s own modeled flood hazard output, i.e. an independent answer to the same question this project\'s AHP pipeline computes. Included as one input among several rather than a replacement for the others, since METEOR/Fathom\'s own documentation is explicit that its regional-scale, semi-autonomous modelling is not recommended for detailed local-scale assessment. Risk increases directly with modeled depth.',
+    rangeBasis:
+      'Breaks (0.15 / 0.5 / 1.0 / 2.0 m) follow common flood-depth-damage convention (nuisance / moderate / serious / severe / extreme bands), not a Kathmandu-Valley-specific analysis — a placeholder pending calibration, same as every other criterion here. About 97% of the underlying raster is nodata nationwide by design: the model only reports a depth value inside its own simulated floodplain domain, so hillslope/ridge terrain is expected to be empty, not a coverage gap (see config/criteria.js\'s DATA_GAP_DISCLAIMERS, which also covers this criterion).',
+    refs: ['sampson2015', 'smith2015', 'yamazaki2017', 'yamazaki2019', 'meteorproject'],
+  },
   dist_to_river: {
     whatItIs:
       'Euclidean distance (metres) from each cell to the nearest river / stream / canal, from OpenStreetMap waterways.',
@@ -215,4 +224,14 @@ export const REFERENCES = {
     'USDA Natural Resources Conservation Service (2007). National Engineering Handbook, Part 630 Hydrology, Chapter 7: Hydrologic Soil Groups.',
   chapi2017:
     'Chapi, K., Singh, V. P., Shirzadi, A., Shahabi, H., Bui, D. T., Pham, B. T., & Khosravi, K. (2017). A novel hybrid artificial intelligence approach for flood susceptibility assessment. Environmental Modelling & Software, 95, 229–245.',
+  sampson2015:
+    'Sampson, C. C., Smith, A. M., Bates, P. D., Neal, J. C., Alfieri, L., & Freer, J. E. (2015). A high-resolution global flood hazard model. Water Resources Research, 51(9), 7358–7381. https://doi.org/10.1002/2015WR016954',
+  smith2015:
+    'Smith, A., Sampson, C., & Bates, P. (2015). Regional flood frequency analysis at the global scale. Water Resources Research, 51(1), 539–553. https://doi.org/10.1002/2014WR015814',
+  yamazaki2017:
+    'Yamazaki, D., Ikeshima, D., Tawatari, R., Yamaguchi, T., O\'Loughlin, F., Neal, J. C., Sampson, C. C., Kanae, S., & Bates, P. D. (2017). A high accuracy map of global terrain elevations. Geophysical Research Letters, 44(11), 5844–5853. https://doi.org/10.1002/2017GL072874',
+  yamazaki2019:
+    'Yamazaki, D., Ikeshima, D., Sosa, J., Bates, P. D., Allen, G. H., & Pavelsky, T. M. (2019). MERIT Hydro: A high-resolution global hydrography map based on latest topography datasets. Water Resources Research, 55(6), 5053–5073. https://doi.org/10.1029/2019WR024873',
+  meteorproject:
+    'METEOR Project Consortium (2019). Nepal flood hazard maps (Fluvial Defended, Fluvial Undefended, Pluvial; multiple return periods). Licensed under the Open Data Commons Open Database License (ODbL). https://maps.meteor-project.org/map/flood-npl/',
 }

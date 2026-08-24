@@ -303,6 +303,14 @@ input[type='radio'] {
   background: var(--color-panel-alt);
 }
 
+/* meteor-flood-control reuses .basemap-control's layout wholesale (see
+   MapView.jsx's MeteorFloodControl) but has two selects instead of one --
+   this divider between them mirrors the toggle button's own left border
+   so the control doesn't read as two dropdowns mashed together. */
+.meteor-flood-control select + select {
+  border-left: 1px solid var(--color-border);
+}
+
 /* Bottom-left status strip: MapLibre's own scale bar + the coordinate
    readout, restyled to the instrument-panel tokens instead of MapLibre's
    default white chrome, which read as a mismatched patch against a dark
@@ -1544,6 +1552,41 @@ input[type='radio'] {
   color: var(--color-text);
 }
 
+/* METEOR flood hazard reference overlay's legend (MeteorFloodLegend.jsx)
+   -- floats bottom-right, the one map corner NavigationControl (top-
+   right), BasemapControl/MeteorFloodControl (top-left), and
+   ScaleControl/CoordinateReadoutControl (bottom-left) all leave free. */
+.meteor-flood-legend {
+  position: absolute;
+  bottom: var(--space-4);
+  right: var(--space-4);
+  z-index: 10;
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.meteor-flood-legend__title {
+  margin: 0 0 0.3rem;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.meteor-flood-legend__image {
+  display: block;
+  margin: 0 auto;
+  max-width: 110px;
+}
+
+.meteor-flood-legend__attribution {
+  margin: 0.3rem 0 0;
+}
+
 .criteria-panel__select-all {
   display: block;
   margin-bottom: var(--space-2);
@@ -1994,6 +2037,88 @@ input[type='radio'] {
   margin: 0 0 var(--space-8);
 }
 
+/* "How it works": 4 cards mixing a numbered step list with plain prose.
+   A FIXED 2-column grid (not auto-fit, like team-showcase's own fixed
+   repeat(3, ...) -- auto-fit with a 22rem minmax fit 3 columns at
+   ordinary desktop widths here, which read as unbalanced: 3 cards of
+   very different content lengths sharing one stretched row, with the
+   4th wrapping alone underneath). `align-items: start` keeps each card
+   sized to its own content instead of stretching to match its row's
+   tallest neighbor, which a mismatched 2-column pairing (numbered list
+   vs. a short paragraph) would otherwise leave visibly empty at the
+   bottom. */
+.method-showcase {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--space-5);
+  max-width: 60rem;
+  margin: 0 auto;
+}
+
+.method-showcase__card {
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-6);
+  min-width: 0;
+}
+
+.method-showcase__title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-lg);
+  margin: 0 0 var(--space-4);
+}
+
+.method-showcase__text {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  margin: 0;
+}
+
+.method-showcase__steps {
+  list-style: none;
+  counter-reset: method-step;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.method-showcase__steps li {
+  counter-increment: method-step;
+  position: relative;
+  padding-left: 2.4rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.method-showcase__steps li strong {
+  color: var(--color-text);
+}
+
+.method-showcase__steps li::before {
+  content: counter(method-step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: var(--radius-full);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* Team: exactly 3 members, deliberately large and spacious -- one row
    of 3 on a wide screen, meant to genuinely fill most of the viewport
    rather than read as a compact directory listing. */
@@ -2270,6 +2395,11 @@ input[type='radio'] {
   .team-showcase {
     grid-template-columns: 1fr;
     max-width: 24rem;
+  }
+
+  .method-showcase {
+    grid-template-columns: 1fr;
+    max-width: 28rem;
   }
 }
 

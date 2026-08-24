@@ -22,6 +22,7 @@ LOCAL_POPULATION_DIR = DATA_DIR / "raw" / "population"
 LOCAL_NDVI_DIR = DATA_DIR / "raw" / "ndvi"
 LOCAL_SOIL_DIR = DATA_DIR / "raw" / "soil"
 LOCAL_CHIRPS_DIR = DATA_DIR / "raw" / "chirps"
+LOCAL_METEOR_FLOOD_DIR = DATA_DIR / "raw" / "meteor_flood"
 
 # chirps.py's cloud fallback: UC Santa Barbara Climate Hazards Center's own
 # public, unauthenticated hosting (data.chc.ucsb.edu) -- verified live
@@ -65,6 +66,67 @@ CHIRPS_ANNUAL_NORMALS_URL = os.environ.get(
 SOILGRIDS_SAND_VRT_URL = os.environ.get(
     "SOILGRIDS_SAND_VRT_URL", "https://files.isric.org/soilgrids/latest/data/sand/sand_0-5cm_mean.vrt"
 )
+
+# meteor_flood.py: METEOR Project's Nepal flood hazard maps (Fluvial
+# Defended/Undefended, Pluvial x 10 return periods each), produced with
+# the Fathom global flood hazard modelling framework -- see
+# attribution.py's METEOR_FLOOD_ATTRIBUTION for the full citation/license
+# writeup. Verified directly against the flood map's own page HTML
+# during implementation (bypassing a summarizer, at explicit request, to
+# be completely sure): licensed ODbL (Open Data Commons Open Database
+# License) -- NOT the CC BY-NC-SA 4.0 that covers METEOR's separate,
+# differently-licensed Exposure Data (building-count) product, an easy
+# conflation this project's own research first fell into and then
+# corrected against the raw page source. ODbL is the same license
+# OpenStreetMap itself uses (see OSM_ATTRIBUTION) -- commercial use and
+# redistribution both permitted, with attribution.
+#
+# Local-only, unlike DEM/WorldCover/SoilGrids/CHIRPS above: no live
+# windowed-read endpoint exists for METEOR's raw numeric water-depth
+# values -- METEOR's own map only serves pre-styled WMS/WMTS tiles (RGB
+# PNG, verified live during implementation by fetching a real tile and
+# confirming genuine flood-extent geometry over Kathmandu), which are
+# fine for a reference overlay but useless as numeric criterion input.
+# The only way to get real depth values is METEOR's own downloadable
+# QGIS project package
+# (https://maps.meteor-project.org/map/flood-npl/download, 30 GeoTIFFs,
+# ~335MB zipped, confirmed live during implementation) -- a deployment
+# that wants this criterion must download it and place the wanted
+# layer(s) here, named exactly as the zip's own layers/{TYPE}_{RETURN}.tif
+# convention (e.g. "FD_1in100.tif"). meteor_flood.py raises
+# DataSourceUnavailableError rather than silently degrading if the
+# configured file isn't present -- there is no cloud fallback to fall
+# back to.
+#
+# TYPE is one of FD (Fluvial Defended), FU (Fluvial Undefended), P
+# (Pluvial); RETURN is one of 5/10/20/50/75/100/200/250/500/1000
+# ("1inN"-year return period), per METEOR's own WMS layer catalog
+# (verified live via GetCapabilities during implementation). Defaults to
+# FD/1in100: "defended" reflects expected flooding given Nepal's actual
+# flood-defence infrastructure (more realistic for present-day risk than
+# "undefended"), and 1-in-100 is the standard regulatory/planning
+# benchmark return period widely used in flood risk assessment.
+#
+# Verified live against the real downloaded FD_1in100.tif during
+# implementation: CRS EPSG:4326, dtype float32, 10000x6000px covering
+# all of Nepal (80.01-88.34E, 25.48-30.48N), native resolution
+# 0.0008333... deg (~90m, "3 arcsecond" per METEOR's own metadata.txt),
+# values are modeled water depth in meters (metadata.txt: "Depths are
+# shown in meters... the maximum water depth that would be expected if a
+# flood event of the specified return period were occurring"). Two
+# sentinel values found by direct inspection of the real pixel data
+# (neither declared as a GDAL NoData tag -- ds.nodata reads None):
+# -9999.0 (97.2% of pixels -- outside the Fathom model's simulated
+# floodplain domain entirely, e.g. hillslope/ridge terrain the model
+# never attempts to flood, NOT a data-quality gap) and 999.0 (0.018% of
+# pixels -- a much rarer masked value, plausibly a permanent-water/
+# model-boundary flag). Both are treated as nodata here. The remaining
+# ~2.8% of pixels are real modeled depths, range 0.0-5.0m in this file
+# (0.0 is a genuine "in-domain, no flooding at this depth/return period"
+# value, distinct from nodata -- kept as valid data, not remapped).
+METEOR_FLOOD_TYPE = os.environ.get("METEOR_FLOOD_TYPE", "FD")
+METEOR_FLOOD_RETURN_PERIOD = os.environ.get("METEOR_FLOOD_RETURN_PERIOD", "1in100")
+METEOR_FLOOD_NODATA_VALUES = (-9999.0, 999.0)
 
 # NDVI (ndvi.py) is computed on the fly from Sentinel-2 L2A red/NIR bands,
 # discovered through Element 84's public Earth Search STAC API and read

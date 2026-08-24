@@ -1,4 +1,4 @@
-// The 8 criterion sources currently registered in the backend's overlay
+// The 15 criterion sources currently registered in the backend's overlay
 // engine (backend/app/overlay/sources.py's registry), with the metadata
 // this UI needs that the backend doesn't itself hand back: a display
 // label, which of the 5 canonical AHP clusters (backend/app/ahp/
@@ -156,6 +156,34 @@ export const CRITERIA = [
       { min: 1800, max: 2600, risk_class: 3 },
       { min: 2600, max: 3400, risk_class: 4 },
       { min: 3400, max: null, risk_class: 5 },
+    ],
+  },
+  {
+    id: 'flood_hazard_meteor',
+    label: 'Flood Hazard (METEOR)',
+    cluster: 'Hydrological',
+    type: 'continuous',
+    riskDirection: 'ascending', // high value -> high risk
+    unit: 'm',
+    description:
+      'Modeled water depth for a fluvial-defended 1-in-100-year flood event, from the METEOR Project\'s Nepal flood hazard maps (Fathom global flood hazard framework, ~90m resolution). Unlike every other criterion here, this is not a proxy correlated with flood risk — it is a third party\'s own modeled hazard output, included as one independent input among several. Risk increases with modeled depth.',
+    // Unlike every other criterion here, this one is a genuinely different
+    // *kind* of input (see backend/app/data/meteor_flood.py's module
+    // docstring): a third-party model's own depth output, not a proxy this
+    // project derives itself. Breaks below are common flood-depth-damage
+    // convention (e.g. FEMA/EU Floods Directive-style bands: nuisance <
+    // 0.15m, moderate 0.15-0.5m, serious 0.5-1m, severe 1-2m, extreme > 2m)
+    // rather than derived from this project's own Kathmandu Valley
+    // analysis — a placeholder pending calibration, same as every other
+    // criterion here. ~97% of this raster is nodata (outside the model's
+    // simulated floodplain domain, e.g. hillslope terrain) -- not a gap,
+    // see DATA_GAP_DISCLAIMERS below, which also covers this criterion.
+    defaultReclassificationRules: [
+      { min: null, max: 0.15, risk_class: 1 },
+      { min: 0.15, max: 0.5, risk_class: 2 },
+      { min: 0.5, max: 1.0, risk_class: 3 },
+      { min: 1.0, max: 2.0, risk_class: 4 },
+      { min: 2.0, max: null, risk_class: 5 },
     ],
   },
   {
@@ -364,6 +392,8 @@ export const DATA_GAP_DISCLAIMERS = {
   hand: 'HAND (Height Above Nearest Drainage) has known gaps: pysheds can never resolve the outer edge of any AOI, and a single unresolved internal pit poisons every cell upstream of it along its flow path — ~12% nodata measured on a real full-valley AOI. Expect gaps, especially near the AOI edges.',
   soil_infiltration:
     'Soil infiltration (SoilGrids, 250m native resolution) has real small-scale coverage gaps — a small AOI can occasionally come back entirely nodata even in a well-covered region. Prefer a wider AOI if this criterion returns unexpectedly empty.',
+  flood_hazard_meteor:
+    'Flood Hazard (METEOR) is ~97% nodata nationwide by design, not a data gap: the underlying Fathom model only reports a depth value inside its own simulated floodplain domain, so an AOI that falls mostly on hillslope or ridge terrain will come back almost entirely empty. This is also a third-party modeled hazard estimate at ~90m resolution — METEOR\'s own documentation recommends it for regional guidance, not detailed local-scale assessment.',
 }
 export const DATA_GAP_CRITERIA = Object.keys(DATA_GAP_DISCLAIMERS)
 

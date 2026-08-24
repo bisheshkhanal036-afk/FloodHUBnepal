@@ -8,7 +8,7 @@
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useEffect, useRef } from 'react'
-import { fetchRiskSurfaceBytes, getBasinAOI, getDistrictAOI } from '../api/client'
+import { API_BASE_URL, fetchRiskSurfaceBytes, getBasinAOI, getDistrictAOI } from '../api/client'
 import { riskValueToRgb, SUPPORT_STATUS_COLORS, DISTRICT_FILL_COLOR } from '../lib/colorRamp'
 import { AREA_CAP_KM2, approxBboxAreaKm2, bboxToPolygon, cornersToBbox } from '../lib/geo'
 import { gridCornersToWgs84 } from '../lib/proj'
@@ -92,6 +92,72 @@ function basemapMapStyle(styleKey) {
   }
 }
 
+// METEOR Project's live Nepal flood hazard map, as an optional reference
+// overlay -- NOT the same thing as the flood_hazard_meteor *criterion*
+// (backend/app/overlay/sources.py), which reads the same organization's
+// downloadable numeric GeoTIFFs instead. This overlay talks directly to
+// METEOR's own public WMTS tile service (pre-styled RGB PNG, verified
+// live during implementation: a real tile fetch at z=12/x=3018/y=1719
+// returned a genuine flood-extent image tracing real river geometry
+// near Kathmandu) -- fine for a visual reference layer, but not usable
+// as numeric criterion input, which is exactly why the criterion source
+// reads METEOR's separate downloadable GeoTIFF package instead (see
+// backend/app/data/meteor_flood.py's module docstring).
+//
+// License verified directly against the flood map's own page HTML
+// during implementation (not a summarized secondhand read, at explicit
+// request to be completely sure): ODbL (Open Data Commons Open Database
+// License) -- the same license OpenStreetMap itself uses, NOT the
+// CC BY-NC-SA 4.0 that covers METEOR's separate Exposure Data product
+// (an easy conflation this project's own first-pass research initially
+// fell into, then corrected against the raw page source).
+//
+// Layer id convention verified live via WMTS GetCapabilities: 3 flood
+// types x 10 return periods = 30 layers, named "{type}-{years}" (e.g.
+// "fd-100"). Defaults (fd/100) match backend/app/data/config.py's own
+// METEOR_FLOOD_TYPE/METEOR_FLOOD_RETURN_PERIOD defaults for the
+// criterion, though the two are independently selectable -- this
+// overlay reads METEOR's live tile service, not the local file the
+// criterion needs downloaded.
+const METEOR_FLOOD_TYPES = [
+  { value: 'fd', label: 'Fluvial (Defended)' },
+  { value: 'fu', label: 'Fluvial (Undefended)' },
+  { value: 'p', label: 'Pluvial' },
+]
+const METEOR_FLOOD_RETURN_PERIODS = [5, 10, 20, 50, 75, 100, 200, 250, 500, 1000]
+const METEOR_FLOOD_ATTRIBUTION =
+  'METEOR Project flood hazard maps (Fathom global flood hazard framework) — Open Data Commons Open Database License (ODbL)'
+
+function meteorFloodTiles(floodType, returnPeriod) {
+  // Routed through this app's OWN backend (app/overlay/
+  // meteor_tile_proxy.py), not fetched directly from
+  // maps.meteor-project.org -- a second real bug caught live during
+  // implementation, after fixing the layer-id bug below still didn't
+  // make tiles appear: METEOR's tile server sends no
+  // Access-Control-Allow-Origin header at all (confirmed live via `curl
+  // -I`), and MapLibre GL sets `crossOrigin` on its raster tile
+  // requests (it needs the actual pixel bytes for a WebGL texture,
+  // unlike this file's own MeteorFloodLegend image, which is a plain
+  // `<img src>` with no crossOrigin and was never affected) -- so every
+  // tile request failed as a browser-enforced CORS error, confirmed via
+  // a headless-Chrome CDP session showing "TypeError: Failed to fetch"
+  // from inside maplibre-gl's own tile-loading code even though the
+  // exact same URL succeeded via a server-side curl. Browsers don't
+  // enforce CORS on server-to-server requests, so the backend fetches
+  // the real tile itself and hands the bytes back from an origin this
+  // frontend already trusts (see meteor_tile_proxy.py's own docstring).
+  //
+  // The proxy's own path still encodes "{type}-1in{years}" (e.g.
+  // "fd-1in100"), the layer-id convention confirmed against the live
+  // WMTS GetCapabilities document's `ows:Identifier` entries -- the
+  // first bug caught here, separate from the CORS one above ("fd-100"
+  // 400s upstream, "fd-1in100" 200s).
+  return [`${API_BASE_URL}/api/overlay/meteor_flood_tile/${floodType}/${returnPeriod}/{z}/{x}/{y}.png`]
+}
+
+const METEOR_FLOOD_SOURCE = 'meteor-flood'
+const METEOR_FLOOD_LAYER = 'meteor-flood'
+
 // A plain MapLibre IControl (framework-agnostic DOM, per MapLibre's own
 // control API -- there's no React-component control type), not a React
 // component: it's added once in the map-init effect below, same as the
@@ -136,6 +202,77 @@ class BasemapControl {
     })
 
     container.appendChild(select)
+    container.appendChild(toggleButton)
+    this._container = container
+    return container
+  }
+
+  onRemove() {
+    this._container?.parentNode?.removeChild(this._container)
+  }
+}
+
+// Same shape as BasemapControl above (two selects + a toggle button,
+// plain DOM, one-way dispatch), for the METEOR flood hazard reference
+// overlay -- see this file's METEOR_FLOOD_TYPES/meteorFloodTiles comment
+// for what the overlay itself is and why it's a separate thing from the
+// flood_hazard_meteor criterion.
+class MeteorFloodControl {
+  constructor(dispatch, getState) {
+    this._dispatch = dispatch
+    this._getState = getState
+  }
+
+  onAdd() {
+    const container = document.createElement('div')
+    container.className = 'maplibregl-ctrl maplibregl-ctrl-group basemap-control meteor-flood-control'
+
+    const typeSelect = document.createElement('select')
+    typeSelect.className = 'basemap-control__select'
+    typeSelect.title = 'METEOR flood hazard: flood type'
+    for (const { value, label } of METEOR_FLOOD_TYPES) {
+      const option = document.createElement('option')
+      option.value = value
+      option.textContent = label
+      typeSelect.appendChild(option)
+    }
+    typeSelect.value = this._getState().meteorFloodType
+    typeSelect.addEventListener('change', () => {
+      this._dispatch({ type: 'SET_METEOR_FLOOD_TYPE', floodType: typeSelect.value })
+    })
+
+    const periodSelect = document.createElement('select')
+    periodSelect.className = 'basemap-control__select'
+    periodSelect.title = 'METEOR flood hazard: return period'
+    for (const years of METEOR_FLOOD_RETURN_PERIODS) {
+      const option = document.createElement('option')
+      option.value = String(years)
+      option.textContent = `1-in-${years}y`
+      periodSelect.appendChild(option)
+    }
+    periodSelect.value = String(this._getState().meteorFloodReturnPeriod)
+    periodSelect.addEventListener('change', () => {
+      this._dispatch({ type: 'SET_METEOR_FLOOD_RETURN_PERIOD', returnPeriod: Number(periodSelect.value) })
+    })
+
+    const toggleButton = document.createElement('button')
+    toggleButton.type = 'button'
+    toggleButton.className = 'basemap-control__toggle'
+    toggleButton.title = 'Show/hide METEOR flood hazard reference overlay'
+    const syncToggleLabel = () => {
+      toggleButton.textContent = this._getState().meteorFloodVisible ? '🌊' : '〰️'
+    }
+    syncToggleLabel()
+    toggleButton.addEventListener('click', () => {
+      this._dispatch({ type: 'TOGGLE_METEOR_FLOOD_VISIBLE' })
+      // Same optimistic-flip reasoning as BasemapControl's own toggle
+      // button above -- no state to read synchronously right after
+      // dispatch.
+      toggleButton.textContent = toggleButton.textContent === '🌊' ? '〰️' : '🌊'
+    })
+
+    container.appendChild(typeSelect)
+    container.appendChild(periodSelect)
     container.appendChild(toggleButton)
     this._container = container
     return container
@@ -206,6 +343,7 @@ export default function MapView() {
     mapRef.current = map
     map.addControl(new maplibregl.NavigationControl(), 'top-right')
     map.addControl(new BasemapControl(dispatch, () => stateRef.current), 'top-left')
+    map.addControl(new MeteorFloodControl(dispatch, () => stateRef.current), 'top-left')
     // Cartographic-instrument chrome Mapbox Studio/QGIS treat as table
     // stakes and this app previously had none of: a real scale bar
     // (MapLibre's own control, zero new deps) and a live coordinate/zoom
@@ -327,6 +465,44 @@ export default function MapView() {
     if (map.isStyleLoaded() && map.getLayer(BASEMAP_LAYER)) apply()
     else map.once('load', apply)
   }, [state.basemapVisible])
+
+  // --- METEOR flood hazard reference overlay: source/layer swap on
+  // type/return-period change, same "remove + re-add" reasoning as the
+  // basemap style-switch effect above (a plain setTiles() would leave a
+  // stale attribution string pinned to whichever layer loaded first). ---
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const apply = () => {
+      if (map.getLayer(METEOR_FLOOD_LAYER)) map.removeLayer(METEOR_FLOOD_LAYER)
+      if (map.getSource(METEOR_FLOOD_SOURCE)) map.removeSource(METEOR_FLOOD_SOURCE)
+      map.addSource(METEOR_FLOOD_SOURCE, {
+        type: 'raster',
+        tiles: meteorFloodTiles(state.meteorFloodType, state.meteorFloodReturnPeriod),
+        tileSize: 256,
+        attribution: METEOR_FLOOD_ATTRIBUTION,
+      })
+      // Drawn above the basemap but below AOI/basins/risk-surface layers
+      // added later, mirroring the basemap layer's own bottom-insertion
+      // reasoning -- a reference overlay should sit under the app's own
+      // interactive layers, not on top of them.
+      const firstLayerId = map.getStyle().layers.find((l) => l.id !== BASEMAP_LAYER)?.id
+      map.addLayer({ id: METEOR_FLOOD_LAYER, type: 'raster', source: METEOR_FLOOD_SOURCE, paint: { 'raster-opacity': 0.7 } }, firstLayerId)
+      map.setLayoutProperty(METEOR_FLOOD_LAYER, 'visibility', state.meteorFloodVisible ? 'visible' : 'none')
+    }
+    if (map.isStyleLoaded()) apply()
+    else map.once('load', apply)
+  }, [state.meteorFloodType, state.meteorFloodReturnPeriod])
+
+  // --- METEOR flood hazard overlay visibility toggle -- cheap layout-
+  // property flip, same shape as the basemap visibility effect above. ---
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const apply = () => map.setLayoutProperty(METEOR_FLOOD_LAYER, 'visibility', state.meteorFloodVisible ? 'visible' : 'none')
+    if (map.isStyleLoaded() && map.getLayer(METEOR_FLOOD_LAYER)) apply()
+    else map.once('load', apply)
+  }, [state.meteorFloodVisible])
 
   // --- draw mode: disable/enable normal map dragging so drag = draw, not pan ---
   useEffect(() => {
