@@ -1663,6 +1663,153 @@ them.
   the OCHA/HDX COD-AB source (CC BY-IGO, commercial-use-safe) and its
   dual role (basin support-status refinement *and* district-based AOI
   selection) instead of the removed HERMES source.
+- Frontend: **risk-surface visibility toggle + selectable color scheme**,
+  scoped deliberately to the map raster and its own legend only — a
+  design decision made explicit up front, not discovered mid-build:
+  hazard-class swatches elsewhere (`ReportPanel.jsx`'s zonal table,
+  `CriterionSnapshot.jsx`'s per-criterion thumbnails) keep using
+  `riskValueToRgb`'s unchanged default scheme, since those are a
+  discrete 1-5 class display, a different visual job than a continuous
+  field, and changing them too was explicitly ruled out.
+  - `lib/colorRamp.js`'s single hardcoded `RISK_STOPS` became a
+    `RISK_SCHEMES` map of three named ramps, each keyed by an id: `risk`
+    (the original green→yellow→red, unchanged), `viridis` (colorblind-
+    safe, perceptually-uniform, monotonic lightness — the standard
+    choice for continuous scientific/geospatial data), and `diverging`
+    (ColorBrewer RdBu — blue↔red poles with a near-white neutral
+    midpoint, the standard alternative convention for risk/hazard maps).
+    `riskValueToRgb`/`riskValueToCssColor` both gained an optional
+    `scheme` parameter defaulting to `risk`, so every existing caller
+    that doesn't pass one is unaffected; `RISK_LEGEND_STOPS` (a static
+    export) became `riskLegendStops(scheme)` (a function), its one
+    consumer (`ResultPanel.jsx`) updated to call it with the live
+    `state.riskColorScheme`. Candidate `viridis`/`diverging` stops were
+    checked against the dataviz skill's `validate_palette.js` — its
+    categorical-only checks (lightness band, chroma floor) don't apply
+    to a continuous ramp per the tool's own footer note, but the checks
+    that do (CVD separation, normal-vision floor on adjacent stops) both
+    passed for both candidates.
+  - `AppStateContext.jsx` gained `riskSurfaceVisible` (default `true`)
+    and `riskColorScheme` (default `'risk'`) — both live outside
+    `overlay`/`report` and are deliberately **not** reset on a new
+    compute (`OVERLAY_LOADING`), unlike those two: a user who picks the
+    colorblind-safe scheme almost certainly wants it to stick across
+    their next AOI/compute too, not silently revert.
+  - `MapView.jsx`'s risk-surface effect now re-runs on a color-scheme
+    change too, not just a new result — but caches the GeoTIFF's raw
+    bytes (keyed by `data_url`) in a ref so switching schemes re-decodes
+    and re-colors the already-downloaded raster rather than re-fetching
+    it. Visibility is a separate, cheap effect that just flips the
+    already-rendered MapLibre layer's `visibility` layout property (the
+    same mechanism the basin/district layer-visibility fix above uses),
+    so toggling it never touches the network or re-decodes anything.
+  - `ResultPanel.jsx` gained a "Show risk surface on map" checkbox and a
+    color-scheme `<select>`, both above the legend, which itself now
+    reads `riskLegendStops(state.riskColorScheme)` — the map raster and
+    its own legend can never show two different schemes at once, since
+    both read the same state.
+  - Verified via a clean `vite build` and a headless-browser reload with
+    zero console errors; not yet exercised through an actual interactive
+    click-through (same tooling gap noted in the basin/district entry
+    above).
+- Frontend: **removed "Kathmandu Valley" branding**, at the user's
+  explicit request now that basin/district selection covers all of
+  Nepal, not just the original pilot area. Changed: the landing page's
+  hero description and footer tagline (`LandingPage.jsx`), the sidebar
+  header's brand subtitle (`Sidebar.jsx`, "Kathmandu Valley" → "Nepal"),
+  and `index.html`'s `<meta name="description">` (also user-visible, in
+  browser tab previews/search results/social shares — caught by a
+  headless-browser DOM dump, not just a source-code grep). Deliberately
+  **left unchanged**: the handful of mentions describing where specific
+  *literature-sourced default values* actually came from
+  (`LiteratureModal.jsx`, `ResultPanel.jsx`'s placeholder-breaks warning,
+  `config/literature.js`'s Das (2019) AHP citation) — those are factual
+  calibration provenance, not tool-scope branding, and matter *more* now
+  that the tool spans all of Nepal: a user applying Kathmandu-Valley-
+  calibrated elevation breaks to, say, the Terai plains should know
+  those thresholds weren't derived for that terrain. Verified via a
+  headless-browser DOM dump of the rendered landing page (not just a
+  source grep, since the meta-description-tag case wouldn't have been
+  caught by grepping only `.jsx`/`.js` files) confirming zero remaining
+  "Kathmandu Valley" text outside the deliberately-kept calibration
+  caveats.
+- Frontend: **the vulnerability report moved out of the sidebar into a
+  toggleable infographic overlay covering the map**, at the user's
+  explicit request ("the sidebar is too crowded"), plus a data-gap
+  disclaimer toast and a "Select all" criteria button. Three separate
+  pieces landed together:
+  - **Report overlay.** `ReportPanel.jsx` (the sidebar's own step 5)
+    shrank to just the Generate/Regenerate button and a Show/Hide
+    toggle; every heavy piece it used to render directly — headline stat
+    tiles, the zonal table, the weighting breakdown, per-criterion
+    snapshots, downloads — moved into a new `ReportOverlay.jsx`,
+    absolutely positioned over `.map-area` (a new wrapper introduced
+    around `MapView` specifically for this, since `MapView`'s own root
+    div is fully MapLibre-managed and can't host React children
+    directly — see `App.jsx`/`index.css`). New state:
+    `reportOverlayVisible` (auto-`true` on `REPORT_LOADED` so a freshly
+    generated report is immediately visible; reset `false` on
+    `OVERLAY_LOADING`, the same trigger `report` itself already reset
+    on) and a `TOGGLE_REPORT_OVERLAY` action. The "great infographic"
+    part: a new population-by-hazard-class horizontal bar chart
+    (`HazardPopulationChart`, plain HTML/CSS, no charting library) sits
+    above the existing zonal table — one measure (population, the most
+    vulnerability-relevant of the three the table already carries), not
+    a second/third bar series on the same axis, per the "never a
+    dual-axis chart" rule; each bar is directly labeled (class name +
+    value) using the same swatch color the zonal table's own rows
+    already use, so no separate legend box is needed. Candidate design
+    checked against the dataviz skill's mark-spec guidance (thin bars,
+    4px rounded data-end, 2px-ish row gaps).
+  - **Data-gap disclaimer toast.** New `DataGapNotice.jsx`, floating
+    over the map (not added to the sidebar, for the same
+    crowding-avoidance reason as the report split), shown the moment
+    `hand` or `soil_infiltration` is checked — both have a real,
+    previously-documented coverage-gap issue (§3.6: HAND's edge/internal-
+    pit nodata, measured ~12% on a real AOI; SoilGrids' small-AOI
+    coverage gaps). New `config/criteria.js` exports:
+    `DATA_GAP_DISCLAIMERS` (the exact message per criterion, citing the
+    measured figures, not generic boilerplate) and `DATA_GAP_CRITERIA`
+    (its keys). New state: `dataGapNotice` (`null`, or an array of
+    criterion ids to show messages for at once), set by `TOGGLE_CRITERION`
+    on a check-on transition for either id, or unconditionally to both
+    ids by `SELECT_ALL_CRITERIA` (select-all always includes both, so
+    always reminding of both together is simpler and more honest than
+    only showing whichever wasn't already checked); cleared by a new
+    `DISMISS_DATA_GAP_NOTICE` action, dispatched by the toast itself
+    either after a 9s auto-dismiss timer or a manual close click.
+  - **"Select all" criteria button.** New `SELECT_ALL_CRITERIA` reducer
+    case in `CriteriaPanel.jsx`, mirroring `TOGGLE_CRITERION`'s own
+    resync logic (AHP within-cluster matrices, manual weights,
+    classification entries) but for every criterion at once in a single
+    state transition, rather than looping individual dispatches.
+  - A real bug was caught and fixed during this same pass, live: moving
+    `MapView` under a new `.map-area` wrapper required re-pointing
+    `.app-layout`'s flex-sizing from `.map-view` (now absolutely
+    positioned, filling its wrapper) to `.map-area` itself, including the
+    720px mobile breakpoint's own rule — missed on the first pass and
+    caught by checking the built CSS, not assumed correct.
+  - Verified live end to end via real scripted browser interaction (a
+    CDP driver script, `Input.dispatchMouseEvent` to genuinely draw an
+    AOI by dragging on the map canvas, real `.click()`s through the
+    actual React event system, not just a static DOM dump) — filling a
+    real gap the previous two entries had flagged ("no interactive
+    click-through was run"). Confirmed: drawing an AOI, checking
+    Elevation+Slope, computing (real DEM fetch, ~1.5s for a small AOI),
+    generating a report (~7.5s including building classification),
+    the overlay auto-appearing with real figures (39,087 buildings
+    classified, a real 5-row population chart), the close button hiding
+    it, and the sidebar's "Show report" button reopening the same
+    result without regenerating. Select-all and the data-gap toast were
+    also verified this way — worth noting for future test-authoring in
+    this project: a `.click()` dispatched via a fresh CDP `Runtime.evaluate`
+    connection can appear to have no effect if checked in the same
+    script (there's a real async gap before React's state update
+    reaches the DOM across a fresh CDP connection) — checking again via
+    a *separate* subsequent call after a short delay is what actually
+    confirmed correctness; this cost real debugging time before being
+    understood as a harness artifact, not an app bug, and is recorded
+    here so a future session doesn't re-diagnose it from scratch.
 - Not yet implemented: AOI persistence, and shelter identification. The
   GeoTIFF file route is a simple
   direct-read endpoint, not a general static-asset server or CDN — fine

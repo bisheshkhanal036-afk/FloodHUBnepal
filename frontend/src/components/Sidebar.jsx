@@ -82,7 +82,7 @@ export default function Sidebar({ onBackToLanding }) {
           <Logo size={32} />
           <span>
             <span className="sidebar__brand-title">FloodHUB</span>
-            <span className="sidebar__brand-sub">Kathmandu Valley</span>
+            <span className="sidebar__brand-sub">Nepal</span>
           </span>
         </button>
         <div className="sidebar__header-actions">

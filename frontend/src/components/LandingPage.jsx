@@ -30,10 +30,10 @@ export default function LandingPage({ onLaunch }) {
           <p className="hero__eyebrow">Multi-criteria flood risk mapping</p>
           <h1 className="hero__title">FloodHUB</h1>
           <p className="hero__description">
-            An AHP-based multi-criteria flood risk mapping platform. Draw an area or select a hydrological basin,
-            weigh the physical and exposure factors that matter most through Saaty&rsquo;s Analytic Hierarchy Process,
-            and generate a transparent, per-pixel risk surface built from elevation, slope, drainage, land cover, and
-            built-environment data — currently piloted for the Kathmandu Valley.
+            An AHP-based multi-criteria flood risk mapping platform for Nepal. Draw an area, select a hydrological
+            basin, or select a district, weigh the physical and exposure factors that matter most through
+            Saaty&rsquo;s Analytic Hierarchy Process, and generate a transparent, per-pixel risk surface built from
+            elevation, slope, drainage, land cover, and built-environment data.
           </p>
           <div className="hero__actions">
             <button type="button" className="button button--primary button--lg" onClick={onLaunch}>
@@ -58,7 +58,7 @@ export default function LandingPage({ onLaunch }) {
       </section>
 
       <footer className="landing__footer">
-        <span>FloodHUB — Kathmandu Valley pilot</span>
+        <span>FloodHUB — Nepal</span>
         <button type="button" className="link-button" onClick={onLaunch}>
           Launch tool →
         </button>

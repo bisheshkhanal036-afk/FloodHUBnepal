@@ -18,6 +18,8 @@ import { AppStateProvider } from './state/AppStateContext'
 import LandingPage from './components/LandingPage'
 import MapView from './components/MapView'
 import Sidebar from './components/Sidebar'
+import ReportOverlay from './components/ReportOverlay'
+import DataGapNotice from './components/DataGapNotice'
 
 function App() {
   const [view, setView] = useState('landing')
@@ -29,7 +31,15 @@ function App() {
       ) : (
         <div className="app-layout">
           <Sidebar onBackToLanding={() => setView('landing')} />
-          <MapView />
+          {/* .map-area wraps MapView plus everything that floats on top of
+              it -- MapView's own root div is fully MapLibre-managed, so
+              ReportOverlay/DataGapNotice are absolutely-positioned
+              siblings here instead, one level up (see index.css). */}
+          <div className="map-area">
+            <MapView />
+            <ReportOverlay />
+            <DataGapNotice />
+          </div>
         </div>
       )}
     </AppStateProvider>

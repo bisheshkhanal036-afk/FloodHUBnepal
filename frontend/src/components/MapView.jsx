@@ -186,6 +186,12 @@ export default function MapView() {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
   const stateRef = useRef(null)
+  // Caches the risk-surface GeoTIFF's raw bytes, keyed by data_url --
+  // switching color schemes (state.riskColorScheme) needs to re-decode
+  // with a different colorFn, but not re-fetch bytes that haven't
+  // changed; only a genuinely new compute result (a new data_url)
+  // re-fetches.
+  const riskBytesRef = useRef({ url: null, bytes: null })
   const { state, dispatch } = useAppState()
   stateRef.current = state
 
@@ -550,6 +556,12 @@ export default function MapView() {
   }, [state.aoi])
 
   // --- risk surface raster overlay ---
+  // Re-runs on a new compute result (state.overlay.result) or a changed
+  // color scheme (state.riskColorScheme) -- either needs a fresh decode
+  // with the current colorFn. Bytes are only re-fetched when data_url
+  // itself changes (riskBytesRef), so switching schemes on an
+  // already-loaded result just re-colors the same already-downloaded
+  // GeoTIFF, not a network round trip.
   useEffect(() => {
     const map = mapRef.current
     const result = state.overlay.result
@@ -558,13 +570,17 @@ export default function MapView() {
     let cancelled = false
 
     async function render() {
-      const bytes = await fetchRiskSurfaceBytes(result.data_url)
-      if (cancelled) return
+      let { bytes } = riskBytesRef.current
+      if (riskBytesRef.current.url !== result.data_url) {
+        bytes = await fetchRiskSurfaceBytes(result.data_url)
+        if (cancelled) return
+        riskBytesRef.current = { url: result.data_url, bytes }
+      }
       // No maxSize -- full-resolution decode, unlike CriterionSnapshot's
       // thumbnails: every pixel needs to be geographically accurate here.
       const { dataUrl } = await decodeGeoTiffToDataUrl(bytes, {
         nodata: result.nodata_value,
-        colorFn: riskValueToRgb,
+        colorFn: (v) => riskValueToRgb(v, state.riskColorScheme),
       })
       if (cancelled) return
       const coordinates = gridCornersToWgs84(result.grid)
@@ -573,7 +589,13 @@ export default function MapView() {
         if (map.getLayer('risk-surface-layer')) map.removeLayer('risk-surface-layer')
         if (map.getSource(RISK_SURFACE_SOURCE)) map.removeSource(RISK_SURFACE_SOURCE)
         map.addSource(RISK_SURFACE_SOURCE, { type: 'image', url: dataUrl, coordinates })
-        map.addLayer({ id: 'risk-surface-layer', type: 'raster', source: RISK_SURFACE_SOURCE, paint: { 'raster-opacity': 0.75 } })
+        map.addLayer({
+          id: 'risk-surface-layer',
+          type: 'raster',
+          source: RISK_SURFACE_SOURCE,
+          layout: { visibility: stateRef.current.riskSurfaceVisible ? 'visible' : 'none' },
+          paint: { 'raster-opacity': 0.75 },
+        })
       }
       if (map.isStyleLoaded()) apply()
       else map.once('load', apply)
@@ -583,7 +605,15 @@ export default function MapView() {
     return () => {
       cancelled = true
     }
-  }, [state.overlay.result])
+  }, [state.overlay.result, state.riskColorScheme])
+
+  // --- risk surface visibility toggle --- (doesn't need a re-decode,
+  // just flips the already-rendered layer's MapLibre visibility)
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !map.getLayer('risk-surface-layer')) return
+    map.setLayoutProperty('risk-surface-layer', 'visibility', state.riskSurfaceVisible ? 'visible' : 'none')
+  }, [state.riskSurfaceVisible])
 
   return <div ref={containerRef} className="map-view" />
 }

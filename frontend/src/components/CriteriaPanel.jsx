@@ -59,6 +59,13 @@ export default function CriteriaPanel() {
 
   return (
     <div className="criteria-panel">
+      <button
+        type="button"
+        className="link-button criteria-panel__select-all"
+        onClick={() => dispatch({ type: 'SELECT_ALL_CRITERIA' })}
+      >
+        Select all
+      </button>
       {CANONICAL_CLUSTERS.map((cluster) => (
         <div className="criteria-panel__cluster" key={cluster}>
           <h4>{cluster}</h4>

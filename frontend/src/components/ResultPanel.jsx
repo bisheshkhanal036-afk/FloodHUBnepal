@@ -8,14 +8,16 @@
 // live (possibly since-changed) criteria/weighting panels.
 import { absoluteDataUrl } from '../api/client'
 import { CRITERIA_BY_ID } from '../config/criteria'
-import { RISK_LEGEND_STOPS } from '../lib/colorRamp'
+import { RISK_COLOR_SCHEMES, RISK_COLOR_SCHEME_LABELS, riskLegendStops } from '../lib/colorRamp'
 import { useAppState } from '../state/AppStateContext'
 import ReclassificationTable from './ReclassificationTable'
 
 export default function ResultPanel() {
-  const { state } = useAppState()
+  const { state, dispatch } = useAppState()
   const { result, criteriaUsed, weightsUsed } = state.overlay
   if (!result) return null
+
+  const legendStops = riskLegendStops(state.riskColorScheme)
 
   return (
     <div className="result-panel">
@@ -27,15 +29,39 @@ export default function ResultPanel() {
         data. Treat the resulting risk surface as illustrative of the pipeline, not as a validated assessment.
       </p>
 
+      <label className="result-panel__visibility-toggle">
+        <input
+          type="checkbox"
+          checked={state.riskSurfaceVisible}
+          onChange={() => dispatch({ type: 'TOGGLE_RISK_SURFACE_VISIBLE' })}
+        />
+        Show risk surface on map
+      </label>
+
+      <div className="result-panel__scheme-picker">
+        <label htmlFor="risk-color-scheme">Color scheme</label>
+        <select
+          id="risk-color-scheme"
+          value={state.riskColorScheme}
+          onChange={(e) => dispatch({ type: 'SET_RISK_COLOR_SCHEME', scheme: e.target.value })}
+        >
+          {RISK_COLOR_SCHEMES.map((scheme) => (
+            <option key={scheme} value={scheme}>
+              {RISK_COLOR_SCHEME_LABELS[scheme]}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <div className="legend legend--ramp">
         <div
           className="legend__ramp-bar"
           style={{
-            background: `linear-gradient(to right, ${RISK_LEGEND_STOPS.map((s) => `${s.color} ${s.value * 100}%`).join(', ')})`,
+            background: `linear-gradient(to right, ${legendStops.map((s) => `${s.color} ${s.value * 100}%`).join(', ')})`,
           }}
         />
         <div className="legend__ramp-ticks">
-          {RISK_LEGEND_STOPS.map((stop) => (
+          {legendStops.map((stop) => (
             <span key={stop.value} className="legend__ramp-tick" style={{ left: `${stop.value * 100}%` }}>
               {stop.value.toFixed(2)}
             </span>

@@ -314,6 +314,18 @@ export const WORLDCOVER_LABELS = {
 // changes) can never disagree about which criteria it applies to.
 export const STREAM_THRESHOLD_SOURCE_IDS = ['drainage_density', 'hand']
 
+// Criteria with a real, documented coverage-gap issue (SPEC.md §3.6) --
+// checking either one shows a transient disclaimer (DataGapNotice.jsx),
+// so the gap is surfaced right when it becomes relevant rather than
+// buried in a modal nobody opens. Not a guess: both percentages below
+// are measured, not estimated.
+export const DATA_GAP_DISCLAIMERS = {
+  hand: 'HAND (Height Above Nearest Drainage) has known gaps: pysheds can never resolve the outer edge of any AOI, and a single unresolved internal pit poisons every cell upstream of it along its flow path — ~12% nodata measured on a real full-valley AOI. Expect gaps, especially near the AOI edges.',
+  soil_infiltration:
+    'Soil infiltration (SoilGrids, 250m native resolution) has real small-scale coverage gaps — a small AOI can occasionally come back entirely nodata even in a well-covered region. Prefer a wider AOI if this criterion returns unexpectedly empty.',
+}
+export const DATA_GAP_CRITERIA = Object.keys(DATA_GAP_DISCLAIMERS)
+
 export const CRITERIA_BY_ID = Object.fromEntries(CRITERIA.map((c) => [c.id, c]))
 
 export function criteriaByCluster() {

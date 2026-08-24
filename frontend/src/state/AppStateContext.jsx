@@ -10,11 +10,13 @@ import {
   CANONICAL_CLUSTERS,
   CRITERIA,
   CRITERIA_BY_ID,
+  DATA_GAP_CRITERIA,
   STREAM_THRESHOLD_SOURCE_IDS,
   criteriaByCluster,
 } from '../config/criteria'
 import { identityMatrix, resizeMatrix } from '../lib/ahpMatrix'
 import { defaultClassificationEntry } from '../lib/classification'
+import { DEFAULT_RISK_COLOR_SCHEME } from '../lib/colorRamp'
 
 const AppStateContext = createContext(null)
 
@@ -108,6 +110,15 @@ function initialState() {
 
     overlay: { status: 'idle', result: null, error: null, criteriaUsed: null, weightsUsed: null, progressLog: [] },
 
+    // Independent of `overlay` itself -- purely how the already-computed
+    // risk surface is displayed, not part of the compute result. Reused
+    // across every subsequent compute (not reset on OVERLAY_LOADING like
+    // `overlay`/`report` are), since a user picking, say, a colorblind-
+    // safe scheme almost certainly wants it to stay picked for their next
+    // AOI/compute too, not silently revert.
+    riskSurfaceVisible: true,
+    riskColorScheme: DEFAULT_RISK_COLOR_SCHEME, // one of RISK_COLOR_SCHEMES (lib/colorRamp.js)
+
     // The vulnerability-classification/computation report (POST /api/
     // overlay/report) -- a separate, heavier, optional follow-up to a
     // successful compute, not part of the core AOI->criteria->weighting
@@ -116,6 +127,28 @@ function initialState() {
     // (OVERLAY_LOADING) -- any existing report describes a result that's
     // about to be superseded, so it can't stay displayed as current.
     report: { status: 'idle', result: null, error: null },
+
+    // Whether ReportOverlay (the full infographic-style report, absolutely
+    // positioned over the map -- see App.jsx) is currently shown. Kept
+    // separate from `report.status` so the user can dismiss it without
+    // discarding the underlying result (re-opening doesn't need a
+    // regenerate), and separate from the sidebar's own "Vulnerability
+    // report" step, which stays a compact trigger regardless -- moving the
+    // heavy content off the sidebar (a crowded-sidebar complaint) is the
+    // entire point of this split. Auto-set true on REPORT_LOADED (a freshly
+    // generated report should be immediately visible, not require a second
+    // click), reset false on OVERLAY_LOADING (a new compute invalidates the
+    // report it was showing, same trigger `report` itself resets on).
+    reportOverlayVisible: false,
+
+    // The transient "this criterion has known data gaps" disclaimer
+    // (DataGapNotice.jsx) -- null when hidden, otherwise an array of
+    // criterion ids (config/criteria.js's DATA_GAP_CRITERIA) to show
+    // messages for at once. Set on checking `hand`/`soil_infiltration`
+    // (TOGGLE_CRITERION) or SELECT_ALL_CRITERIA; cleared by
+    // DISMISS_DATA_GAP_NOTICE, which the toast dispatches itself either
+    // after an auto-dismiss timeout or on a manual close click.
+    dataGapNotice: null,
   }
 }
 
@@ -167,6 +200,12 @@ function reducer(state, action) {
 
     case 'TOGGLE_BASEMAP_VISIBLE':
       return { ...state, basemapVisible: !state.basemapVisible }
+
+    case 'TOGGLE_RISK_SURFACE_VISIBLE':
+      return { ...state, riskSurfaceVisible: !state.riskSurfaceVisible }
+
+    case 'SET_RISK_COLOR_SCHEME':
+      return { ...state, riskColorScheme: action.scheme }
 
     case 'SET_AOI_MODE':
       return { ...state, aoiMode: action.mode }
@@ -268,8 +307,36 @@ function reducer(state, action) {
         manualWeights: resyncManualWeights(state.manualWeights, criteriaEnabled),
         classification,
         overlay: { status: 'idle', result: null, error: null, criteriaUsed: null, weightsUsed: null, progressLog: [] },
+        dataGapNotice: nowChecked && DATA_GAP_CRITERIA.includes(action.id) ? [action.id] : state.dataGapNotice,
       }
     }
+
+    case 'SELECT_ALL_CRITERIA': {
+      const criteriaEnabled = Object.fromEntries(CRITERIA.map((c) => [c.id, true]))
+
+      const classification = { ...state.classification }
+      for (const criterion of CRITERIA) {
+        if (!classification[criterion.id]) classification[criterion.id] = defaultClassificationEntry(criterion)
+      }
+
+      return {
+        ...state,
+        criteriaEnabled,
+        ahpMatrices: resyncWithinClusterMatrices(state.ahpMatrices, criteriaEnabled),
+        manualWeights: resyncManualWeights(state.manualWeights, criteriaEnabled),
+        classification,
+        overlay: { status: 'idle', result: null, error: null, criteriaUsed: null, weightsUsed: null, progressLog: [] },
+        // Selecting all always includes hand/soil_infiltration, so always
+        // (re-)show both their disclaimers together -- simpler and more
+        // honest than only showing whichever happened not to be checked
+        // already, and a deliberate bulk action is a reasonable moment to
+        // reinforce both caveats at once.
+        dataGapNotice: DATA_GAP_CRITERIA,
+      }
+    }
+
+    case 'DISMISS_DATA_GAP_NOTICE':
+      return { ...state, dataGapNotice: null }
 
     case 'SET_CLASSIFICATION_METHOD':
       return {
@@ -387,6 +454,7 @@ function reducer(state, action) {
         ...state,
         overlay: { status: 'loading', result: null, error: null, criteriaUsed: null, weightsUsed: null, progressLog: [] },
         report: { status: 'idle', result: null, error: null },
+        reportOverlayVisible: false,
       }
     // Real, backend-sent progress messages (POST /api/overlay/compute/
     // stream -- see api/client.js's computeOverlayStream and backend/
@@ -427,9 +495,14 @@ function reducer(state, action) {
     case 'REPORT_LOADING':
       return { ...state, report: { status: 'loading', result: null, error: null } }
     case 'REPORT_LOADED':
-      return { ...state, report: { status: 'loaded', result: action.result, error: null } }
+      // Auto-show the overlay -- a freshly generated report should be
+      // immediately visible, not require a second click to reveal.
+      return { ...state, report: { status: 'loaded', result: action.result, error: null }, reportOverlayVisible: true }
     case 'REPORT_ERROR':
       return { ...state, report: { status: 'error', result: null, error: action.error } }
+
+    case 'TOGGLE_REPORT_OVERLAY':
+      return { ...state, reportOverlayVisible: !state.reportOverlayVisible }
 
     default:
       return state

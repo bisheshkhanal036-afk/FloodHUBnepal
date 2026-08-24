@@ -1,15 +1,16 @@
-// The vulnerability-classification / computation report: a heavier,
-// optional follow-up to a successful compute (POST /api/overlay/report),
-// showing hazard-class zonal stats, headline high-risk figures, and the
-// weighting breakdown that produced the result. Gated on state.overlay
-// being loaded -- this is display for an EXISTING result, not a new
-// computation of its own.
-import { useState } from 'react'
-import { absoluteDataUrl, generateReport } from '../api/client'
+// The sidebar's own "5. Vulnerability report" step: just the trigger
+// (Generate/Regenerate report button, loading/error state) plus a
+// "Show report" / "Hide report" toggle once one exists. The actual
+// report content -- headline stats, hazard-class chart, zonal table,
+// weighting breakdown, per-criterion snapshots -- lives in
+// ReportOverlay.jsx instead, absolutely positioned over the map (see
+// App.jsx), specifically so this step doesn't reintroduce the crowded-
+// sidebar problem that split caused in the first place. Gated on
+// state.overlay being loaded -- this is a follow-up to an EXISTING
+// result, not a new computation of its own.
+import { generateReport } from '../api/client'
 import { CRITERIA_BY_ID } from '../config/criteria'
-import { riskValueToCssColor } from '../lib/colorRamp'
 import { useAppState } from '../state/AppStateContext'
-import CriterionSnapshot from './CriterionSnapshot'
 
 /** state.ahpMatrices already has exactly the {items, matrix} shape POST /api/overlay/report's weighting.cluster_comparison/within_cluster_comparisons expects -- built directly from the pairwise-comparison UI, not re-derived here. */
 function buildWeightingPayload(state) {
@@ -30,23 +31,8 @@ function basinSupportStatus(state) {
   return feature?.properties.support_status ?? null
 }
 
-function formatPct(value) {
-  return `${value.toFixed(1)}%`
-}
-
-function formatNumber(value) {
-  return Math.round(value).toLocaleString()
-}
-
 export default function ReportPanel() {
   const { state, dispatch } = useAppState()
-  // Which criterion's snapshot <details> is open, by id -- CriterionSnapshot
-  // is only mounted (and only then fetches+decodes) while its own entry
-  // is open, so generating a report with many criteria never decodes
-  // rasters nobody actually looks at. Declared before the early return
-  // below (React's rule: hooks must run unconditionally on every render
-  // of this component instance).
-  const [openSnapshotId, setOpenSnapshotId] = useState(null)
   const { criteriaUsed, weightsUsed } = state.overlay
   if (state.overlay.status !== 'loaded' || !criteriaUsed || !weightsUsed) return null
 
@@ -102,114 +88,12 @@ export default function ReportPanel() {
       {status === 'error' && <p className="field-error">{error?.message || 'Report generation failed.'}</p>}
 
       {result && (
-        <div className="report-panel__result">
-          <div className="report-panel__downloads">
-            <a href={absoluteDataUrl(result.risk_surface_data_url)} className="result-panel__download-link">
-              Download risk surface (.tif)
-            </a>
-            <a href={absoluteDataUrl(result.hazard_classes_data_url)} className="result-panel__download-link">
-              Download hazard classes (.tif)
-            </a>
-          </div>
-
-          <div className="report-panel__headline">
-            <div className="report-panel__stat">
-              <span className="report-panel__stat-value">{formatNumber(result.total_buildings)}</span>
-              <span className="report-panel__stat-label">buildings classified</span>
-            </div>
-            <div className="report-panel__stat report-panel__stat--high-risk">
-              <span className="report-panel__stat-value">
-                {formatNumber(result.high_risk_building_count)} ({formatPct(result.high_risk_building_pct)})
-              </span>
-              <span className="report-panel__stat-label">buildings in High + Very High zones</span>
-            </div>
-            <div className="report-panel__stat report-panel__stat--high-risk">
-              <span className="report-panel__stat-value">
-                {formatNumber(result.high_risk_population)} ({formatPct(result.high_risk_population_pct)})
-              </span>
-              <span className="report-panel__stat-label">people in High + Very High zones</span>
-            </div>
-            <div className="report-panel__stat">
-              <span className="report-panel__stat-value">{result.total_area_km2.toFixed(2)} km²</span>
-              <span className="report-panel__stat-label">area with a valid hazard class</span>
-            </div>
-          </div>
-
-          <table className="report-panel__zonal-table">
-            <thead>
-              <tr>
-                <th>Hazard class</th>
-                <th>Area (km²)</th>
-                <th>Population</th>
-                <th>Buildings</th>
-              </tr>
-            </thead>
-            <tbody>
-              {result.zonal_stats.map((s) => (
-                <tr key={s.hazard_class} className={`report-panel__zonal-row report-panel__zonal-row--class-${s.hazard_class}`}>
-                  <td>
-                    <span className="report-panel__zonal-row__label">
-                      <span
-                        className="legend__swatch"
-                        style={{ background: riskValueToCssColor((s.hazard_class - 1) / 4) }}
-                      />
-                      {s.hazard_label}
-                    </span>
-                  </td>
-                  <td>{s.area_km2.toFixed(3)}</td>
-                  <td>{formatNumber(s.population)}</td>
-                  <td>{formatNumber(s.building_count)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <div className="report-panel__weighting">
-            <h5>Weighting used</h5>
-            <p className="panel__hint">
-              Method: <strong>{result.weighting.method}</strong>
-            </p>
-            {result.weighting.consistency_warning && (
-              <p className="field-warning">{result.weighting.consistency_warning}</p>
-            )}
-            <div className="report-panel__criteria">
-              {result.criteria.map((c) => {
-                const isOpen = openSnapshotId === c.id
-                return (
-                  <details
-                    key={c.id}
-                    className="report-panel__criterion"
-                    open={isOpen}
-                    onToggle={(e) => setOpenSnapshotId(e.target.open ? c.id : null)}
-                  >
-                    <summary>
-                      {c.name}
-                      {c.cluster ? ` (${c.cluster})` : ''} —{' '}
-                      {((result.weighting.final_weights[c.id] || 0) * 100).toFixed(1)}%
-                    </summary>
-                    {isOpen && (
-                      <div className="report-panel__criterion-detail">
-                        <CriterionSnapshot dataUrl={c.data_url} />
-                        <a href={absoluteDataUrl(c.data_url)} className="result-panel__download-link">
-                          Download {c.name} (.tif)
-                        </a>
-                      </div>
-                    )}
-                  </details>
-                )
-              })}
-            </div>
-          </div>
-
-          {result.aoi.hybas_id && (
-            <p className="panel__hint">
-              Basin HYBAS_ID {result.aoi.hybas_id}
-              {result.aoi.support_status ? ` (${result.aoi.support_status})` : ''}
-            </p>
-          )}
-
-          <p className="panel__hint">Generated {new Date(result.generated_at).toLocaleString()}</p>
-        </div>
+        <>
+          <p className="panel__hint">Report ready — shown as an overlay on the map.</p>
+          <button type="button" className="link-button" onClick={() => dispatch({ type: 'TOGGLE_REPORT_OVERLAY' })}>
+            {state.reportOverlayVisible ? 'Hide report' : 'Show report'}
+          </button>
+        </>
       )}
     </div>
   )
