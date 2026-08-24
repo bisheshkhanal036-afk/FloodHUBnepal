@@ -113,20 +113,30 @@ SOILGRIDS_SAND_VRT_URL = os.environ.get(
 # 0.0008333... deg (~90m, "3 arcsecond" per METEOR's own metadata.txt),
 # values are modeled water depth in meters (metadata.txt: "Depths are
 # shown in meters... the maximum water depth that would be expected if a
-# flood event of the specified return period were occurring"). Two
+# flood event of the specified return period were occurring"). Two raw
 # sentinel values found by direct inspection of the real pixel data
 # (neither declared as a GDAL NoData tag -- ds.nodata reads None):
 # -9999.0 (97.2% of pixels -- outside the Fathom model's simulated
 # floodplain domain entirely, e.g. hillslope/ridge terrain the model
-# never attempts to flood, NOT a data-quality gap) and 999.0 (0.018% of
-# pixels -- a much rarer masked value, plausibly a permanent-water/
-# model-boundary flag). Both are treated as nodata here. The remaining
-# ~2.8% of pixels are real modeled depths, range 0.0-5.0m in this file
-# (0.0 is a genuine "in-domain, no flooding at this depth/return period"
-# value, distinct from nodata -- kept as valid data, not remapped).
+# never attempts to flood) and 999.0 (0.018% of pixels -- a much rarer
+# masked value, plausibly a permanent-water/model-boundary flag). The
+# remaining ~2.8% of pixels are real modeled depths, range 0.0-5.0m in
+# this file.
+#
+# meteor_flood.py does NOT treat either sentinel as nodata (a first
+# version did; changed after a real user-reported bug -- "only the
+# meteor area gets flood hazard output", since ~97% of any AOI being
+# excluded left almost nothing classified). -9999 is instead resolved to
+# a real depth of 0.0m: metadata.txt's own documented semantics mean
+# those pixels are ones the model deliberately never attempts to flood,
+# which for a flood-hazard criterion genuinely does mean "no hazard
+# here", not "unknown" -- see meteor_flood.py's own module docstring for
+# the full reasoning, including why 999 is deliberately NOT given the
+# same treatment (it means permanent water, i.e. high risk, not the
+# absence of it).
 METEOR_FLOOD_TYPE = os.environ.get("METEOR_FLOOD_TYPE", "FD")
 METEOR_FLOOD_RETURN_PERIOD = os.environ.get("METEOR_FLOOD_RETURN_PERIOD", "1in100")
-METEOR_FLOOD_NODATA_VALUES = (-9999.0, 999.0)
+METEOR_FLOOD_RAW_SENTINELS = (-9999.0, 999.0)  # (outside_domain, permanent_water) -- order matters, see meteor_flood.py's _resolve_sentinels
 
 # NDVI (ndvi.py) is computed on the fly from Sentinel-2 L2A red/NIR bands,
 # discovered through Element 84's public Earth Search STAC API and read

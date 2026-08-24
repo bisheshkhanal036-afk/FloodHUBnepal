@@ -2259,6 +2259,73 @@ them.
   (hero → how-it-works → team → sources) matches what was asked for,
   and screenshotted the resulting layout both before and after the
   grid-balance fix above. Frontend build clean throughout.
+- Backend: **`flood_hazard_meteor`'s nodata is now a real depth of
+  0.0m, not exclusion** — at the user's explicit request: "only the
+  meteor area gets flood hazard output, make it so that the nodata in
+  meteor is 0 and all the aoi gets hazard classification." Two real bugs
+  fixed together, both only visible once the first was addressed:
+  - `_resolve_sentinels` (renamed from `_mask_sentinels`) no longer maps
+    -9999.0 ("outside the Fathom model's simulated floodplain domain")
+    to NaN/excluded — it resolves to a real depth of 0.0m instead. This
+    is a scientifically defensible reinterpretation, not a literal
+    "nodata equals zero" hack: metadata.txt's own documented semantics
+    say those pixels are ones the model deliberately never attempts to
+    flood, which for a *flood hazard* criterion genuinely does mean "no
+    hazard here", not "unknown" — the same reasoning soil.py's own
+    docstring already applies in the opposite direction (SoilGrids'
+    nodata stays nodata specifically because no equivalent documented
+    reason exists to remap it; METEOR's own documentation supplies
+    exactly that reason). The rarer 999.0 sentinel (permanent water,
+    ~0.02% of pixels) is deliberately NOT given the same treatment —
+    mapping it to 0 would misclassify permanent water as the lowest-risk
+    case, a real correctness bug the literal instruction doesn't
+    actually ask for once its intent is followed through consistently.
+    It resolves instead to `_PERMANENT_WATER_DEPTH_M` (5.0, this file's
+    own observed maximum real depth), landing in the top risk_class
+    alongside the worst real modeled cells. `reproject_to_grid` is now
+    called with `src_nodata=None` (there is no remaining sentinel in the
+    source array by the time it reaches reprojection); the low-in-domain-
+    coverage `.warning` the first version attached is gone along with
+    the gap it warned about, and `flood_hazard_meteor`'s
+    `DATA_GAP_DISCLAIMERS` entry (config/criteria.js) was removed for
+    the same reason.
+  - **A second, independent bug**, caught live only because the first
+    fix made it visible: even after -9999 became 0.0, a real AOI over
+    the actual `FD_1in100.tif` still came back ~98.4% valid, not 100% —
+    the mean depth was still being dragged to roughly -150m by a
+    residual sliver of genuine `dst_nodata` pixels. Root cause:
+    `_whole_pixel_window` cropped its read window tightly to the AOI's
+    own bounds (rounded to whole pixels, no margin) — bilinear
+    resampling needs real neighboring source data around each
+    destination pixel, and a window with no margin starves the
+    destination grid's own edge pixels of that neighbor data, leaving
+    them at `dst_nodata` regardless of what the sentinels resolve to.
+    This bug predates this whole fix and affects every other windowed-
+    read source in this package the same unbuffered way (dem.py/
+    chirps.py's own `_read_local_window` use plain `from_bounds` too),
+    but was invisible for METEOR specifically until now: previously
+    -9999 pixels were ALL treated as nodata regardless of cause, so a
+    few extra edge-margin nodata pixels were undetectable against the
+    ~97% domain-sentinel nodata already present — and METEOR's own
+    ~90m native pixels make the fringe proportionally much wider than
+    DEM (30m) or WorldCover (10m)'s. Fixed with a new
+    `_WINDOW_MARGIN_PX` (tuned live against the real file: 1px of margin
+    reached 99.9% valid on a real floodplain AOI, 2px reached the full
+    100%). Live-verified against the real downloaded `FD_1in100.tif`
+    over three real AOIs after both fixes: a Kathmandu floodplain bbox
+    (100% valid, mean depth 0.25m), a Shivapuri hillslope bbox (100%
+    valid, mean depth exactly 0.0m — entirely outside the model's
+    domain, correctly resolved), and a small ~500m tight bbox (100%
+    valid, mean 0.0m) — all three previously ranged from 0% to 15.3%
+    valid. Confirmed end-to-end through the real `POST
+    /api/overlay/compute` endpoint too (the Shivapuri hillslope AOI,
+    previously entirely excluded, now computes a real risk surface with
+    zero source_warnings). 4 tests replaced/added in
+    `test_meteor_flood.py` (12 total now, up from 8): sentinel-resolution
+    tests for both sentinels independently and mixed together, a direct
+    unit test on `_whole_pixel_window`'s own margin math, and an
+    end-to-end coverage test using a realistically-sized (not
+    artificially generous) fixture. Full suite (425 tests) green.
 - Not yet implemented: AOI persistence, and shelter identification. The
   GeoTIFF file route is a simple
   direct-read endpoint, not a general static-asset server or CDN — fine
