@@ -1730,12 +1730,26 @@ input[type='radio'] {
    Landing page
    ========================================================================== */
 .landing {
+  position: relative; /* containing block for .landing__nav's overlay positioning below */
   min-height: 100%;
   background: var(--color-bg);
   overflow-y: auto;
 }
 
 .landing__nav {
+  /* Overlays the hero rather than sitting in normal flow above it --
+     real bug found live: with the nav taking its own flow height, the
+     hero section's `min-height: 100vh` box started BELOW the nav, so
+     its own bottom edge (and .hero__scroll-cue, anchored to it) landed
+     that same distance below the actual viewport fold, not visible
+     without scrolling. Floating the nav over the hero (which already
+     has its own dark background + glow to sit on) means the hero
+     genuinely starts at the true top of the viewport. */
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1775,7 +1789,7 @@ input[type='radio'] {
   max-width: 54rem;
   margin: 0 auto;
   padding: var(--space-8);
-  background: radial-gradient(ellipse 90% 75% at 50% 40%, var(--color-primary-soft), transparent 72%);
+  /* No background here anymore -- see .zoom-section--hero for why. */
 }
 
 .hero__eyebrow {
@@ -1849,7 +1863,7 @@ input[type='radio'] {
    should just always be there while the hero is the active section. */
 .hero__scroll-cue {
   position: absolute;
-  bottom: var(--space-8);
+  bottom: var(--space-10);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -1914,13 +1928,32 @@ input[type='radio'] {
   align-items: center;
   justify-content: center;
   padding: var(--space-10) var(--space-8);
-  border-top: 1px solid var(--color-border);
+  /* No border between sections -- the zoom reveal is itself the
+     transition cue; a hairline rule here just read as a stray line
+     cutting across the page between one full-screen "scene" and the
+     next. */
 }
 
 .zoom-section--hero {
-  border-top: none;
   min-height: 100vh;
-  position: relative; /* anchors .hero__scroll-cue to this section's full-height box, not the (much shorter) hero content block centered inside it */
+  /* Real bug found live: .zoom-section's own top+bottom padding
+     (var(--space-10), 4rem each) was stacking on top of .hero--centered's
+     own min-height(82vh)+padding, pushing the section's actual required
+     height past 100vh on shorter viewports -- which pushed
+     .hero__scroll-cue (bottom-anchored to THIS section, not the
+     viewport) below the fold entirely. .hero--centered already owns its
+     own internal spacing, so the section itself needs none on top of it. */
+  padding: 0;
+  position: relative; /* anchors .hero__scroll-cue AND the glow background below to this section's full-height/full-width box, not the narrower/shorter hero content block centered inside it */
+  /* The glow lives here, not on .hero--centered, specifically so it has
+     the FULL section (viewport-width, 100vh) to fade out across. Put on
+     the narrower/shorter content block instead, its background simply
+     stops at that block's own edges (CSS backgrounds never paint past
+     their own box) -- which is exactly what read as "a rectangle
+     blocking the glow" rather than a soft, edge-to-edge falloff: a
+     visible rectangular silhouette where the box's own boundary cut the
+     gradient off before it could actually reach transparent. */
+  background: radial-gradient(ellipse 55% 55% at 50% 45%, var(--color-primary-soft), transparent 75%);
 }
 
 .zoom-section__inner {

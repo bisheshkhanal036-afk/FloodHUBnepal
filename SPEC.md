@@ -1974,6 +1974,55 @@ them.
     computed opacity across all 3 chevrons at 400ms intervals and
     confirmed staggered peaks moving between chevrons over time, not all
     three frozen at one value.
+- Frontend: **three hero polish fixes from user feedback on a
+  screenshot**, one of which uncovered a real layout bug, not just a
+  cosmetic tweak.
+  - **The glow gradient looked like it was cut off by a rectangle.**
+    Root cause: the radial-gradient background lived on `.hero--
+    centered` (a box narrower and shorter than the full section,
+    `max-width: 54rem` / `min-height: 82vh`) — CSS backgrounds never
+    paint past their own element's box, so the gradient's "fade to
+    transparent" was cut short by that box's own edges, reading as a
+    visible rectangular silhouette rather than an organic falloff.
+    Fixed by moving the gradient to `.zoom-section--hero` itself (the
+    full-viewport-width/height section), which has genuine room to fade
+    out before reaching any edge.
+  - **Removed the hairline border between sections** (`border-top: 1px
+    solid var(--color-border)` on the shared `.zoom-section` rule) — a
+    thin but visible line at each section boundary that read as a stray
+    rule cutting across the page between full-screen "scenes"; the zoom
+    reveal itself is the transition cue, no divider needed.
+  - **Moved `.hero__scroll-cue` up** (`bottom: var(--space-8)` →
+    `var(--space-10)`) — and while verifying the new position live,
+    found a real bug the request's screenshot hadn't shown: `.zoom-
+    section`'s own `padding: var(--space-10) var(--space-8)` was
+    stacking on top of `.hero--centered`'s own `min-height: 82vh` +
+    padding, pushing the hero section's actual rendered height past
+    100vh on shorter viewports — which pushed the bottom-anchored cue
+    below the fold entirely (measured live: -24px past the viewport's
+    own bottom edge, i.e. genuinely not visible, not just "a bit low").
+    A second, related bug surfaced investigating this: `.landing__nav`
+    sat in normal document flow *above* the hero, so even after fixing
+    the padding stack, the hero's own `min-height: 100vh` box started
+    below the nav rather than at the true top of the viewport, pushing
+    everything (including the cue) down by the nav's own height. Fixed
+    both: `.zoom-section--hero` now has `padding: 0` (the content block
+    already owns its internal spacing), and `.landing__nav` is
+    `position: absolute` overlaying the hero (its own dark background +
+    glow work fine underneath the nav) rather than pushing it down —
+    `.landing` gained `position: relative` as the nav's containing
+    block. Verified live: hero section's own top now measures `0` and
+    height exactly matches `window.innerHeight`; the cue's distance from
+    the viewport's bottom edge went from `-24px` (cut off) to `+64px`
+    (matching `--space-10` exactly, safely on-screen).
+  - A screenshot-based verification pitfall from earlier in this same
+    UI work recurred and was worth a permanent tooling fix rather than
+    working around it again: single-shot headless screenshots can catch
+    a CSS transition mid-flight or a scroll position mid-programmatic-
+    scroll, so verification here used a small persistent-tab screenshot
+    helper (waits for transitions to settle, screenshots the *same*
+    already-scrolled tab rather than a fresh navigation) instead of
+    re-deriving one-off scripts each time.
 - Not yet implemented: AOI persistence, and shelter identification. The
   GeoTIFF file route is a simple
   direct-read endpoint, not a general static-asset server or CDN — fine
