@@ -44,6 +44,15 @@ def no_local_sources_by_default(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "LOCAL_POPULATION_DIR", tmp_path / "raw" / "population")
     monkeypatch.setattr(config, "LOCAL_SOIL_DIR", tmp_path / "raw" / "soil")
     monkeypatch.setattr(config, "LOCAL_METEOR_FLOOD_DIR", tmp_path / "raw" / "meteor_flood")
+    # Also clears VALIDATION_EVENTS itself (not just the directory it
+    # would resolve against) -- otherwise a test that never mentions
+    # validation extents at all could still silently hit the real
+    # downloaded nepal_2024_terai shapefile now committed under
+    # backend/data/raw/validation_extents/, the same "no local files
+    # present is the default" principle this fixture already enforces
+    # for every other source.
+    monkeypatch.setattr(config, "LOCAL_VALIDATION_EXTENTS_DIR", tmp_path / "raw" / "validation_extents")
+    monkeypatch.setattr(config, "VALIDATION_EVENTS", {})
     monkeypatch.setattr(config, "LOCAL_OSM_DIR", tmp_path / "raw" / "osm")
     # LOCAL_OSM_PROCESSED_DIR is its own constant (computed once, from
     # the ORIGINAL LOCAL_OSM_DIR, at import time) -- monkeypatching

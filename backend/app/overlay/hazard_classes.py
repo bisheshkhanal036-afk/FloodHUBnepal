@@ -57,6 +57,15 @@ HAZARD_CLASS_LABELS: dict[int, str] = {
     5: "Very High",
 }
 
+# Hazard classes 4 (High) and 5 (Very High) -- the single "predicted
+# flooded" operating point this app already treats as meaningful
+# elsewhere (report.py's own high_risk_building_count/
+# high_risk_population), reused rather than re-defined by
+# confusion_metrics.py so "high risk" means the same thing everywhere in
+# the app: the report's headline figures, the map's own hazard-class
+# legend, and a validation confusion matrix all agree on this exact set.
+HIGH_RISK_CLASSES = (4, 5)
+
 
 def risk_surface_to_hazard_classes(risk_surface: np.ndarray, nodata: float) -> np.ndarray:
     """Bucket a continuous risk_surface (values in [0, 1], or `nodata`)

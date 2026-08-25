@@ -22,6 +22,12 @@ CRITERION_RASTER_PATH_PATTERN = "/criterion_raster/{cache_key}/{criterion_id}.ti
 # frontend always fills in concretely before building the template.
 METEOR_FLOOD_TILE_PATH_PATTERN = "/meteor_flood_tile/{flood_type}/{return_period}/{z}/{x}/{y}.png"
 
+# app/data/validation_extent.py's own display-GeoJSON route -- a real,
+# satellite-observed flood extent, for the same kind of toggleable map
+# reference overlay MeteorFloodControl already gives the (modeled)
+# METEOR layer.
+VALIDATION_EXTENT_GEOJSON_PATH_PATTERN = "/validation-events/{event}/extent.geojson"
+
 
 def risk_surface_url(cache_key: str) -> str:
     return f"{ROUTER_PREFIX}/risk_surface/{cache_key}.tif"

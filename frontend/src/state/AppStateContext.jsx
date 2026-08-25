@@ -157,6 +157,46 @@ function initialState() {
     // report it was showing, same trigger `report` itself resets on).
     reportOverlayVisible: false,
 
+    // Real-flood validation (POST /api/overlay/validate) -- success-
+    // rate/AUC-checks the just-computed risk surface against a real,
+    // satellite-observed flood extent (backend/app/data/
+    // validation_extent.py), never against another model's output (see
+    // that module's own docstring for why METEOR specifically is
+    // deliberately not used THIS way -- METEOR agreement is its own,
+    // separate `meteorComparison` state below, never merged into this
+    // one). Same shape/reset trigger as `report` above -- a separate,
+    // optional follow-up to a successful compute, reset on
+    // OVERLAY_LOADING since it describes a result about to be
+    // superseded.
+    validation: { status: 'idle', result: null, error: null },
+    // GET /api/overlay/validation-events's own fetch lifecycle --
+    // independent of `validation` itself (the list of what's available
+    // to validate against, not a validation result), fetched once and
+    // never reset on compute.
+    validationEvents: { status: 'idle', list: [], error: null },
+    // METEOR model-agreement comparison (POST /api/overlay/compare-
+    // meteor, MeteorComparisonPanel.jsx) -- deliberately its own state
+    // slice, never folded into `validation` above: this checks
+    // agreement with another model's own output, not real-world
+    // accuracy (see backend/app/overlay/meteor_comparison.py's own
+    // docstring). Same shape/reset trigger as `validation`.
+    meteorComparison: { status: 'idle', result: null, error: null },
+    // Which event's key (from validationEvents.list) the picker is
+    // currently set to -- persists across computes/resets, same
+    // reasoning riskColorScheme above already documents (a user's
+    // choice here almost certainly should stick, not silently revert).
+    // Shared by both ValidationPanel's own event dropdown AND
+    // MapView.jsx's ValidationExtentControl (the map-corner overlay
+    // toggle, same UI slot MeteorFloodControl already occupies) -- one
+    // selection drives both, so picking an event to validate against
+    // and picking which event's real extent to see on the map are
+    // never allowed to silently disagree.
+    selectedValidationEvent: null,
+    // The real observed flood-extent overlay's own visibility -- off by
+    // default, same as meteorFloodVisible above, since it's an opt-in
+    // reference layer, not part of the base map.
+    validationExtentVisible: false,
+
     // The transient "this criterion has known data gaps" disclaimer
     // (DataGapNotice.jsx) -- null when hidden, otherwise an array of
     // criterion ids (config/criteria.js's DATA_GAP_CRITERIA) to show
@@ -480,6 +520,8 @@ function reducer(state, action) {
         overlay: { status: 'loading', result: null, error: null, criteriaUsed: null, weightsUsed: null, progressLog: [] },
         report: { status: 'idle', result: null, error: null },
         reportOverlayVisible: false,
+        validation: { status: 'idle', result: null, error: null },
+        meteorComparison: { status: 'idle', result: null, error: null },
       }
     // Real, backend-sent progress messages (POST /api/overlay/compute/
     // stream -- see api/client.js's computeOverlayStream and backend/
@@ -528,6 +570,42 @@ function reducer(state, action) {
 
     case 'TOGGLE_REPORT_OVERLAY':
       return { ...state, reportOverlayVisible: !state.reportOverlayVisible }
+
+    case 'VALIDATION_EVENTS_LOADING':
+      return { ...state, validationEvents: { status: 'loading', list: [], error: null } }
+    case 'VALIDATION_EVENTS_LOADED':
+      // Auto-select the first event if nothing's picked yet -- so the
+      // picker (and the "Validate" button it gates) is immediately
+      // usable without an extra click, the same reasoning
+      // BasemapControl's own select defaults to state.basemapStyle
+      // rather than requiring an explicit first choice.
+      return {
+        ...state,
+        validationEvents: { status: 'loaded', list: action.events, error: null },
+        selectedValidationEvent: state.selectedValidationEvent ?? action.events[0]?.key ?? null,
+      }
+    case 'VALIDATION_EVENTS_ERROR':
+      return { ...state, validationEvents: { status: 'error', list: [], error: action.error } }
+
+    case 'SET_VALIDATION_EVENT':
+      return { ...state, selectedValidationEvent: action.event }
+
+    case 'TOGGLE_VALIDATION_EXTENT_VISIBLE':
+      return { ...state, validationExtentVisible: !state.validationExtentVisible }
+
+    case 'VALIDATION_LOADING':
+      return { ...state, validation: { status: 'loading', result: null, error: null } }
+    case 'VALIDATION_LOADED':
+      return { ...state, validation: { status: 'loaded', result: action.result, error: null } }
+    case 'VALIDATION_ERROR':
+      return { ...state, validation: { status: 'error', result: null, error: action.error } }
+
+    case 'METEOR_COMPARISON_LOADING':
+      return { ...state, meteorComparison: { status: 'loading', result: null, error: null } }
+    case 'METEOR_COMPARISON_LOADED':
+      return { ...state, meteorComparison: { status: 'loaded', result: action.result, error: null } }
+    case 'METEOR_COMPARISON_ERROR':
+      return { ...state, meteorComparison: { status: 'error', result: null, error: action.error } }
 
     default:
       return state

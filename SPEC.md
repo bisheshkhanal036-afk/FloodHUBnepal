@@ -2326,6 +2326,309 @@ them.
     unit test on `_whole_pixel_window`'s own margin math, and an
     end-to-end coverage test using a realistically-sized (not
     artificially generous) fixture. Full suite (425 tests) green.
+- Backend: **real-flood validation** — `POST /api/overlay/validate` and
+  `GET /api/overlay/validation-events`, at the user's request after a
+  wider research thread into what real historical Nepal flood data
+  exists (World Flood Programme/APFM, Dartmouth Flood Observatory,
+  UNU-INWEH's World Flood Mapping Tool, Copernicus EMS) and where the
+  session's own earlier conclusion landed: METEOR shouldn't be used as
+  either a criterion or a validation reference, since comparing a
+  computed risk surface against it only checks agreement between two
+  *models*, not real-world accuracy — the correct method (already named
+  in `config/literature.js`'s own `METHOD_INTRO`) is a success-rate
+  curve / AUC against a real, observed flood inventory.
+  - **Real event data acquired and verified live**, not assumed from
+    metadata: UNOSAT's Sentinel-1 SAR flood extent for the September
+    2024 Nepal floods (27 Sep 2024, Koshi & Madhesh Provinces),
+    downloaded from HDX, license confirmed directly on that dataset's
+    own metadata as CC BY-SA (not assumed from a generic platform
+    footer, which said something different — the structured `license`
+    field is the authoritative one). A real, live-verified discrepancy
+    caught along the way: despite the HDX dataset's own title naming
+    "the Capital city of Kathmandu," this file's actual geometry (bounds
+    checked directly) never reaches Kathmandu Valley — all real detected
+    flooding is in the Terai lowlands. Also pulled the Global Flood
+    Database's real August-2017 South Asia flood raster directly from
+    its public GCS bucket (`gs://gfd_v3`, no Earth Engine auth needed)
+    as a second reference — confirmed real flooded pixels inside Nepal's
+    own bbox, zero in Kathmandu Valley specifically, the same pattern.
+    2019 was searched for but not found (UNOSAT's Nepal catalog starts
+    2020; the Global Flood Database's own window ends Dec 2018; no
+    Copernicus EMS activation exists for it).
+  - `app/data/validation_extent.py` (new): local-only, no cloud fallback
+    (same reasoning as basins.py/meteor_flood.py — each event is a
+    one-time downloaded product, no live endpoint exists).
+    `config.VALIDATION_EVENTS` registers events by key (currently one:
+    `nepal_2024_terai`) so adding a future event (a genuine Kathmandu-
+    covering product, or a 2017/2019 source if one is found) needs only
+    a new dict entry, no code change. Rasterizes the real flood polygon
+    onto the exact same `compute_aoi_grid` every criterion source uses
+    (`all_touched=False`, the same area-coverage convention
+    density_raster.py's own building-footprint rasterization already
+    uses), so it always lines up pixel-for-pixel with a risk surface
+    computed for the same AOI with no reprojection needed downstream.
+  - `app/overlay/success_rate.py` (new): the actual success-rate curve /
+    AUC math, a pure function taking the risk surface + observed mask.
+    Verified against closed-form values, not just "does it run": a
+    risk score that exactly equals the observed label gives AUC = 1 -
+    p/2 (p = flooded fraction); the exact inverse gives p/2; a random
+    ranking gives ~0.5 — all confirmed live before writing the pytest
+    versions.
+  - `app/overlay/validate.py` (new): thin orchestration — reuses
+    `compute_overlay` directly (so validating an already-computed AOI/
+    criteria/weights combination never recomputes the risk surface,
+    confirmed live via a call-count check) rather than reimplementing
+    any part of the compute pipeline.
+  - Live end-to-end run against the real UNOSAT data and a real
+    live-fetched Copernicus DEM criterion (not mocked) over a real
+    30km×30km Terai AOI (chosen by grid-searching the actual flood
+    polygon data for its densest cluster, 900 km², ~5.3% flooded — under
+    the 1000 km² area cap): AUC 0.590, 9,006,295 valid pixels compared,
+    480,304 observed-flooded — a modest-but-real result (elevation alone
+    beats random only moderately in flat Terai terrain, which is
+    itself an honest, expected finding, not a bug to chase). Confirmed
+    identical over both a direct function call and the real HTTP
+    endpoint (a temporary local uvicorn server, since Docker Desktop
+    wasn't running this session).
+  - 22 new tests (`test_success_rate.py`, `test_validation_extent.py`,
+    `test_validate_router.py`) plus `VALIDATION_EVENTS`/
+    `LOCAL_VALIDATION_EXTENTS_DIR` isolation added to both
+    `tests/data/conftest.py` and `tests/overlay/conftest.py`'s own
+    no-local-sources-by-default fixtures. Full suite (441 tests) green.
+- Frontend: **sidebar step 6, "Validate"** (`ValidationPanel.jsx` +
+  `SuccessRateChart.jsx`) -- an event picker + "Validate" button, gated
+  on `state.overlay` being loaded exactly like `ReportPanel` (a follow-up
+  check on an existing result, reusing its own `criteriaUsed`/
+  `weightsUsed` snapshot rather than the live, possibly-since-changed
+  criteria/weighting panels). New `validation`/`validationEvents`/
+  `selectedValidationEvent` state slices, reset on `OVERLAY_LOADING`
+  alongside `report` for the same reason. The chart itself (`dataviz`
+  skill followed): plain inline SVG, no library, matching
+  `ReportOverlay.jsx`'s own existing chart's dependency-free convention
+  -- the real success-rate curve in `--color-primary`, a dashed muted
+  "random ranking" reference diagonal (an annotation, not a second data
+  series, so a direct label instead of a legend box), and a hover
+  crosshair + tooltip.
+  - Verified live end-to-end through the actual running app (headless-
+    Chrome CDP, Docker back up after this session found and launched it
+    — see the note on that below): drew a real AOI inside the 2024
+    Terai flood cluster, computed a single-criterion (`dem_elevation`)
+    risk surface, ran Validate, and got a real rendered result (AUC
+    0.586, "poor", the curve plotted correctly above the diagonal,
+    correct attribution) — screenshotted, not just DOM-text-checked.
+  - **A genuinely important finding surfaced by this exact live run**,
+    not a bug: the map showed the computed risk surface as one uniform
+    solid-red block across the whole AOI. Root cause: `dem_elevation`'s
+    default reclassification breaks (`config/criteria.js`) are
+    calibrated to the Kathmandu Valley floor (~1300-1840m) — this
+    Terai AOI sits at ~70-100m elevation, entirely below even the
+    lowest break, so every pixel saturates to risk_class 5 uniformly.
+    With zero variation in the risk score, there is nothing real to
+    rank pixels by, and the AUC (0.586, barely above the 0.5 "random"
+    floor) reflects exactly that — not a validation-feature bug, but a
+    live, concrete demonstration of the exact caveat raised earlier in
+    this same session's own discussion (Kathmandu-calibrated defaults
+    are close to meaningless outside Kathmandu Valley; a real
+    cross-region validation should use AOI-specific data-driven breaks
+    from the existing `POST /criteria/breaks` endpoint instead of the
+    static defaults).
+  - Also **found Docker Desktop was not running** at the start of this
+    phase (from earlier in this same session) and started it directly
+    (`Docker Desktop.exe`, ~10s to a ready daemon, containers auto-
+    resumed) rather than continuing to work around it — restored the
+    ability to verify against the real containers (previous phase's
+    verification used a temporary local `uvicorn` server instead).
+- **Real observed flood-extent map overlay**, following on from the
+  Validate step above: the same real flood-extent polygon POST
+  /validate checks a risk surface against is now also directly
+  visible on the map, toggleable, in the same UI slot/pattern as the
+  METEOR reference overlay -- not just a number in a panel.
+  - Backend: `GET /api/overlay/validation-events/{event}/extent.geojson`
+    (`app/data/validation_extent.py`'s new `get_validation_extent_geojson`,
+    `lru_cache`d since it has no AOI dependency) -- reads the same local
+    shapefile `get_observed_flood_mask` uses for the actual validation
+    math, reprojects to EPSG:4326, and `.simplify()`s to ~11m (matching
+    the project's own 10m analysis grid) for display only. Hit a real
+    bug here: the raw UNOSAT shapefile carries a `Sensor_Dat`
+    datetime64 column that geopandas' `.to_json()` can't serialize --
+    fixed by building a geometry-only GeoDataFrame before serializing.
+    3 new route tests (404 unregistered event vs 503 registered-but-
+    missing-file, matching the same distinction the rest of this
+    router already makes elsewhere).
+  - Frontend: `ValidationExtentControl` (`MapView.jsx`), a MapLibre
+    IControl mirroring `MeteorFloodControl` exactly -- an event
+    `<select>` + a show/hide toggle button, top-left. Its events list
+    is fetched independently of the sidebar's own "Validate" step
+    (`StepSection` doesn't mount a locked step's content at all, so
+    `ValidationPanel`'s identical fetch effect wouldn't run until a
+    risk surface already exists) -- both effects share one idle-status
+    guard so whichever mounts first "wins," never a duplicate fetch.
+  - **Two real bugs hit and fixed during live verification**, both the
+    same underlying shape: MapLibre's `.once('load', cb)` is a
+    one-time event subscription, safe as a "defer until style ready"
+    fallback only when the thing gating it is synchronous. The
+    visibility-toggle effect's `map.once('load', apply)` fallback
+    assumed the layer would exist by the time 'load' fires, but this
+    layer's creation is gated behind an independent async GeoJSON
+    fetch that can resolve well after 'load' already fired (a
+    one-time event doesn't replay for a listener added after the
+    fact) -- threw "Cannot style non-existing layer." Fixed by
+    dropping that fallback for this one effect in favor of a plain
+    `if (!map.getLayer(...)) return` no-op guard (safe since the
+    layer-creation effect already bakes in the correct current
+    visibility at creation time). Separately, the layer-creation
+    effect itself read `state.validationExtentVisible` from its own
+    closure rather than `stateRef.current` -- a stale value if a
+    toggle click landed between the effect starting and its fetch
+    resolving; fixed to read `stateRef.current` the same way every
+    other async-then-mutate-the-map effect in this file already does.
+  - Verified live end-to-end (headless-Chrome CDP): launched the tool,
+    confirmed the events list populates the control, toggled the
+    overlay on, jumped the map to the Terai, and screenshotted a real
+    render -- the magenta flood-extent polygons trace the Koshi
+    river's channel and floodplain exactly as expected, not a
+    solid/empty layer.
+- **Validation metrics expanded**: precision, recall, F1, IoU, and PR-
+  AUC, alongside the existing success-rate/AUC. Two families, scored
+  differently on purpose:
+  - **Threshold-free** (`app/overlay/success_rate.py`, extended, not a
+    new module): PR-AUC and its own (recall, precision) curve, computed
+    from the exact same descending-risk-score sweep the existing
+    success-rate curve already builds -- recall at each cutoff IS that
+    curve's own y-value, so the only new quantity is precision
+    (captured flooding / pixels predicted positive at that cutoff).
+    Its own uninformative baseline is `observed_flooded_fraction`, NOT
+    0.5 -- documented prominently (module docstring, API field
+    description, and the frontend's own hero-stat label) since silently
+    reusing the AUC panel's 0.5 baseline language here would have been
+    actively misleading.
+  - **Threshold-based** (`app/overlay/confusion_metrics.py`, new
+    module): precision/recall/F1/IoU at ONE fixed operating point --
+    hazard classes 4 (High) + 5 (Very High) as "predicted flooded" --
+    rather than an arbitrary top-k cutoff. That exact set
+    (`HIGH_RISK_CLASSES`) already meant "high risk" everywhere else in
+    this app (the map's own hazard-class legend, POST /report's
+    `high_risk_building_count`/`high_risk_population`); moved from
+    being a local constant inside `report.py` to living in
+    `hazard_classes.py` instead (report.py now imports it from there)
+    so every consumer shares one definition rather than two that could
+    silently drift apart.
+  - `POST /api/overlay/validate`'s response grew `pr_auc`,
+    `precision_recall_curve`, `precision`, `recall`, `f1`, `iou`, and
+    the four raw confusion-matrix pixel counts -- additive only, no
+    existing field changed shape or meaning.
+  - Frontend: a new `PrecisionRecallChart.jsx` (reuses
+    `SuccessRateChart.jsx`'s own CSS classes -- visually the same chart
+    language, a horizontal reference line at the base flooded rate
+    instead of a diagonal) plus a 4-tile precision/recall/F1/IoU stat
+    row in `ValidationPanel.jsx`, both below the existing AUC hero and
+    success-rate curve.
+  - 18 new backend tests (7 in `test_confusion_metrics.py` against
+    hand-built confusion matrices with known answers, including a
+    partial-overlap case computed by hand, not just the perfect/
+    disjoint extremes; 4 new PR-AUC assertions in `test_success_rate.py`;
+    router-level assertions added to the existing aligned/opposite
+    `test_validate_router.py` cases). Full suite (459 tests) green.
+  - **A real label-collision bug caught during live verification, not
+    guessed at**: `PrecisionRecallChart`'s first draft copied
+    `SuccessRateChart`'s own right-edge label placement for both the
+    curve and its reference line -- but a precision-recall curve
+    typically converges toward the reference's own height by the right
+    edge (precision trends toward the base rate as recall approaches
+    1), so "Model" and "Random" rendered on top of each other. Fixed by
+    labeling the (constant-height) reference line at the LEFT edge
+    instead, where the curve is at its opposite (recall=0, precision=1)
+    extreme and never collides.
+  - Verified live end-to-end (headless-Chrome CDP): drew a real AOI
+    inside the same 2024 Terai flood cluster used for this session's
+    earlier AUC verification, computed a single-criterion
+    (`dem_elevation`) risk surface, ran Validate, and got a real,
+    internally-consistent result -- recall 1.00, precision/IoU 0.02,
+    F1 0.04 (exactly `2*0.02*1/(0.02+1)`), all following directly from
+    the same already-documented finding that Kathmandu-calibrated
+    default breaks saturate every Terai pixel to hazard class 5, so
+    literally everything is "predicted flooded" -- not a new bug, a
+    second live confirmation of the same known caveat, this time
+    visible in the confusion-matrix metrics rather than just the AUC.
+- **METEOR model-agreement comparison** (POST /api/overlay/compare-
+  meteor + sidebar step 7 "Compare to METEOR") -- at explicit request,
+  extending the validation feature to also compare against METEOR's own
+  modeled flood hazard. Deliberately kept as its own endpoint/module/
+  frontend step, sharing success_rate.py's and confusion_metrics.py's
+  own comparison machinery (both already fully generic over what the
+  "second mask" represents) but NEVER merged into POST /validate's own
+  event list or exposed through "Validate" language anywhere -- this
+  checks agreement between two independently-produced models, not
+  real-world accuracy, exactly the distinction this session's own
+  earlier discussion established (METEOR rejected as either a criterion-
+  validation reference or ground truth). A model-agreement result must
+  never read as if it were validation against real data.
+  - Backend: new `app/overlay/meteor_comparison.py` --
+    `compare_risk_surface_to_meteor` reuses `compute_overlay` +
+    `app/data/meteor_flood.py`'s `get_meteor_flood_hazard` (the same
+    local-only, single-configured-flood_type/return_period raw depth
+    source already used as an optional AHP criterion) +
+    `compute_success_rate_curve`/`compute_confusion_metrics`. METEOR's
+    continuous depth is binarized via `depth_m > 0.0` -- the standard
+    depth-nonzero convention for deriving a binary extent from a
+    continuous depth grid, covering both a real modeled depth and the
+    permanent-water sentinel (already resolved to 5.0m by
+    meteor_flood.py's own docstring), excluding only the -9999 "outside
+    the model's domain" sentinel (already resolved to exactly 0.0m).
+  - `success_rate.py`'s and `confusion_metrics.py`'s own "zero positive
+    pixels" error message gained an optional `zero_positive_hint`
+    parameter (default preserves the exact original validate-specific
+    wording, so `validate.py`'s call site and its existing tests needed
+    no changes) -- without this, meteor_comparison.py's own AOI-outside-
+    METEOR's-domain error would have misleadingly told the user to
+    check `config.VALIDATION_EVENTS`, which has nothing to do with
+    METEOR at all.
+  - `POST /api/overlay/compare-meteor` mirrors `/validate`'s response
+    shape (auc/curve/pr_auc/precision_recall_curve/precision/recall/f1/
+    iou/pixel counts) but with `meteor_flooded_fraction`/
+    `n_meteor_flooded_pixels` in place of the `observed_*` names, and
+    `meteor_flood_type`/`meteor_return_period` instead of `event`/
+    `event_label` -- no `event` field at all, since only one METEOR
+    flavor is ever locally downloaded at a time.
+  - Frontend: new `MeteorComparisonPanel.jsx`, sidebar step 7, gated on
+    `state.overlay` loaded like ValidationPanel — but with its own
+    `meteorComparison` state slice (never sharing `validation`'s), no
+    event picker, and a prominent amber `panel__hint--warning` callout
+    ("this checks agreement with another model ... not a check against
+    real-world accuracy") using new `--color-warn`/`--color-warn-bg`
+    tokens rather than borrowing the danger/error palette (nothing here
+    has gone wrong). Reuses `SuccessRateChart`/`PrecisionRecallChart`/
+    `validation-panel__*` CSS as-is.
+  - `aucQuality()` extracted from ValidationPanel.jsx into a shared
+    `lib/aucQuality.js` (both panels' AUC now read the same qualitative
+    bands, rather than two copies that could drift).
+  - **A real mislabeling bug caught by re-reading my own diff before
+    calling this done, not by a test or the user**: `SuccessRateChart`,
+    reused as-is for the METEOR panel, still said "Observed flooding
+    captured" on its axis and "of the real observed flooding" in its
+    tooltip -- exactly the "observed" vs "modeled" conflation this
+    entire feature's own framing exists to avoid, just smuggled back in
+    through a shared chart component's hardcoded text. Fixed by adding
+    a `capturedLabel` prop (default `"real observed flooding"`,
+    matching ValidationPanel's original text exactly) that
+    MeteorComparisonPanel overrides to `"METEOR-modeled flooding"`.
+  - Verified live end-to-end (headless-Chrome CDP): computed a single-
+    criterion (`dem_elevation`) risk surface over central Kathmandu (no
+    real UNOSAT extent there, but METEOR has modeled hazard everywhere
+    in Nepal), ran Compare to METEOR, got a real, internally-consistent
+    result (AUC 0.444, precision/IoU 0.13 matching METEOR's own 12.5%
+    flooded fraction, recall 1.00, F1 0.22 matching the harmonic-mean
+    formula exactly, flood_type/return_period label rendered as
+    "Fluvial (Defended), 1-in-100y") -- screenshotted, confirmed the
+    warning callout renders distinctly, and confirmed via a second AOI
+    that POST /validate's own zero-observed-flooded error message kept
+    its exact original wording (the `zero_positive_hint` default working
+    as intended).
+  - 5 new backend tests (`test_compare_meteor_router.py`, mirroring
+    test_validate_router.py's own structure: aligned/opposite confusion
+    matrices, 422 for an AOI outside METEOR's domain, 503 for a missing
+    local file, and the compute-cache-reuse check). Full suite (464
+    tests) green.
 - Not yet implemented: AOI persistence, and shelter identification. The
   GeoTIFF file route is a simple
   direct-read endpoint, not a general static-asset server or CDN — fine

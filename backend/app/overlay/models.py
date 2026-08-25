@@ -173,6 +173,113 @@ class OverlayComputeResponse(BaseModel):
         )
 
 
+# --- POST /api/overlay/validate ---
+# Success-rate/AUC validation of a computed risk surface against a real,
+# satellite-observed flood extent (app/data/validation_extent.py) --
+# fundamentally a *check on* a risk surface, not a way to produce one, so
+# this reuses OverlayComputeRequest's own criteria/final_weights/complete
+# shape (the same AHP request that would go to POST /compute) plus one
+# additional field naming which observed event to validate against.
+
+
+class ValidateRequest(BaseModel):
+    aoi: AOIInput = Field(..., description="Must genuinely overlap the named event's real flood extent to produce a meaningful result.")
+    criteria: list[OverlayCriterionInput] = Field(..., min_length=1)
+    final_weights: dict[str, float] = Field(..., description="Same as OverlayComputeRequest.final_weights.")
+    complete: bool = Field(..., description="Same as OverlayComputeRequest.complete.")
+    event: str = Field(..., description="Which registered validation event to compare against — see GET /api/overlay/validation-events.")
+
+
+class ValidationEventOut(BaseModel):
+    key: str
+    label: str
+
+
+class ValidateResponse(BaseModel):
+    auc: float = Field(..., description="Area under the success-rate curve. 0.5 = no better than random ranking; 1.0 = perfect.")
+    curve: list[tuple[float, float]] = Field(
+        ...,
+        description=(
+            "(cumulative_area_fraction, cumulative_observed_flooding_captured_fraction) pairs, "
+            "0.0-1.0 on both axes, sorted by descending risk score — plot directly as the "
+            "success-rate curve."
+        ),
+    )
+    pr_auc: float = Field(
+        ...,
+        description=(
+            "Area under the precision-recall curve, from the same descending-risk-score sweep as "
+            "`auc`. Unlike `auc`, an uninformative (random-ranking) model does NOT score ~0.5 here — "
+            "compare pr_auc against `observed_flooded_fraction` instead, which is what a random "
+            "ranking's precision hovers around at every cutoff."
+        ),
+    )
+    precision_recall_curve: list[tuple[float, float]] = Field(
+        ..., description="(recall, precision) pairs, same cutoffs as `curve` — plot directly as the precision-recall curve."
+    )
+    precision: float = Field(
+        ...,
+        description=(
+            "Of the pixels this risk surface classifies High or Very High hazard, what fraction "
+            "really flooded (single operating point, not swept — see hazard_classes.HIGH_RISK_CLASSES)."
+        ),
+    )
+    recall: float = Field(..., description="Of the pixels that really flooded, what fraction this risk surface classified High or Very High hazard.")
+    f1: float = Field(..., description="Harmonic mean of precision and recall at the same High/Very High operating point.")
+    iou: float = Field(
+        ..., description="Intersection-over-union (Jaccard index) between the High/Very High hazard area and the real observed flood extent."
+    )
+    true_positive_pixels: int = Field(..., description="Pixels both classified High/Very High hazard and really flooded.")
+    false_positive_pixels: int = Field(..., description="Pixels classified High/Very High hazard but not really flooded.")
+    false_negative_pixels: int = Field(..., description="Pixels really flooded but not classified High/Very High hazard.")
+    true_negative_pixels: int = Field(..., description="Pixels neither classified High/Very High hazard nor really flooded.")
+    n_valid_pixels: int = Field(..., description="Pixels compared (risk surface had a real value at).")
+    n_observed_flooded_pixels: int = Field(..., description="Of those, how many the real satellite-observed event actually flooded.")
+    observed_flooded_fraction: float
+    risk_surface_cache_key: str = Field(..., description="The same cache_key POST /compute would return for this AOI/criteria/weights — the risk surface this AUC was computed against.")
+    event: str
+    event_label: str
+    attribution: list[str] = Field(..., description="Deduplicated attribution from every contributing criterion source, plus the validation event's own.")
+
+
+# --- POST /api/overlay/compare-meteor ---
+# A DELIBERATELY separate endpoint from POST /validate, not another
+# `event` option on it -- see app/overlay/meteor_comparison.py's own
+# docstring for why. This checks agreement with another model's output
+# (METEOR/Fathom), never real-world accuracy; nothing here uses the word
+# "validate" for exactly that reason, on either this request or its
+# response.
+
+
+class CompareMeteorRequest(BaseModel):
+    aoi: AOIInput = Field(..., description="Same AOI a POST /compute request for this result would use.")
+    criteria: list[OverlayCriterionInput] = Field(..., min_length=1)
+    final_weights: dict[str, float] = Field(..., description="Same as OverlayComputeRequest.final_weights.")
+    complete: bool = Field(..., description="Same as OverlayComputeRequest.complete.")
+
+
+class CompareMeteorResponse(BaseModel):
+    auc: float = Field(..., description="Area under the success-rate curve, against METEOR's own modeled flood extent instead of a real one. Same 0.5/1.0 meaning as POST /validate's `auc`.")
+    curve: list[tuple[float, float]] = Field(..., description="Same shape as POST /validate's `curve`, against METEOR's modeled extent.")
+    pr_auc: float = Field(..., description="Same meaning as POST /validate's `pr_auc` — compare against `meteor_flooded_fraction`, not 0.5.")
+    precision_recall_curve: list[tuple[float, float]] = Field(..., description="Same shape as POST /validate's `precision_recall_curve`.")
+    precision: float = Field(..., description="Of the pixels this risk surface classifies High or Very High hazard, what fraction METEOR also models as flooded.")
+    recall: float = Field(..., description="Of the pixels METEOR models as flooded, what fraction this risk surface classified High or Very High hazard.")
+    f1: float = Field(..., description="Harmonic mean of precision and recall at the same High/Very High operating point.")
+    iou: float = Field(..., description="Intersection-over-union between the High/Very High hazard area and METEOR's own modeled flood extent.")
+    true_positive_pixels: int
+    false_positive_pixels: int
+    false_negative_pixels: int
+    true_negative_pixels: int
+    n_valid_pixels: int = Field(..., description="Pixels compared (risk surface had a real value at).")
+    n_meteor_flooded_pixels: int = Field(..., description="Of those, how many METEOR models as flooded (depth_m > 0) for the configured flood_type/return_period.")
+    meteor_flooded_fraction: float
+    risk_surface_cache_key: str = Field(..., description="The same cache_key POST /compute would return for this AOI/criteria/weights.")
+    meteor_flood_type: str = Field(..., description="Which METEOR flood_type this compared against (config.METEOR_FLOOD_TYPE) — 'FD'/'FU'/'P', fixed server-side, not caller-selectable (only one local file is downloaded at a time; see app/data/meteor_flood.py).")
+    meteor_return_period: str = Field(..., description="Which METEOR return_period this compared against (config.METEOR_FLOOD_RETURN_PERIOD), e.g. '1in100'.")
+    attribution: list[str] = Field(..., description="Deduplicated attribution from every contributing criterion source, plus METEOR's own.")
+
+
 # --- POST /api/overlay/report ---
 
 

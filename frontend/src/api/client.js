@@ -151,6 +151,46 @@ export function generateReport(payload) {
   return requestJson('/api/overlay/report', { method: 'POST', body: JSON.stringify(payload) })
 }
 
+/** GET /api/overlay/validation-events -- [{key, label}] for every real, satellite-observed flood event a risk surface can be validated against (backend/app/data/validation_extent.py's config.VALIDATION_EVENTS). */
+export function listValidationEvents() {
+  return requestJson('/api/overlay/validation-events')
+}
+
+/**
+ * POST /api/overlay/validate -- success-rate/AUC validation of a
+ * computed risk surface against a real, satellite-observed flood
+ * extent (not another model's output -- see backend/app/overlay/
+ * validate.py's own docstring). Same aoi/criteria/final_weights/complete
+ * shape as computeOverlay's own payload, plus `event`; reuses POST
+ * /compute's own cache, so validating an AOI/criteria/weights
+ * combination already computed via computeOverlay doesn't recompute the
+ * risk surface.
+ */
+export function validateRiskSurface(payload) {
+  return requestJson('/api/overlay/validate', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+/** GET /api/overlay/validation-events/{event}/extent.geojson -- the named event's real flood-extent polygon, for the map's own toggleable reference overlay (MapView.jsx's ValidationExtentControl) -- display-simplified, never used for the actual validation math itself. */
+export function getValidationExtentGeoJSON(event) {
+  return requestJson(`/api/overlay/validation-events/${encodeURIComponent(event)}/extent.geojson`)
+}
+
+/**
+ * POST /api/overlay/compare-meteor -- agreement between a computed risk
+ * surface and METEOR's own modeled flood hazard, NOT validation against
+ * real-world accuracy (see backend/app/overlay/meteor_comparison.py's
+ * own docstring, and MeteorComparisonPanel.jsx, which is deliberately a
+ * separate component/step from ValidationPanel.jsx for the same
+ * reason). Same aoi/criteria/final_weights/complete shape as
+ * computeOverlay's own payload -- no `event` field, since only one
+ * METEOR flood_type/return_period is ever locally available at a time
+ * (the response's own meteor_flood_type/meteor_return_period say
+ * which). Reuses POST /compute's own cache the same way validateRiskSurface does.
+ */
+export function compareToMeteor(payload) {
+  return requestJson('/api/overlay/compare-meteor', { method: 'POST', body: JSON.stringify(payload) })
+}
+
 /** Absolute, downloadable URL for a backend-relative data_url (risk_surface/hazard_classes GeoTIFFs) -- a plain `<a href>` needs the full origin, unlike fetchRiskSurfaceBytes's own internal fetch(). */
 export function absoluteDataUrl(relativeUrl) {
   return `${API_BASE_URL}${relativeUrl}`

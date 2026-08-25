@@ -589,6 +589,17 @@ input[type='radio'] {
   line-height: 1.5;
 }
 
+/* An important caveat, not an error -- MeteorComparisonPanel.jsx's own
+   "this is model agreement, not real-world validation" note. Uses the
+   warn tokens (not danger's), since nothing here has gone wrong. */
+.panel__hint--warning {
+  color: var(--color-text);
+  background: var(--color-warn-bg);
+  border: 1px solid color-mix(in srgb, var(--color-warn) 35%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.65rem;
+}
+
 .field-error {
   color: var(--color-danger);
   background: var(--color-danger-bg);
@@ -1505,6 +1516,191 @@ input[type='radio'] {
   .report-overlay__chart-row {
     grid-template-columns: 80px 1fr auto;
   }
+}
+
+/* ==========================================================================
+   Validation panel (ValidationPanel.jsx, sidebar step 6) + success-rate
+   curve chart (SuccessRateChart.jsx) -- checks the computed risk surface
+   against a real, satellite-observed flood extent.
+   ========================================================================== */
+.validation-panel__event-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: var(--space-3) 0;
+  font-size: var(--text-sm);
+}
+
+.validation-panel__event-picker select {
+  background: var(--color-panel-alt);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+}
+
+.validation-panel__result {
+  margin-top: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* AUC hero number -- the single summary statistic the whole panel exists
+   to surface; the curve below is supporting detail, not the headline. */
+.validation-panel__auc {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.validation-panel__auc-value {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-2xl);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+}
+
+.validation-panel__auc-label {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.validation-panel__auc-label strong {
+  color: var(--color-text);
+}
+
+/* PR-AUC's own hero row -- visually secondary to the AUC hero above it
+   (smaller value size) since AUC/success-rate is this panel's headline
+   metric and PR-AUC is a second, related summary, not a competing one. */
+.validation-panel__pr-auc {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.validation-panel__pr-auc-value {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+}
+
+.validation-panel__pr-auc-label {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+/* Precision/recall/F1/IoU -- four secondary stat tiles at the single
+   High/Very-High hazard operating point (not swept, unlike the two AUCs
+   above), so they read as one small group rather than four more heroes. */
+.validation-panel__metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2);
+}
+
+.validation-panel__metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: var(--space-2);
+  background: var(--color-panel-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+.validation-panel__metric-value {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+.validation-panel__metric-label {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.success-rate-chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.success-rate-chart__svg {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1 / 1;
+  max-width: 260px;
+}
+
+.success-rate-chart__axis {
+  stroke: var(--color-border-strong);
+  stroke-width: 0.4;
+}
+
+/* The "random ranking" baseline (AUC 0.5) -- a reference annotation, not
+   a data series, so it stays in muted ink (dataviz skill: "text wears
+   text tokens, never the series color") rather than a second hue. */
+.success-rate-chart__reference {
+  stroke: var(--color-text-muted);
+  stroke-width: 0.6;
+  stroke-dasharray: 2 1.5;
+}
+
+.success-rate-chart__curve {
+  fill: none;
+  stroke: var(--color-primary);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.success-rate-chart__crosshair {
+  stroke: var(--color-border-strong);
+  stroke-width: 0.4;
+}
+
+.success-rate-chart__point {
+  fill: var(--color-primary);
+  stroke: var(--color-panel);
+  stroke-width: 0.5;
+}
+
+.success-rate-chart__label {
+  font-size: 3.2px;
+  fill: var(--color-text-muted);
+}
+
+.success-rate-chart__label--curve {
+  fill: var(--color-primary);
+}
+
+.success-rate-chart__axis-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  gap: var(--space-2);
+}
+
+.success-rate-chart__tooltip {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  min-height: 1.6em;
+}
+
+.success-rate-chart__tooltip strong {
+  color: var(--color-text);
 }
 
 /* ==========================================================================

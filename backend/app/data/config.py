@@ -341,3 +341,45 @@ GDAL_HTTP_RETRY_ENV = {
 POPULATION_S3_REGION_ENV = {
     "AWS_DEFAULT_REGION": os.environ.get("POPULATION_S3_REGION", "us-east-1"),
 }
+
+# app/data/validation_extent.py: real, satellite-observed flood extent
+# polygons -- for validating the computed risk surface against actual
+# ground truth (a *different* thing from every criterion source above,
+# all of which feed the risk surface itself; this data never does).
+# Local-only, no cloud fallback, same reasoning as basins.py/meteor_flood.py:
+# no live windowed-read endpoint exists for any of these -- each is a
+# one-time downloaded product. VALIDATION_EVENTS maps a stable event key
+# (used in API requests) to the shapefile local_source.
+# find_local_raster_covering_aoi-style local dir it lives in -- adding a
+# future event (e.g. a genuine Kathmandu-Valley-covering product, or the
+# 2017/2019 events once a source is found for them, see SPEC.md) needs
+# only one new dict entry here, no code change.
+#
+# nepal_2024_terai: UN Satellite Centre (UNOSAT) Sentinel-1 SAR flood
+# extent, 27 September 2024, Koshi & Madhesh Provinces -- one date from a
+# 3-date rapid-mapping product covering the September 2024 Nepal floods
+# (244 deaths nationally). Downloaded from HDX
+# (data.humdata.org/dataset/flood-impact-assessment-of-the-capital-city-
+# of-kathmandu-bagmati-province-nepal-as-of-30-s), licensed CC BY-SA
+# (Creative Commons Attribution-ShareAlike -- confirmed directly on that
+# HDX dataset's own metadata, not assumed). Despite that dataset's own
+# title, this specific file's geometry does NOT reach Kathmandu Valley
+# (~85.2-85.5E) -- verified directly by checking its bounds (max
+# longitude 87.47E, i.e. comfortably east of Kathmandu, all in the Terai
+# lowlands) -- so it validates against real Terai flooding, not this
+# project's Kathmandu Valley study area. Flagged explicitly wherever this
+# event is surfaced, not silently implied to be local ground truth.
+LOCAL_VALIDATION_EXTENTS_DIR = DATA_DIR / "raw" / "validation_extents"
+VALIDATION_EVENTS = {
+    "nepal_2024_terai": {
+        "label": "Nepal floods, 27 Sep 2024 (Koshi & Madhesh Provinces, Terai)",
+        "path": "nepal_2024_terai/S1_20240927_FloodExtent_Koshi_Madhesh.shp",
+        "attribution": (
+            "United Nations Satellite Centre (UNOSAT). Satellite detected water extent, "
+            "Koshi and Madhesh Provinces, Nepal, as of 27 September 2024 (Sentinel-1 SAR, "
+            "acquired 27 Sep 2024 00:11 UTC). Licensed CC BY-SA. "
+            "https://data.humdata.org/dataset/flood-impact-assessment-of-the-capital-city-of-"
+            "kathmandu-bagmati-province-nepal-as-of-30-s"
+        ),
+    },
+}

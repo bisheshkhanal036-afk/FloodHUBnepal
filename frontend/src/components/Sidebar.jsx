@@ -22,6 +22,8 @@ import WeightingPanel from './WeightingPanel'
 import ComputePanel from './ComputePanel'
 import ResultPanel from './ResultPanel'
 import ReportPanel from './ReportPanel'
+import ValidationPanel from './ValidationPanel'
+import MeteorComparisonPanel from './MeteorComparisonPanel'
 
 export default function Sidebar({ onBackToLanding }) {
   const { state, dispatch } = useAppState()
@@ -54,8 +56,30 @@ export default function Sidebar({ onBackToLanding }) {
         ),
       },
       { id: 5, title: 'Vulnerability report', reachable: overlayLoaded, complete: reportLoaded, content: <ReportPanel /> },
+      {
+        id: 6,
+        title: 'Validate',
+        reachable: overlayLoaded,
+        complete: state.validation.status === 'loaded',
+        content: <ValidationPanel />,
+      },
+      {
+        id: 7,
+        title: 'Compare to METEOR',
+        reachable: overlayLoaded,
+        complete: state.meteorComparison.status === 'loaded',
+        content: <MeteorComparisonPanel />,
+      },
     ]
-  }, [state.aoi, selectedIds.length, weightsComplete, state.overlay.status, state.report.status])
+  }, [
+    state.aoi,
+    selectedIds.length,
+    weightsComplete,
+    state.overlay.status,
+    state.report.status,
+    state.validation.status,
+    state.meteorComparison.status,
+  ])
 
   // Every reachable step is open by default -- deliberately NOT an
   // accordion that auto-collapses a step the instant it's "complete"

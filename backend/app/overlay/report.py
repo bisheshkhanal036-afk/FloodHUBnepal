@@ -28,14 +28,10 @@ from .building_classification import ClassifiedBuilding, classify_buildings
 from .compute import _mask_array_to_polygon
 from .errors import OverlayValidationError
 from .geotiff import write_hazard_class_geotiff
-from .hazard_classes import risk_surface_to_hazard_classes
+from .hazard_classes import HIGH_RISK_CLASSES, risk_surface_to_hazard_classes
 from .service import OverlayCriterionRequest, OverlayResult, compute_overlay
 from .urls import criterion_raster_url
 from .zonal_stats import ZonalClassStats, compute_zonal_stats
-
-# Hazard classes 4 (High) and 5 (Very High) -- the Siraha-style paper's
-# own headline figure ("buildings/population in high + very-high zones").
-HIGH_RISK_CLASSES = (4, 5)
 
 
 @dataclass(frozen=True)

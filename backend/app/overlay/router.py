@@ -13,16 +13,23 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from app.ahp.errors import AHPConsistencyError, AHPValidationError
 from app.data import config
 from app.data.errors import DataSourceUnavailableError, NodataValidationError, ReclassificationError
+from app.data.validation_extent import get_validation_extent_geojson, list_validation_events
 
 from .breaks import compute_criterion_breaks
 from .errors import OverlayValidationError
 from .hazard_classes import materialize_hazard_classes_from_risk_surface_tif
+from .meteor_comparison import compare_risk_surface_to_meteor
 from .meteor_tile_proxy import MeteorTileNotFoundError, fetch_meteor_flood_tile
 from .models import (
+    CompareMeteorRequest,
+    CompareMeteorResponse,
     CriterionBreaksRequest,
     CriterionBreaksResponse,
     OverlayComputeRequest,
     OverlayComputeResponse,
+    ValidateRequest,
+    ValidateResponse,
+    ValidationEventOut,
     VulnerabilityReportRequest,
     VulnerabilityReportResponse,
 )
@@ -35,7 +42,9 @@ from .urls import (
     METEOR_FLOOD_TILE_PATH_PATTERN,
     RISK_SURFACE_PATH_PATTERN,
     ROUTER_PREFIX,
+    VALIDATION_EXTENT_GEOJSON_PATH_PATTERN,
 )
+from .validate import validate_risk_surface
 
 router = APIRouter(prefix=ROUTER_PREFIX, tags=["overlay"])
 
@@ -118,6 +127,166 @@ def criteria_breaks(payload: CriterionBreaksRequest) -> CriterionBreaksResponse:
         raise HTTPException(status_code=503, detail={"error": "data_source_unavailable", "message": str(exc)}) from exc
 
     return CriterionBreaksResponse(**result)
+
+
+@router.get("/validation-events", response_model=list[ValidationEventOut])
+def validation_events() -> list[ValidationEventOut]:
+    """Every registered real, satellite-observed flood event a risk
+    surface can be validated against (config.VALIDATION_EVENTS) — for a
+    caller (the frontend's own event selector) to list what's available
+    without hardcoding event keys.
+    """
+    return [ValidationEventOut(key=key, label=label) for key, label in list_validation_events().items()]
+
+
+@router.get(VALIDATION_EXTENT_GEOJSON_PATH_PATTERN)
+def validation_extent_geojson(event: str) -> dict:
+    """The named event's real flood-extent polygon as GeoJSON, ready for
+    a MapLibre GeoJSON source -- the reference-overlay counterpart to
+    POST /validate's own AUC number, the same "toggleable map layer"
+    role MeteorFloodControl already fills for the (modeled) METEOR
+    layer, placed in the same map control group by the frontend
+    (MapView.jsx's own ValidationExtentControl). Simplified for display
+    only (see get_validation_extent_geojson's own docstring) -- never
+    used for the actual validation math, which reads the raw shapefile.
+
+    Responds 404 for an unrecognized event (a plain 404, not the
+    data_source_unavailable/503 the same "unrecognized" condition maps
+    to elsewhere in this router — this route's own `event` is a path
+    parameter naming a specific resource, so "doesn't exist" is exactly
+    what a 404 means here); 503 if the event is registered but its local
+    file is missing.
+    """
+    try:
+        return get_validation_extent_geojson(event)
+    except DataSourceUnavailableError as exc:
+        if event not in config.VALIDATION_EVENTS:
+            raise HTTPException(status_code=404, detail={"error": "validation_event_not_found", "message": str(exc)}) from exc
+        raise HTTPException(status_code=503, detail={"error": "data_source_unavailable", "message": str(exc)}) from exc
+
+
+@router.post("/validate", response_model=ValidateResponse)
+def validate(payload: ValidateRequest) -> ValidateResponse:
+    """Validates the same risk surface POST /compute would produce for
+    this AOI/criteria/final_weights against a real satellite-observed
+    flood extent (not another model's output — see app/data/
+    validation_extent.py's own module docstring for why that distinction
+    matters). Reuses POST /compute's own cache: an AOI/criteria/weights
+    combination already computed via /compute is not recomputed here.
+
+    Returns two families of metrics: threshold-free (success_rate.py's
+    `auc`/`curve` and `pr_auc`/`precision_recall_curve`, swept over
+    every possible cutoff of the continuous risk score) and threshold-
+    based (confusion_metrics.py's `precision`/`recall`/`f1`/`iou`, all
+    scored at the one already-meaningful High/Very-High hazard-class
+    operating point this app uses everywhere else).
+
+    Responds 422 if the criteria/weights are malformed (same as POST
+    /compute), if `event` doesn't name a registered validation event, or
+    if the AOI simply doesn't overlap that event's real flood extent at
+    all (zero observed-flooded pixels in the valid risk-surface area —
+    an expected "wrong AOI for this event" case, not a server error).
+    Responds 503 if a contributing criterion's data source, or the
+    validation event's own local file, is unavailable.
+    """
+    aoi = payload.aoi.to_domain()
+    criteria = [c.to_domain() for c in payload.criteria]
+
+    try:
+        result = validate_risk_surface(aoi, criteria, payload.final_weights, payload.complete, payload.event)
+    except OverlayValidationError as exc:
+        raise HTTPException(status_code=422, detail={"error": "overlay_validation_error", "message": str(exc)}) from exc
+    except (NodataValidationError, ReclassificationError) as exc:
+        raise HTTPException(status_code=422, detail={"error": "overlay_data_error", "message": str(exc)}) from exc
+    except DataSourceUnavailableError as exc:
+        raise HTTPException(status_code=503, detail={"error": "data_source_unavailable", "message": str(exc)}) from exc
+
+    sr = result.success_rate
+    cm = result.confusion_metrics
+    return ValidateResponse(
+        auc=sr.auc,
+        curve=sr.curve,
+        pr_auc=sr.pr_auc,
+        precision_recall_curve=sr.precision_recall_curve,
+        precision=cm.precision,
+        recall=cm.recall,
+        f1=cm.f1,
+        iou=cm.iou,
+        true_positive_pixels=cm.true_positive,
+        false_positive_pixels=cm.false_positive,
+        false_negative_pixels=cm.false_negative,
+        true_negative_pixels=cm.true_negative,
+        n_valid_pixels=sr.n_valid_pixels,
+        n_observed_flooded_pixels=sr.n_observed_flooded_pixels,
+        observed_flooded_fraction=sr.observed_flooded_fraction,
+        risk_surface_cache_key=result.risk_surface_cache_key,
+        event=result.event,
+        event_label=result.event_label,
+        attribution=result.attribution,
+    )
+
+
+@router.post("/compare-meteor", response_model=CompareMeteorResponse)
+def compare_meteor(payload: CompareMeteorRequest) -> CompareMeteorResponse:
+    """Compares the same risk surface POST /compute would produce for
+    this AOI/criteria/final_weights against METEOR's own modeled flood
+    hazard (app/data/meteor_flood.py) — a check on agreement between two
+    models, NOT validation against real-world accuracy (that's POST
+    /validate's own job; see app/overlay/meteor_comparison.py's module
+    docstring for why the two are kept deliberately separate). Reuses
+    POST /compute's own cache the same way POST /validate does.
+
+    Same two metric families POST /validate returns (threshold-free
+    auc/curve/pr_auc/precision_recall_curve, and threshold-based
+    precision/recall/f1/iou at the High/Very-High hazard operating
+    point) — scored against METEOR's own `depth_m > 0` flooded mask
+    instead of a real observed extent, for whichever single
+    flood_type/return_period this server has a local METEOR file
+    downloaded for (`meteor_flood_type`/`meteor_return_period` in the
+    response — not caller-selectable; see app/data/meteor_flood.py).
+
+    Responds 422 if the criteria/weights are malformed (same as POST
+    /compute), or if the AOI falls entirely outside METEOR's own modeled
+    floodplain domain (zero METEOR-flooded pixels in the valid risk-
+    surface area — an expected "wrong AOI for this terrain" case, not a
+    server error). Responds 503 if a contributing criterion's data
+    source, or METEOR's own local file, is unavailable.
+    """
+    aoi = payload.aoi.to_domain()
+    criteria = [c.to_domain() for c in payload.criteria]
+
+    try:
+        result = compare_risk_surface_to_meteor(aoi, criteria, payload.final_weights, payload.complete)
+    except OverlayValidationError as exc:
+        raise HTTPException(status_code=422, detail={"error": "overlay_validation_error", "message": str(exc)}) from exc
+    except (NodataValidationError, ReclassificationError) as exc:
+        raise HTTPException(status_code=422, detail={"error": "overlay_data_error", "message": str(exc)}) from exc
+    except DataSourceUnavailableError as exc:
+        raise HTTPException(status_code=503, detail={"error": "data_source_unavailable", "message": str(exc)}) from exc
+
+    sr = result.success_rate
+    cm = result.confusion_metrics
+    return CompareMeteorResponse(
+        auc=sr.auc,
+        curve=sr.curve,
+        pr_auc=sr.pr_auc,
+        precision_recall_curve=sr.precision_recall_curve,
+        precision=cm.precision,
+        recall=cm.recall,
+        f1=cm.f1,
+        iou=cm.iou,
+        true_positive_pixels=cm.true_positive,
+        false_positive_pixels=cm.false_positive,
+        false_negative_pixels=cm.false_negative,
+        true_negative_pixels=cm.true_negative,
+        n_valid_pixels=sr.n_valid_pixels,
+        n_meteor_flooded_pixels=sr.n_observed_flooded_pixels,
+        meteor_flooded_fraction=sr.observed_flooded_fraction,
+        risk_surface_cache_key=result.risk_surface_cache_key,
+        meteor_flood_type=result.meteor_flood_type,
+        meteor_return_period=result.meteor_return_period,
+        attribution=result.attribution,
+    )
 
 
 @router.get(RISK_SURFACE_PATH_PATTERN)

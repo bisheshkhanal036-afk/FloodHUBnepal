@@ -8,7 +8,14 @@
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useEffect, useRef } from 'react'
-import { API_BASE_URL, fetchRiskSurfaceBytes, getBasinAOI, getDistrictAOI } from '../api/client'
+import {
+  API_BASE_URL,
+  fetchRiskSurfaceBytes,
+  getBasinAOI,
+  getDistrictAOI,
+  getValidationExtentGeoJSON,
+  listValidationEvents,
+} from '../api/client'
 import { riskValueToRgb, SUPPORT_STATUS_COLORS, DISTRICT_FILL_COLOR } from '../lib/colorRamp'
 import { AREA_CAP_KM2, approxBboxAreaKm2, bboxToPolygon, cornersToBbox } from '../lib/geo'
 import { gridCornersToWgs84 } from '../lib/proj'
@@ -283,6 +290,78 @@ class MeteorFloodControl {
   }
 }
 
+// Same top-left control-group slot as MeteorFloodControl, for the same
+// kind of reason: a real, satellite-observed flood extent
+// (app/data/validation_extent.py) shown as a toggleable map reference
+// overlay, the visual counterpart to ValidationPanel's own AUC number
+// (sidebar step 6) -- "the validation events should be able to be
+// overlaid, in the same place as the meteor flood overlay," at explicit
+// request. Unlike METEOR_FLOOD_TYPES/PERIODS (fixed constants known at
+// import time), the event list is fetched from the backend
+// asynchronously and can still be empty the moment this control is
+// constructed -- `updateEvents()` lets the owning MapView component
+// repopulate the select once GET /api/overlay/validation-events
+// actually resolves, called from its own effect keyed on
+// state.validationEvents.list (see the exposed `_instance` field below
+// used to reach this control instance from outside the class).
+class ValidationExtentControl {
+  constructor(dispatch, getState) {
+    this._dispatch = dispatch
+    this._getState = getState
+  }
+
+  onAdd() {
+    const container = document.createElement('div')
+    container.className = 'maplibregl-ctrl maplibregl-ctrl-group basemap-control meteor-flood-control'
+
+    const eventSelect = document.createElement('select')
+    eventSelect.className = 'basemap-control__select'
+    eventSelect.title = 'Real observed flood event to overlay'
+    eventSelect.addEventListener('change', () => {
+      this._dispatch({ type: 'SET_VALIDATION_EVENT', event: eventSelect.value })
+    })
+    this._eventSelect = eventSelect
+
+    const toggleButton = document.createElement('button')
+    toggleButton.type = 'button'
+    toggleButton.className = 'basemap-control__toggle'
+    toggleButton.title = 'Show/hide real observed flood extent overlay'
+    const syncToggleLabel = () => {
+      toggleButton.textContent = this._getState().validationExtentVisible ? '🛰️' : '〰️'
+    }
+    syncToggleLabel()
+    toggleButton.addEventListener('click', () => {
+      this._dispatch({ type: 'TOGGLE_VALIDATION_EXTENT_VISIBLE' })
+      // Same optimistic-flip reasoning as every other toggle button in
+      // this file -- no state to read synchronously right after dispatch.
+      toggleButton.textContent = toggleButton.textContent === '🛰️' ? '〰️' : '🛰️'
+    })
+
+    container.appendChild(eventSelect)
+    container.appendChild(toggleButton)
+    this._container = container
+    this.updateEvents(this._getState().validationEvents.list, this._getState().selectedValidationEvent)
+    return container
+  }
+
+  /** Rebuilds the <select>'s own options from the current events list -- called once up front (possibly with an empty list, if GET /api/overlay/validation-events hasn't resolved yet) and again by MapView's own effect whenever state.validationEvents.list actually changes. */
+  updateEvents(events, selectedEvent) {
+    if (!this._eventSelect) return
+    this._eventSelect.replaceChildren()
+    for (const { key, label } of events) {
+      const option = document.createElement('option')
+      option.value = key
+      option.textContent = label
+      this._eventSelect.appendChild(option)
+    }
+    if (selectedEvent) this._eventSelect.value = selectedEvent
+  }
+
+  onRemove() {
+    this._container?.parentNode?.removeChild(this._container)
+  }
+}
+
 // A small live lng/lat/zoom readout, bottom-left next to MapLibre's own
 // ScaleControl -- the kind of chrome a serious cartography tool (Mapbox
 // Studio, QGIS) shows as a matter of course, and this app had none of
@@ -318,11 +397,19 @@ const DRAW_PREVIEW_SOURCE = 'draw-preview'
 const BASINS_SOURCE = 'basins'
 const DISTRICTS_SOURCE = 'districts'
 const RISK_SURFACE_SOURCE = 'risk-surface'
+const VALIDATION_EXTENT_SOURCE = 'validation-extent'
+const VALIDATION_EXTENT_LAYER = 'validation-extent'
 
 export default function MapView() {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
   const stateRef = useRef(null)
+  // The ValidationExtentControl instance itself (not just its container
+  // div) -- kept so the event-list-sync effect below can call its own
+  // updateEvents() method directly, the same reason a plain IControl
+  // (no React lifecycle of its own) needs an escape hatch to be updated
+  // from outside after construction.
+  const validationExtentControlRef = useRef(null)
   // Caches the risk-surface GeoTIFF's raw bytes, keyed by data_url --
   // switching color schemes (state.riskColorScheme) needs to re-decode
   // with a different colorFn, but not re-fetch bytes that haven't
@@ -344,6 +431,9 @@ export default function MapView() {
     map.addControl(new maplibregl.NavigationControl(), 'top-right')
     map.addControl(new BasemapControl(dispatch, () => stateRef.current), 'top-left')
     map.addControl(new MeteorFloodControl(dispatch, () => stateRef.current), 'top-left')
+    const validationExtentControl = new ValidationExtentControl(dispatch, () => stateRef.current)
+    validationExtentControlRef.current = validationExtentControl
+    map.addControl(validationExtentControl, 'top-left')
     // Cartographic-instrument chrome Mapbox Studio/QGIS treat as table
     // stakes and this app previously had none of: a real scale bar
     // (MapLibre's own control, zero new deps) and a live coordinate/zoom
@@ -503,6 +593,112 @@ export default function MapView() {
     if (map.isStyleLoaded() && map.getLayer(METEOR_FLOOD_LAYER)) apply()
     else map.once('load', apply)
   }, [state.meteorFloodVisible])
+
+  // --- real observed flood-extent overlay: fetch the events list once,
+  // independent of whether the sidebar's own "Validate" step has ever
+  // been reached (StepSection doesn't mount a locked step's content, so
+  // ValidationPanel's own identical fetch-trigger effect wouldn't run
+  // until a risk surface is already computed -- this overlay control, by
+  // design, works standalone, the same way MeteorFloodControl doesn't
+  // wait on any other step either). Both effects share the same
+  // idle-status guard, so whichever mounts first "wins" and the other is
+  // a safe no-op, never a duplicate fetch. ---
+  useEffect(() => {
+    if (stateRef.current.validationEvents.status !== 'idle') return
+    dispatch({ type: 'VALIDATION_EVENTS_LOADING' })
+    listValidationEvents()
+      .then((events) => dispatch({ type: 'VALIDATION_EVENTS_LOADED', events }))
+      .catch((error) => dispatch({ type: 'VALIDATION_EVENTS_ERROR', error }))
+    // Runs once on mount only (stateRef.current read fresh above, not a
+    // dependency) -- re-fetching every time some unrelated bit of state
+    // changes would be wasteful for a list that's static per session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Keeps ValidationExtentControl's own <select> in sync with the
+  // fetched events list/current selection -- a plain IControl has no
+  // React re-render of its own, so this is the same "push updates in via
+  // an escape-hatch method" pattern CoordinateReadoutControl's map
+  // event listener already uses, just driven by React state instead of
+  // a MapLibre event.
+  useEffect(() => {
+    validationExtentControlRef.current?.updateEvents(state.validationEvents.list, state.selectedValidationEvent)
+  }, [state.validationEvents.list, state.selectedValidationEvent])
+
+  // Real flood-extent GeoJSON: (re)fetched whenever the selected event
+  // changes, added as a fill layer the same way basins/districts already
+  // are. A distinct magenta from every other layer on this map (basins'
+  // gray outline, districts' own fill, the risk surface's own ramp, and
+  // METEOR's raster) so it never reads as any of those by accident.
+  useEffect(() => {
+    const map = mapRef.current
+    const event = state.selectedValidationEvent
+    if (!map || !event) return
+
+    let cancelled = false
+    getValidationExtentGeoJSON(event)
+      .then((geojson) => {
+        if (cancelled) return
+        const apply = () => {
+          if (map.getSource(VALIDATION_EXTENT_SOURCE)) {
+            map.getSource(VALIDATION_EXTENT_SOURCE).setData(geojson)
+          } else {
+            map.addSource(VALIDATION_EXTENT_SOURCE, { type: 'geojson', data: geojson })
+            const firstLayerId = map.getStyle().layers.find((l) => l.id !== BASEMAP_LAYER)?.id
+            map.addLayer(
+              {
+                id: VALIDATION_EXTENT_LAYER,
+                type: 'fill',
+                source: VALIDATION_EXTENT_SOURCE,
+                paint: { 'fill-color': '#e930c8', 'fill-opacity': 0.55 },
+                // stateRef, not the closure's own `state` -- this async
+                // fetch can resolve well after the render that started
+                // it, so a toggle click in between must still be
+                // reflected in the layer's own initial visibility
+                // rather than reverting to whatever it was when the
+                // fetch began.
+                layout: { visibility: stateRef.current.validationExtentVisible ? 'visible' : 'none' },
+              },
+              firstLayerId
+            )
+          }
+        }
+        if (map.isStyleLoaded()) apply()
+        else map.once('load', apply)
+      })
+      .catch(() => {
+        // A failed fetch (e.g. the event's own local file missing
+        // server-side) just leaves no overlay to show -- ValidationPanel
+        // surfaces the equivalent failure for POST /validate itself
+        // already; this reference layer degrading silently, rather than
+        // erroring the whole map, matches how a missing basemap tile
+        // doesn't crash the app either.
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [state.selectedValidationEvent])
+
+  // --- real observed flood-extent overlay visibility toggle -- cheap
+  // layout-property flip, but WITHOUT the `map.once('load', apply)`
+  // fallback every other toggle effect above uses: those are all safe
+  // to defer to the map's own 'load' event because their layer is
+  // created synchronously in a same-tick effect gated on that same
+  // event. This layer's own creation (the effect above) is instead
+  // gated behind an independent async GeoJSON fetch, so 'load' can fire
+  // (and only fires once) well before the layer actually exists --
+  // confirmed live during implementation: deferring to it here threw
+  // "Cannot style non-existing layer" every time. A missing layer here
+  // just means its own creation effect hasn't finished fetching yet, in
+  // which case it already bakes today's state.validationExtentVisible
+  // into the layer's own initial `layout.visibility` when it's created
+  // — nothing for this effect to do until then.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !map.getLayer(VALIDATION_EXTENT_LAYER)) return
+    map.setLayoutProperty(VALIDATION_EXTENT_LAYER, 'visibility', state.validationExtentVisible ? 'visible' : 'none')
+  }, [state.validationExtentVisible])
 
   // --- draw mode: disable/enable normal map dragging so drag = draw, not pan ---
   useEffect(() => {
