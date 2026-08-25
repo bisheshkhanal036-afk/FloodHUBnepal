@@ -1,10 +1,10 @@
 # Citizen Mode — What We Built
 
 **Read this together with:** `CITIZEN_MODE_PLAN.md` (the design plan we
-agreed before building anything) and `VALIDATION_PROCESS.md` (how the
-profile this mode runs was chosen). This file documents what actually
-got built, file by file, and what was tested. Nothing here has been
-committed to git yet — this is the read-before-you-decide document.
+agreed before building anything) and `VALIDATION_PROCESS.md` /
+`METEOR_VALIDATION_RESULTS.md` / `LITERATURE_REVIEW_THRESHOLDS.md` (the
+full validation numbers). This file documents what actually got built,
+file by file, what evidence it's built on, and what was tested.
 
 ---
 
@@ -35,6 +35,194 @@ buy.
 anything aware of flooding currently in progress. The backend has no
 real-time data source at all. Every screen says this in plain language,
 not a footnote.
+
+---
+
+## The evidence base: literature, AHP weights, and the flood inventory
+
+Citizen Mode's configuration isn't invented — every number in
+`profile.py` traces back to a specific published source or a specific
+dataset we harvested ourselves. This section is that trail in full,
+since it's the part most worth scrutinising before trusting the tool.
+
+### Literature reviewed
+
+Three papers, found by searching for Kathmandu Valley / Nepal AHP flood
+studies:
+
+1. **Chaudhary, U., Shah, M.A.R., Shakya, B.M., & Aryal, A. (2024).
+   Flood Susceptibility and Risk Mapping of Kathmandu Valley Watershed,
+   Nepal.** *Sustainability*, 16(16), 7101.
+   https://doi.org/10.3390/su16167101 — **the single most relevant paper
+   that exists for this project.** Same study area as ours, exactly.
+   AHP with 10 conditioning factors, GIS, validated with AUC against 156
+   historical flood sites from BIPAD. This is the paper that supplied
+   both our AHP weights (below) and the idea of validating against
+   BIPAD's own flood records.
+
+2. **Flood vulnerability map of the Bagmati River basin, Nepal: a
+   comparative approach of the analytical hierarchy process and
+   frequency ratio model** (2024). *Smart Construction and Sustainable
+   Cities*. https://doi.org/10.1007/s44268-024-00041-7 — Kathmandu
+   Valley is the upstream sub-basin of this larger study area. Useful
+   for cross-checking factor importance (precipitation weighted highest
+   at 0.14 in their AHP), but its absolute class-break values turned out
+   NOT to transfer to our smaller, higher, flatter valley — see below.
+
+3. **Flood susceptibility mapping in a Himalayan mountain basin using
+   GIS and multi-criteria analysis: a case study from Lamjung District,
+   Nepal** (2026). *Arabian Journal of Geosciences*.
+   https://doi.org/10.1007/s12517-026-12558-5 — nine factors at 10m
+   resolution (matching our own grid resolution). AHP weighting found
+   distance-to-river (0.156), rainfall (0.151), and TWI (0.152) as the
+   dominant controls, CR = 0.037.
+
+Full extraction detail, including every table we pulled numbers from:
+`LITERATURE_REVIEW_THRESHOLDS.md`.
+
+**The key negative finding, and why it matters for this profile
+specifically:** we tested the Bagmati paper's published elevation class
+breaks (Jenks natural breaks computed over their much larger, 53-2,921m
+basin) directly against our valley's actual elevation distribution
+(991-2,730m). The result: **56.9% of Kathmandu Valley fell into a single
+"moderate" class, and the paper's own "very high" risk class (elevation
+< 431m) was completely empty in our valley** — nothing here is that
+low. Same failure mode with their slope breaks (50.8% in one class).
+
+This is why `service.py`'s `_quantile_rules()` computes class breaks
+from **this AOI's own data distribution** (quintiles) rather than using
+any paper's absolute numbers. Borrowed thresholds built for a
+differently-scaled study area don't just add noise — they can eliminate
+a model's ability to discriminate at all inside the smaller area. The
+weights transferred better than the thresholds did, because weights are
+relative judgements between factors, not values pinned to a specific
+elevation range.
+
+### How the AHP weights were actually calculated
+
+We did not run our own pairwise comparison survey. We used the
+**published, already-computed** Kathmandu Valley weights from Chaudhary
+et al. (2024), who did the full Saaty AHP procedure properly:
+
+1. Built a 10x10 pairwise comparison matrix (their Table 3) — for every
+   pair of factors, a domain expert judged relative importance on
+   Saaty's 1-9 scale (1 = equal importance, 9 = extreme importance).
+2. Normalized the matrix by dividing each cell by its column sum (their
+   Table 4).
+3. Averaged each row of the normalized matrix to get that factor's
+   weight, expressed as a percentage.
+4. Validated internal consistency via the Consistency Ratio:
+   `CR = CI / RI`, where `CI = (lambda_max - n) / (n - 1)` (lambda_max =
+   the matrix's principal eigenvalue, n = 10 factors) and `RI = 1.49` is
+   Saaty's published Random Index value for a 10x10 matrix. **Their
+   result: CR = 0.052**, well under the 0.10 threshold that AHP
+   convention requires before weights are considered usable.
+
+Their full weight table (Table 4 of the paper):
+
+| Factor | Weight |
+|---|---|
+| Rainfall | 23% |
+| Elevation | 22% |
+| Slope | 16% |
+| TWI | 10% |
+| Distance from river | 8% |
+| Curvature | 8% |
+| LULC | 5% |
+| Drainage density | 4% |
+| Geology | 2% |
+| Soil | 2% |
+
+**What we did with this table:** Citizen Mode uses 5 of these 10
+factors (`hand`, `dem_elevation`, `dem_slope`, `twi`,
+`drainage_density` — chosen per the validation work in
+`VALIDATION_PROCESS.md`, which found `dist_to_river` actively harmful
+against real flood data). `hand` isn't in the published table at all —
+it's substituted in at distance-from-river's weight (8%), since HAND
+functionally replaces distance-to-river as this profile's
+channel-proximity term. The five remaining weights are then
+renormalized to sum to 1 (`profile.normalized_weights()`):
+
+```
+hand:              8  / 60 = 0.1333
+dem_elevation:    22  / 60 = 0.3667
+dem_slope:        16  / 60 = 0.2667
+twi:              10  / 60 = 0.1667
+drainage_density:  4  / 60 = 0.0667
+```
+
+This is a real, published, peer-reviewed AHP result for this exact study
+area — not a guess and not our own subjective judgement — adapted only
+by dropping the factors we don't have or measured to be unhelpful, and
+rescaling what's left.
+
+### The BIPAD flood inventory: what it is and how we got it
+
+**BIPAD** (Built and Integrated Platform for Assessing and Dispatching)
+is Nepal's official disaster information platform, operated by the
+**National Disaster Risk Reduction and Management Authority (NDRRMA)**,
+Government of Nepal — the same portal Chaudhary et al. (2024) used to
+validate their own model (they collected 156 flood sites from it plus
+newspaper/unpublished reports).
+
+We discovered BIPAD exposes a **public, unauthenticated JSON REST API**:
+
+```
+https://bipadportal.gov.np/api/v1/incident/?hazard=<id>&limit=<n>&offset=<n>
+```
+
+Each incident record includes a point geometry (`{"type": "Point",
+"coordinates": [lon, lat]}`), a title (English and Nepali), the incident
+date (`incidentOn`), verification/approval flags, and a `hazard` field
+that's an integer code. We queried `/api/v1/hazard/` to get the code
+table and confirmed:
+
+```
+hazard = 11   ->  Flood
+hazard = 28   ->  Inundation
+```
+
+(Other codes exist for landslide, fire, earthquake, and 40+ other
+hazard types — we only kept these two.)
+
+**Harvest process:** paginated through the full incident endpoint
+(500 records per page), scanning **62,635 incidents** of every hazard
+type nationwide, keeping only records where `hazard` was Flood or
+Inundation **and** the point fell inside a generous Kathmandu Valley
+bounding box (85.15-85.60 deg E, 27.55-27.90 deg N). Result: **145
+flood/inundation points, dated 2011-2026**, saved to
+`backend/data/raw/flood_inventory/ktm_flood_inventory.json`.
+
+This file is **gitignored** like everything under `backend/data/` — it
+is regenerable from the public API at any time and was never intended
+to be a static, versioned artifact.
+
+**How it was actually used:** `validate_against_inventory.py` samples
+our risk surface's value at each of these 145 real point locations and
+runs the **success-rate curve** method (Chung & Fabbri 2003 — the
+standard for exactly this kind of point-inventory validation, and the
+same method Chaudhary et al. used, which is what makes our AUC directly
+comparable to their reported 0.83). The method: rank every pixel in the
+study area by predicted risk, sweep the threshold from highest-risk
+down, and plot what fraction of the 145 real flood points are captured
+against what fraction of the total area you'd have to flag to catch
+them. AUC of that curve is the headline number — **0.7235** for the
+original 6-criterion equal-weighted model, rising to **0.8112** for the
+tuned 5-criterion profile Citizen Mode actually runs, holding at
+**0.8110** on a temporal holdout using only events from 2020 onward
+(proving the number isn't just fit to whichever points happened to be
+in the training set).
+
+**Known limitations of this inventory, stated plainly:**
+- **Reporting bias** — incidents get recorded where people live and
+  report them, so dense urban wards are structurally over-represented
+  relative to sparsely populated areas, regardless of true physical
+  hazard.
+- **Point locations, not flood extents** — each record is one
+  coordinate (often a ward or settlement centroid), not a mapped
+  inundation boundary.
+- **Recency bias** — BIPAD's own data collection has grown substantially
+  more complete since roughly 2011; earlier events are under-represented.
 
 ---
 
