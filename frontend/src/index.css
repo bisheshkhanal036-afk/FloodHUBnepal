@@ -2741,3 +2741,183 @@ input[type='radio'] {
     flex: 1;
   }
 }
+
+/* ============================================================
+   Mode select + Citizen Mode
+   ------------------------------------------------------------
+   Citizen Mode is a separate surface from the researcher tool: a
+   member of the public gets one tap and one answer, so the visual
+   language is deliberately calmer and larger than the dense analyst
+   sidebar. It reuses the existing design tokens rather than
+   introducing a second palette.
+   ============================================================ */
+
+.mode-select {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6, 32px);
+  padding: var(--space-6, 32px);
+  background: var(--surface-page, #0d1418);
+  color: var(--text-primary, #dfe8ea);
+}
+
+.mode-select__back {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--text-secondary, #a8b8be);
+  cursor: pointer;
+  font-size: 0.95rem;
+  padding: 8px 4px;
+}
+.mode-select__back:hover { color: var(--text-primary, #dfe8ea); }
+
+.mode-select__grid {
+  flex: 1;
+  display: grid;
+  gap: var(--space-5, 24px);
+  align-content: center;
+  max-width: 1000px;
+  margin: 0 auto;
+  width: 100%;
+}
+@media (min-width: 820px) { .mode-select__grid { grid-template-columns: 1fr 1fr; } }
+
+.mode-card {
+  position: relative;
+  text-align: left;
+  padding: var(--space-6, 32px);
+  border-radius: var(--radius-lg, 12px);
+  border: 1px solid var(--border-subtle, #253239);
+  background: var(--surface-raised, #141e23);
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+.mode-card:hover { border-color: var(--accent, #45b5bf); transform: translateY(-2px); }
+.mode-card:focus-visible { outline: 2px solid var(--accent, #45b5bf); outline-offset: 3px; }
+.mode-card h2 { margin: 0 0 10px; font-size: 1.5rem; }
+.mode-card__lead { margin: 0 0 14px; color: var(--text-secondary, #a8b8be); line-height: 1.5; }
+.mode-card__meta { margin: 0; font-size: 0.85rem; color: var(--text-tertiary, #74868d); }
+.mode-card__badge {
+  position: absolute;
+  top: 16px; right: 16px;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 3px;
+  background: rgba(217, 163, 63, 0.16);
+  color: #d9a33f;
+}
+
+/* --- Citizen Mode --- */
+
+.citizen { display: flex; flex-direction: column; height: 100vh; background: var(--surface-page, #0d1418); color: var(--text-primary, #dfe8ea); }
+
+.citizen__bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border-subtle, #253239);
+  background: var(--surface-raised, #141e23);
+}
+.citizen__titles { flex: 1; min-width: 0; }
+.citizen__titles h1 { margin: 0; font-size: 1.1rem; }
+.citizen__titles p { margin: 2px 0 0; font-size: 0.85rem; color: var(--text-secondary, #a8b8be); }
+.citizen__back, .citizen__lang {
+  background: none;
+  border: 1px solid var(--border-subtle, #253239);
+  border-radius: var(--radius-sm, 6px);
+  color: var(--text-secondary, #a8b8be);
+  padding: 7px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.citizen__back:hover, .citizen__lang:hover { color: var(--text-primary, #dfe8ea); border-color: var(--accent, #45b5bf); }
+
+.citizen__body { flex: 1; display: flex; min-height: 0; flex-direction: column; }
+@media (min-width: 860px) { .citizen__body { flex-direction: row; } }
+
+.citizen__map { flex: 1; min-height: 300px; }
+
+.citizen__panel {
+  width: 100%;
+  padding: 20px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border-subtle, #253239);
+  background: var(--surface-raised, #141e23);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+@media (min-width: 860px) {
+  .citizen__panel { width: 380px; flex: none; border-top: none; border-left: 1px solid var(--border-subtle, #253239); }
+}
+
+.citizen__actions { display: flex; flex-direction: column; gap: 8px; }
+.citizen__locate {
+  padding: 11px 16px;
+  border-radius: var(--radius-sm, 6px);
+  border: none;
+  background: var(--accent, #45b5bf);
+  color: #06232a;
+  font-weight: 600;
+  cursor: pointer;
+}
+.citizen__locate:hover { filter: brightness(1.08); }
+.citizen__hint { margin: 0; font-size: 0.85rem; color: var(--text-tertiary, #74868d); }
+
+.citizen__loading, .citizen__error, .citizen__uncovered { margin: 0; font-size: 0.9rem; line-height: 1.5; }
+.citizen__loading { color: var(--text-secondary, #a8b8be); }
+.citizen__error { color: #e0705f; }
+.citizen__uncovered {
+  color: var(--text-secondary, #a8b8be);
+  padding: 14px;
+  border: 1px dashed var(--border-subtle, #253239);
+  border-radius: var(--radius-sm, 6px);
+}
+
+/* The answer itself. Semantic colour only -- distinct from the
+   researcher tool's risk ramp so the two are never confused. */
+.citizen-risk {
+  padding: 18px;
+  border-radius: var(--radius-md, 8px);
+  border-left: 4px solid currentColor;
+}
+.citizen-risk__label { display: block; font-size: 2rem; font-weight: 700; letter-spacing: 0.02em; line-height: 1.1; }
+.citizen-risk__summary { margin: 8px 0 0; font-size: 0.95rem; color: var(--text-primary, #dfe8ea); line-height: 1.5; }
+.citizen-risk--low { color: #5fbd8c; background: rgba(95, 189, 140, 0.09); }
+.citizen-risk--moderate { color: #d9a33f; background: rgba(217, 163, 63, 0.09); }
+.citizen-risk--high { color: #e0705f; background: rgba(224, 112, 95, 0.09); }
+
+.citizen__reasons h2 { margin: 0 0 8px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-tertiary, #74868d); }
+.citizen__reasons ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.citizen__reason { font-size: 0.92rem; line-height: 1.5; padding-left: 14px; border-left: 2px solid var(--border-subtle, #253239); }
+.citizen__reason--raises { border-left-color: #e0705f; }
+.citizen__reason--lowers { border-left-color: #5fbd8c; }
+
+.citizen__accuracy { font-size: 0.85rem; color: var(--text-secondary, #a8b8be); }
+.citizen__accuracy summary { cursor: pointer; color: var(--accent, #45b5bf); }
+.citizen__accuracy p { margin: 8px 0 0; line-height: 1.55; }
+
+/* Rendered as part of the answer, not as a footnote -- see
+   backend/app/citizen/models.py on why the caveat travels with the number. */
+.citizen__disclaimer {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--text-secondary, #a8b8be);
+  padding: 12px 14px;
+  border-radius: var(--radius-sm, 6px);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-subtle, #253239);
+}
+.citizen__experimental {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #d9a33f;
+  text-align: center;
+}
