@@ -382,4 +382,49 @@ VALIDATION_EVENTS = {
             "kathmandu-bagmati-province-nepal-as-of-30-s"
         ),
     },
+    # nepal_bipad_flood_points: a POINT inventory, not a filled extent
+    # polygon like nepal_2024_terai above -- 2,999 individual, verified
+    # flood-occurrence reports nationwide (2011-06-05 to 2026-08-24),
+    # from Nepal's BIPAD Portal (bipadportal.gov.np), the national
+    # Disaster Information Management System owned by NDRRMA under the
+    # Ministry of Home Affairs. Retrieved directly from its own public,
+    # unauthenticated REST API (GET /api/v1/incident/?hazard=11 --
+    # hazard id 11 = "Flood", confirmed against /api/v1/hazard/'s own
+    # listing), no scraping. get_observed_flood_mask/
+    # get_validation_extent_geojson (validation_extent.py) needed no
+    # code changes for this -- rasterio's rasterize() and geopandas'
+    # own I/O are already geometry-type-agnostic, confirmed live against
+    # this exact file before registering it here.
+    #
+    # This is the source that actually closes the "no Kathmandu Valley
+    # coverage" gap nepal_2024_terai's own comment above documents: 139
+    # of these 2,999 points fall within Kathmandu Valley specifically
+    # (54 distinct locations, some flooded repeatedly across different
+    # years) -- checked directly, not assumed from the source's national
+    # scope. This is also the methodologically standard input for a
+    # success-rate/AUC-ROC susceptibility-map validation (Chung & Fabbri
+    # method, already cited elsewhere in this project) -- occurrence
+    # LOCATIONS, not a filled extent -- which is why
+    # observed_flooded_fraction against this event will always be a tiny
+    # number (a handful of point-pixels, never a meaningful "% of area"),
+    # by design, not a bug.
+    #
+    # License not formally verified -- no terms-of-use/license page was
+    # found on the portal, unlike nepal_2024_terai's confirmed CC BY-SA
+    # above; used here as a public, unauthenticated government DRR
+    # data-dissemination portal with full attribution. See
+    # D:\New folder\README.md's own 2011-2026_Nepal_BIPAD_flood_incidents
+    # section for the complete provenance writeup and this exact caveat.
+    "nepal_bipad_flood_points": {
+        "label": "Nepal flood incidents, 2011-2026 (BIPAD Portal, point inventory)",
+        "path": "nepal_bipad_flood_points/points.geojson",
+        "attribution": (
+            "Nepal BIPAD Portal (Building Information Platform Against Disaster), National "
+            "Disaster Risk Reduction and Management Authority (NDRRMA), Ministry of Home "
+            "Affairs, Government of Nepal, technical implementation by Youth Innovation Lab. "
+            "Flood incident records, 2011-06-05 to 2026-08-24, retrieved via the portal's own "
+            "public API (bipadportal.gov.np/api/v1/incident/?hazard=11). "
+            "https://bipadportal.gov.np/"
+        ),
+    },
 }

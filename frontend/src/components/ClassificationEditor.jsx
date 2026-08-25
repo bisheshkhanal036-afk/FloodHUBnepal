@@ -12,7 +12,7 @@
 import { useEffect } from 'react'
 import { computeCriterionBreaks } from '../api/client'
 import { WORLDCOVER_LABELS } from '../config/criteria'
-import { breaksToRules } from '../lib/classification'
+import { breaksToRules, selectClassificationMethod } from '../lib/classification'
 import { useAppState } from '../state/AppStateContext'
 import ReclassificationTable from './ReclassificationTable'
 
@@ -72,10 +72,11 @@ function ContinuousEditor({ criterion, entry, aoi, streamThresholdCells, dispatc
   }, [method, aoi, criterion.id, fetch.status])
 
   function selectMethod(newMethod) {
-    dispatch({ type: 'SET_CLASSIFICATION_METHOD', id: criterion.id, method: newMethod })
-    if (newMethod !== 'manual' && fetch.status === 'loaded' && fetch[newMethod]) {
-      dispatch({ type: 'SET_CLASSIFICATION_BREAKS', id: criterion.id, breaks: fetch[newMethod] })
+    if (newMethod === 'manual') {
+      dispatch({ type: 'SET_CLASSIFICATION_METHOD', id: criterion.id, method: newMethod })
+      return
     }
+    selectClassificationMethod(dispatch, criterion.id, newMethod, entry)
   }
 
   function editBreak(index, rawValue) {

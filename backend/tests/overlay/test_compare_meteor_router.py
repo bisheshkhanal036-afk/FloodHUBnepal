@@ -79,7 +79,6 @@ def test_compare_meteor_endpoint_returns_a_high_auc_when_risk_and_meteor_align(m
     assert response.status_code == 200
     body = response.json()
     assert body["auc"] > 0.8
-    assert body["pr_auc"] > 0.8
     assert body["n_valid_pixels"] == 100
     assert body["n_meteor_flooded_pixels"] == 30
     assert body["meteor_flooded_fraction"] == pytest.approx(0.3)
@@ -88,19 +87,18 @@ def test_compare_meteor_endpoint_returns_a_high_auc_when_risk_and_meteor_align(m
     assert len(body["risk_surface_cache_key"]) == 64
     assert body["meteor_flood_type"]
     assert body["meteor_return_period"]
-    # risk_class 5 (top 3 rows) is High/Very-High hazard, identical to
-    # the METEOR-modeled-flooded rows -> a perfect confusion matrix.
-    assert body["precision"] == pytest.approx(1.0)
-    assert body["recall"] == pytest.approx(1.0)
-    assert body["f1"] == pytest.approx(1.0)
-    assert body["iou"] == pytest.approx(1.0)
-    assert body["true_positive_pixels"] == 30
-    assert body["false_positive_pixels"] == 0
-    assert body["false_negative_pixels"] == 0
-    assert body["true_negative_pixels"] == 70
-    # Never validation language anywhere in the response.
+    # risk_class 5 (top 3 rows) is 100% METEOR-flooded, class 1 (bottom
+    # 7 rows) is 0% -- a perfectly monotonic frequency ratio.
+    assert body["monotonic"] is True
+    by_class = {c["hazard_class"]: c for c in body["frequency_ratio"]}
+    assert by_class[5]["flooded_fraction"] == pytest.approx(1.0)
+    assert by_class[1]["flooded_fraction"] == pytest.approx(0.0)
+    # Never validation language, and no confusion-matrix fields, anywhere.
     assert "event" not in body
     assert "event_label" not in body
+    assert "precision" not in body
+    assert "iou" not in body
+    assert "pr_auc" not in body
 
 
 def test_compare_meteor_endpoint_returns_a_low_auc_when_risk_and_meteor_disagree(monkeypatch):
@@ -126,10 +124,10 @@ def test_compare_meteor_endpoint_returns_a_low_auc_when_risk_and_meteor_disagree
     assert response.status_code == 200
     body = response.json()
     assert body["auc"] < 0.3
-    assert body["precision"] == 0.0
-    assert body["recall"] == 0.0
-    assert body["f1"] == 0.0
-    assert body["iou"] == 0.0
+    assert body["monotonic"] is False
+    by_class = {c["hazard_class"]: c for c in body["frequency_ratio"]}
+    assert by_class[5]["flooded_fraction"] == pytest.approx(0.0)
+    assert by_class[1]["flooded_fraction"] > 0
 
 
 def test_compare_meteor_endpoint_422s_when_aoi_is_entirely_outside_meteors_domain(monkeypatch):

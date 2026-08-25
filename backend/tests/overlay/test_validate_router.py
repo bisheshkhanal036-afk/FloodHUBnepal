@@ -77,7 +77,6 @@ def test_validate_endpoint_returns_a_high_auc_when_risk_and_observed_flooding_al
     # Perfect alignment (same 3 rows both "high risk" and "flooded") ->
     # AUC should be high, close to the closed-form 1 - p/2 for p=0.3.
     assert body["auc"] > 0.8
-    assert body["pr_auc"] > 0.8
     assert body["n_valid_pixels"] == 100
     assert body["n_observed_flooded_pixels"] == 30
     assert body["observed_flooded_fraction"] == pytest.approx(0.3)
@@ -88,16 +87,20 @@ def test_validate_endpoint_returns_a_high_auc_when_risk_and_observed_flooding_al
     assert len(body["risk_surface_cache_key"]) == 64
     assert body["curve"][0] == [0.0, 0.0]
     assert body["curve"][-1] == [1.0, 1.0]
-    # risk_class 5 (top 3 rows) is High/Very-High hazard, identical to
-    # the observed-flooded rows -> a perfect confusion matrix too.
-    assert body["precision"] == pytest.approx(1.0)
-    assert body["recall"] == pytest.approx(1.0)
-    assert body["f1"] == pytest.approx(1.0)
-    assert body["iou"] == pytest.approx(1.0)
-    assert body["true_positive_pixels"] == 30
-    assert body["false_positive_pixels"] == 0
-    assert body["false_negative_pixels"] == 0
-    assert body["true_negative_pixels"] == 70
+    # risk_class 5 (top 3 rows) is 100% flooded, class 1 (bottom 7 rows)
+    # is 0% flooded -- a perfectly monotonic frequency ratio.
+    assert body["monotonic"] is True
+    by_class = {c["hazard_class"]: c for c in body["frequency_ratio"]}
+    assert by_class[5]["flooded_fraction"] == pytest.approx(1.0)
+    assert by_class[5]["pixel_count"] == 30
+    assert by_class[1]["flooded_fraction"] == pytest.approx(0.0)
+    assert by_class[1]["pixel_count"] == 70
+    for k in (2, 3, 4):
+        assert by_class[k]["pixel_count"] == 0
+        assert by_class[k]["flooded_fraction"] is None
+    assert "precision" not in body
+    assert "iou" not in body
+    assert "pr_auc" not in body
 
 
 def test_validate_endpoint_returns_a_low_auc_when_risk_and_observed_flooding_are_opposite(monkeypatch):
@@ -122,12 +125,12 @@ def test_validate_endpoint_returns_a_low_auc_when_risk_and_observed_flooding_are
     assert response.status_code == 200
     body = response.json()
     assert body["auc"] < 0.3
-    # High/Very-High hazard (top 3 rows) and observed flooding (bottom 3
-    # rows) never overlap -> every threshold-based metric bottoms out.
-    assert body["precision"] == 0.0
-    assert body["recall"] == 0.0
-    assert body["f1"] == 0.0
-    assert body["iou"] == 0.0
+    # High/Very-High hazard (top 3 rows, risk_class 5) never floods here;
+    # class 1 (bottom 7 rows) is the one that floods -- a real inversion.
+    assert body["monotonic"] is False
+    by_class = {c["hazard_class"]: c for c in body["frequency_ratio"]}
+    assert by_class[5]["flooded_fraction"] == pytest.approx(0.0)
+    assert by_class[1]["flooded_fraction"] > 0
 
 
 def test_validate_endpoint_422s_when_aoi_does_not_overlap_the_event(monkeypatch):

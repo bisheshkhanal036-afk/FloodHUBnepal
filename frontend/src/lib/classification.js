@@ -67,3 +67,30 @@ export function rulesForClassification(criterion, entry) {
   if (criterion.type === 'categorical') return codeClassesToRules(entry.riskClassByCode)
   return breaksToRules(entry.breaks, criterion.riskDirection)
 }
+
+/**
+ * Switches one criterion's classification method to `method` (one of
+ * 'equal_interval'/'quantile'/'jenks' -- never 'manual', which has
+ * nothing to select). If that method's breaks were already fetched for
+ * the current AOI (entry.fetch.status === 'loaded' -- POST /criteria/
+ * breaks returns all 3 methods' breaks in one response, so switching
+ * between them after the first fetch never needs a second request),
+ * applies them immediately; otherwise just sets the method, and
+ * ClassificationEditor.jsx's own per-criterion fetch effect (which runs
+ * whenever the criterion is checked, regardless of whether its
+ * "Customize breaks" <details> is expanded -- a native <details> always
+ * mounts its children, just CSS-hides them when closed) picks up the
+ * fetch from there.
+ *
+ * Shared by ClassificationEditor.jsx's own per-criterion method buttons
+ * AND CriteriaPanel.jsx's bulk "Auto-classify all" action, so both take
+ * the exact same path rather than two copies that could quietly drift
+ * apart on this non-obvious "apply already-fetched breaks immediately"
+ * behavior.
+ */
+export function selectClassificationMethod(dispatch, criterionId, method, entry) {
+  dispatch({ type: 'SET_CLASSIFICATION_METHOD', id: criterionId, method })
+  if (entry.fetch.status === 'loaded' && entry.fetch[method]) {
+    dispatch({ type: 'SET_CLASSIFICATION_BREAKS', id: criterionId, breaks: entry.fetch[method] })
+  }
+}

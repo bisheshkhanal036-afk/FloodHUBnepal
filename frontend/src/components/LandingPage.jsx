@@ -1,11 +1,17 @@
-// The product's front door: a scroll-driven sequence of three full-height
-// sections -- hero (zoomed in immediately, no scroll needed), team
-// (zoomed in to fill most of the screen as it's scrolled to, exactly
-// three members), then data sources (zoomed in last) -- each animated
-// via useScrollZoom.js's IntersectionObserver-driven reveal, before the
-// working tool (Sidebar + MapView). `onLaunch` is the only thing this
-// needs from the outside, a callback that flips App.jsx's local view
-// state to 'tool'. No app/AOI/overlay state lives here.
+// The product's front door: a scroll-driven sequence of full-height
+// sections -- hero (a CONTINUOUS scroll-scrubbed scale, growing to its
+// own max size at the section's own scroll midpoint then shrinking back
+// down, at explicit request -- see useHeroScrollScale.js), 4 methodology
+// sections (one concept per screen, following inunda.ai's own "gold
+// standard" scrollytelling pattern at explicit request: big centered
+// typography, generous negative space, one idea per screen, rather than
+// several cards crammed into one section), team, then data sources --
+// these 4+2 animated via useScrollZoom.js's own binary IntersectionObserver-
+// driven reveal instead (the hero is the one deliberate exception -- see
+// useHeroScrollScale.js's own docstring for why), before the working
+// tool (Sidebar + MapView). `onLaunch` is the only thing this needs from
+// the outside, a callback that flips App.jsx's local view state to
+// 'tool'. No app/AOI/overlay state lives here.
 //
 // Team and data sources are deliberately NOT rendered via the shared
 // CreditsSection component AboutModal also uses -- that component's
@@ -15,34 +21,30 @@
 // config/attribution.js data instead, so the two presentations can
 // differ without one component trying to serve both.
 //
-// No hero illustration -- an earlier version had an inline-SVG contour
-// motif here, removed at the user's request ("not good enough"). The
-// hero now leans on typography, the Logo mark, and a plain background
-// wash instead of a standalone graphic.
+// No academic citations anywhere on this page, at explicit request --
+// not Saaty (1980), not Parajuli et al. (2023), not any of the per-
+// criterion literature this app's own methodology draws on. Those
+// citations still exist and are fully honored -- CreditsSection.jsx's
+// own new "Methodology" group (rendered only in AboutModal, the in-tool
+// "info" button) and config/literature.js's REFERENCES (surfaced via
+// each criterion's own ⓘ LiteratureModal) are both still there in full.
+// This page's own copy describes the SAME methods in the same
+// substance, just without a paper trail attached to the sentence itself
+// -- a front door, not a bibliography.
 import { ADDITIONAL_SOURCE_CREDITS, SOURCE_ATTRIBUTIONS, TEAM_CREDITS } from '../config/attribution'
-// METHOD_INTRO's own AHP paragraph is reused verbatim here (not
-// re-written) -- the same "one place holds the real text, everything
-// else quotes it" discipline this project already applies to
-// SOURCE_ATTRIBUTIONS (config/attribution.js's own comment: "copied
-// VERBATIM from backend/app/data/attribution.py's own constants").
-// Keeps the landing page's "What is AHP?" card and the in-tool
-// LiteratureModal's method intro from ever silently drifting apart.
-import { METHOD_INTRO } from '../config/literature'
+import { useHeroScrollScale } from '../lib/useHeroScrollScale'
 import { useScrollZoom } from '../lib/useScrollZoom'
+import HeroGraphic from './HeroGraphic'
 import Logo from './Logo'
 
 /**
  * One full-height, scroll-triggered "zoom in" panel -- see
  * useScrollZoom.js's own docstring for why this is IntersectionObserver-
- * driven rather than a continuous scroll-position scrub.
- *
- * `overlay` (optional) renders as a plain sibling of the scaled/faded
- * `.zoom-section__inner` -- inside the full-height `<section>` for
- * positioning purposes (e.g. pinned to its bottom edge), but outside the
- * zoom transform/fade itself, for content that shouldn't visually scale
- * with the reveal (the hero's own scroll-down cue).
+ * driven rather than a continuous scroll-position scrub. Used by every
+ * section on this page except the hero (HeroSection, below -- its own
+ * continuous scroll-scrub instead, at explicit request).
  */
-function ZoomSection({ id, className = '', overlay = null, children }) {
+function ZoomSection({ id, className = '', children }) {
   const [ref, active] = useScrollZoom()
   return (
     <section
@@ -51,7 +53,27 @@ function ZoomSection({ id, className = '', overlay = null, children }) {
       className={`zoom-section ${className} ${active ? 'zoom-section--active' : ''}`}
     >
       <div className="zoom-section__inner">{children}</div>
-      {overlay}
+    </section>
+  )
+}
+
+/**
+ * The hero, and ONLY the hero, uses a continuous scroll-scrubbed scale
+ * (useHeroScrollScale) rather than ZoomSection's own binary reveal, at
+ * explicit request -- everything inside it grows together as one group,
+ * peaking at its own max size at the section's own scroll midpoint, then
+ * shrinking back down approaching the next section, rather than jumping
+ * straight to its final size the instant it's "in view enough" the way
+ * every other section on this page still does.
+ */
+function HeroSection({ children }) {
+  const [ref, scale] = useHeroScrollScale()
+  return (
+    <section className="zoom-section zoom-section--hero" ref={ref}>
+      <div className="hero-scroll-scale" style={{ transform: `scale(${scale})` }}>
+        {children}
+      </div>
+      <ScrollCue />
     </section>
   )
 }
@@ -64,6 +86,17 @@ function ScrollCue() {
       <span className="hero__scroll-chevron" />
       <span className="hero__scroll-chevron" />
     </div>
+  )
+}
+
+/** One full-screen methodology "scene" -- an eyebrow label, a heading, and body content, vertically centered. The shared shape all 4 methodology sections below use, so a 5th can be added later without inventing new markup. */
+function MethodScene({ id, eyebrow, heading, children }) {
+  return (
+    <ZoomSection id={id} className="zoom-section--method-scene">
+      <p className="method-scene__eyebrow">{eyebrow}</p>
+      <h2 className="zoom-section__heading">{heading}</h2>
+      <div className="method-scene__body">{children}</div>
+    </ZoomSection>
   )
 }
 
@@ -82,15 +115,17 @@ export default function LandingPage({ onLaunch }) {
         </button>
       </header>
 
-      <ZoomSection className="zoom-section--hero" overlay={<ScrollCue />}>
+      <HeroSection>
         <div className="hero hero--centered">
-          <p className="hero__eyebrow">Multi-criteria flood risk mapping</p>
           <h1 className="hero__title">FloodHUB</h1>
+          <p className="hero__tagline">Multi-criteria flood risk mapping for Nepal</p>
+
+          <HeroGraphic />
+
           <p className="hero__description">
-            An AHP-based multi-criteria flood risk mapping platform for Nepal. Draw an area, select a hydrological
-            basin, or select a district, weigh the physical and exposure factors that matter most through
-            Saaty&rsquo;s Analytic Hierarchy Process, and generate a transparent, per-pixel risk surface built from
-            elevation, slope, drainage, land cover, and built-environment data.
+            Draw an area, select a hydrological basin, or select a district, weigh the physical and exposure
+            factors that matter most through structured pairwise comparison, and generate a transparent, per-pixel
+            risk surface built from elevation, slope, drainage, land cover, and built-environment data.
           </p>
           <div className="hero__actions">
             <button type="button" className="button button--primary button--lg" onClick={onLaunch}>
@@ -106,67 +141,61 @@ export default function LandingPage({ onLaunch }) {
             <li>Day &amp; night basemaps</li>
           </ul>
         </div>
-      </ZoomSection>
+      </HeroSection>
 
-      <ZoomSection id="how-it-works" className="zoom-section--method">
-        <h2 className="zoom-section__heading">How it works</h2>
-        <p className="zoom-section__sub">The method behind the map, and how to drive it.</p>
-        <div className="method-showcase">
-          <div className="method-showcase__card">
-            <h3 className="method-showcase__title">How to use</h3>
-            <ol className="method-showcase__steps">
-              <li>
-                <strong>Area of interest</strong> — draw a rectangle on the map, or select a hydrological basin or
-                district instead.
-              </li>
-              <li>
-                <strong>Criteria</strong> — check which physical and exposure factors to include: elevation,
-                slope, drainage, land cover, rainfall, population, and more.
-              </li>
-              <li>
-                <strong>Weighting</strong> — set each factor&rsquo;s relative importance via AHP pairwise
-                comparison, equal weights, or manual sliders.
-              </li>
-              <li>
-                <strong>Compute</strong> — generates the per-pixel composite risk surface from your selections.
-              </li>
-              <li>
-                <strong>Vulnerability report</strong> — hazard-class-tagged buildings, with per-class population
-                and area statistics.
-              </li>
-            </ol>
-          </div>
+      <MethodScene id="how-it-works" eyebrow="Step by step" heading="How to use it">
+        <ol className="method-scene__steps">
+          <li>
+            <strong>Area of interest</strong> — draw a rectangle on the map, or select a hydrological basin or
+            district instead.
+          </li>
+          <li>
+            <strong>Criteria</strong> — check which physical and exposure factors to include: elevation, slope,
+            drainage, land cover, rainfall, population, and more.
+          </li>
+          <li>
+            <strong>Weighting</strong> — set each factor&rsquo;s relative importance via pairwise comparison, equal
+            weights, or manual sliders.
+          </li>
+          <li>
+            <strong>Compute</strong> — generates the per-pixel composite risk surface from your selections.
+          </li>
+          <li>
+            <strong>Vulnerability report</strong> — hazard-class-tagged buildings, with per-class population and
+            area statistics.
+          </li>
+        </ol>
+      </MethodScene>
 
-          <div className="method-showcase__card">
-            <h3 className="method-showcase__title">What is AHP?</h3>
-            <p className="method-showcase__text">{METHOD_INTRO.body[0]}</p>
-          </div>
+      <MethodScene id="what-is-ahp" eyebrow="The weighting method" heading="What is AHP?">
+        <p className="method-scene__text">
+          FloodHUB weighs flood risk using the Analytic Hierarchy Process (AHP) — a structured way to turn expert
+          judgment into numbers instead of a hidden formula. Each conditioning factor is reprojected onto a common
+          10&nbsp;m grid, reclassified into five ordinal risk classes, and combined as a weighted sum, where the
+          weights come from your own pairwise comparisons and are checked for logical consistency before they&rsquo;re
+          ever used.
+        </p>
+      </MethodScene>
 
-          <div className="method-showcase__card">
-            <h3 className="method-showcase__title">The method</h3>
-            <p className="method-showcase__text">
-              Every criterion is grouped into one of five canonical clusters — Topographic, Hydrological, Land
-              Use, Infrastructure, and Exposure — following the AHP flood-susceptibility approach of Parajuli et
-              al. (2023). Each cluster&rsquo;s own weight, and each criterion&rsquo;s weight within it, come from
-              your own pairwise comparisons, not a fixed, hidden formula — the same weighted-sum math is shown
-              openly at every step.
-            </p>
-          </div>
+      <MethodScene id="the-clusters" eyebrow="Five clusters, one score" heading="The method">
+        <p className="method-scene__text">
+          Every criterion is grouped into one of five canonical clusters — Topographic, Hydrological, Land Use,
+          Infrastructure, and Exposure. Each cluster&rsquo;s own weight, and each criterion&rsquo;s weight within it,
+          come from your own pairwise comparisons, not a fixed, hidden formula — the same weighted-sum math is
+          shown openly at every step.
+        </p>
+      </MethodScene>
 
-          <div className="method-showcase__card">
-            <h3 className="method-showcase__title">METEOR: criterion vs. validation</h3>
-            <p className="method-showcase__text">
-              METEOR&rsquo;s modeled flood hazard maps can be used two different ways here, and they are not the
-              same thing. As a <strong>criterion</strong>, METEOR&rsquo;s modeled water depth becomes one weighted
-              input blended into your own composite AHP score, alongside terrain, land cover, rainfall, and
-              exposure. As <strong>validation</strong>, the same data is shown as a live, independent overlay
-              directly on the map — never blended into your score — so you can visually sanity-check your own
-              computed risk surface against a third party&rsquo;s model, since METEOR is itself a modeled
-              estimate (the Fathom framework), not ground truth.
-            </p>
-          </div>
-        </div>
-      </ZoomSection>
+      <MethodScene id="meteor-distinction" eyebrow="One dataset, two roles" heading="Criterion vs. validation">
+        <p className="method-scene__text">
+          METEOR&rsquo;s modeled flood hazard maps can be used two different ways here, and they are not the same
+          thing. As a <strong>criterion</strong>, METEOR&rsquo;s modeled water depth becomes one weighted input
+          blended into your own composite score, alongside terrain, land cover, rainfall, and exposure. As{' '}
+          <strong>validation</strong>, the same data is shown as a live, independent overlay directly on the map —
+          never blended into your score — so you can visually sanity-check your own computed risk surface against a
+          third party&rsquo;s model, since METEOR is itself a modeled estimate, not ground truth.
+        </p>
+      </MethodScene>
 
       <ZoomSection id="team" className="zoom-section--team">
         <h2 className="zoom-section__heading">The team</h2>
@@ -206,6 +235,9 @@ export default function LandingPage({ onLaunch }) {
             </div>
           ))}
         </div>
+        <p className="zoom-section__footnote">
+          Full methodology citations are available from the <strong>ⓘ</strong> info button inside the tool.
+        </p>
       </ZoomSection>
 
       <footer className="landing__footer">

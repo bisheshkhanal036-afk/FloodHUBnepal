@@ -3,7 +3,7 @@
 // from Sidebar) so the content only has to be maintained in one place.
 // Purely presentational: reads static content from config/attribution.js,
 // no app state, no API calls.
-import { ADDITIONAL_SOURCE_CREDITS, SOURCE_ATTRIBUTIONS, TEAM_CREDITS } from '../config/attribution'
+import { ADDITIONAL_SOURCE_CREDITS, METHODOLOGY_CITATIONS, SOURCE_ATTRIBUTIONS, TEAM_CREDITS } from '../config/attribution'
 
 export default function CreditsSection({ variant = 'page' }) {
   return (
@@ -47,6 +47,18 @@ export default function CreditsSection({ variant = 'page' }) {
             <div className="credit-card credit-card--text" key={s.id}>
               <div className="credit-card__name">{s.name}</div>
               <p className="credit-card__text">{s.text}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="credits__group">
+        <h3 className="credits__heading">Methodology</h3>
+        <div className="credits__grid">
+          {METHODOLOGY_CITATIONS.map((c) => (
+            <div className="credit-card credit-card--text" key={c.id}>
+              <div className="credit-card__name">{c.name}</div>
+              <p className="credit-card__text">{c.text}</p>
             </div>
           ))}
         </div>

@@ -121,45 +121,6 @@ def test_zero_observed_flooding_raises_validation_error():
         compute_success_rate_curve(risk, RISK_SURFACE_NODATA, observed)
 
 
-def test_perfect_ranking_gives_pr_auc_near_one():
-    """A risk score exactly equal to the observed label puts every truly
-    flooded pixel at the very top of the ranking -- precision stays 1.0
-    all the way out to recall=1.0 (the first n_flooded cutoffs are all
-    correct), so pr_auc should be close to 1.0, not the closed-form
-    success-rate value.
-    """
-    observed, _ = _synthetic(n=10000, flooded_fraction=0.05)
-    risk = observed.astype(np.float32)
-
-    result = compute_success_rate_curve(risk, RISK_SURFACE_NODATA, observed, n_bins=200)
-
-    assert result.pr_auc > 0.95
-
-
-def test_random_ranking_gives_pr_auc_near_the_base_rate_not_one_half():
-    """Unlike the success-rate AUC's fixed 0.5 random baseline, PR-AUC's
-    own uninformative baseline is the flooded fraction itself.
-    """
-    observed, _ = _synthetic(n=20000, flooded_fraction=0.1)
-    rng = np.random.default_rng(7)
-    risk = rng.random(observed.shape).astype(np.float32)
-
-    result = compute_success_rate_curve(risk, RISK_SURFACE_NODATA, observed, n_bins=200)
-
-    assert result.pr_auc == pytest.approx(0.1, abs=0.03)
-
-
-def test_precision_recall_curve_starts_at_recall_zero_precision_one_and_ends_at_recall_one():
-    observed, _ = _synthetic()
-    risk = observed.astype(np.float32)
-
-    result = compute_success_rate_curve(risk, RISK_SURFACE_NODATA, observed, n_bins=50)
-
-    assert result.precision_recall_curve[0] == (0.0, 1.0)
-    assert result.precision_recall_curve[-1][0] == pytest.approx(1.0)
-    assert len(result.precision_recall_curve) == 51
-
-
 def test_works_on_2d_arrays_like_a_real_risk_surface_and_mask():
     """The real caller passes 2D (height, width) arrays, not the
     flattened 1D arrays the synthetic tests above use for convenience --

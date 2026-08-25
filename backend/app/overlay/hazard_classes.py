@@ -57,13 +57,12 @@ HAZARD_CLASS_LABELS: dict[int, str] = {
     5: "Very High",
 }
 
-# Hazard classes 4 (High) and 5 (Very High) -- the single "predicted
-# flooded" operating point this app already treats as meaningful
-# elsewhere (report.py's own high_risk_building_count/
-# high_risk_population), reused rather than re-defined by
-# confusion_metrics.py so "high risk" means the same thing everywhere in
-# the app: the report's headline figures, the map's own hazard-class
-# legend, and a validation confusion matrix all agree on this exact set.
+# Hazard classes 4 (High) and 5 (Very High) -- lives here rather than as
+# a local constant in report.py (its only current consumer, for
+# high_risk_building_count/high_risk_population) so "high risk" means
+# the same thing everywhere it's ever used: the report's own headline
+# figures and the map's own hazard-class legend, in particular never
+# silently redefined by a second copy elsewhere.
 HIGH_RISK_CLASSES = (4, 5)
 
 

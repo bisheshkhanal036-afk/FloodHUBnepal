@@ -87,26 +87,29 @@ export const ADDITIONAL_SOURCE_CREDITS = [
   },
 ]
 
-// Methodology citations (Saaty/AHP, Random Index source, drainage-density
-// technique reference) are still left out of the Credits section, at the
-// user's request ("don't cite papers yet"). That remains a product
-// decision, but it is no longer a *blocked* one: the reason originally
-// recorded here -- that no author list/journal/DOI existed anywhere in
-// this codebase -- was not accurate. The complete citation for the
-// reference method was already in backend/tests/test_ahp_core.py, whose
-// docstring transcribes the paper's Tables 4-5 cell by cell:
-//
-//   Parajuli, G., Neupane, S., Kunwar, S., Adhikari, R., & Acharya, T. D.
-//   (2023). A GIS-Based Evacuation Route Planning in Flood-Susceptible
-//   Area of Siraha Municipality, Nepal. ISPRS International Journal of
-//   Geo-Information, 12(7), 286. https://doi.org/10.3390/ijgi12070286
-//
-// It now also lives in backend/app/data/attribution.py's
-// METHODOLOGY_CITATIONS (the backend's single source of truth) and is
-// surfaced per-criterion through src/config/literature.js's REFERENCES,
-// which the LiteratureModal already renders. The paper is open access
-// under CC BY 4.0, so it can be cited and its tables reused freely
-// whenever the Credits section is ready to show it.
+// Methodology citations -- copied VERBATIM from backend/app/data/
+// attribution.py's own METHODOLOGY_CITATIONS (the backend's single
+// source of truth), same reasoning as SOURCE_ATTRIBUTIONS above. At
+// explicit request, these are now shown ONLY here (CreditsSection.jsx,
+// rendered by AboutModal -- the in-tool "info" button) and never on the
+// landing page itself (LandingPage.jsx's own copy describes the same
+// methods without a citation attached to the sentence). The paper is
+// open access under CC BY 4.0. Also surfaced per-criterion through
+// src/config/literature.js's REFERENCES, which the LiteratureModal
+// already renders -- a second, independent "info button" path to the
+// exact same reference_method citation, not a duplicate to reconcile.
+export const METHODOLOGY_CITATIONS = [
+  {
+    id: 'ahp',
+    name: 'Analytic Hierarchy Process (AHP)',
+    text: 'Saaty, T. L. (1980). The Analytic Hierarchy Process: Planning, Priority Setting, Resource Allocation. McGraw-Hill, New York.',
+  },
+  {
+    id: 'reference_method',
+    name: 'Reference method',
+    text: 'Parajuli, G., Neupane, S., Kunwar, S., Adhikari, R., & Acharya, T. D. (2023). A GIS-Based Evacuation Route Planning in Flood-Susceptible Area of Siraha Municipality, Nepal. ISPRS International Journal of Geo-Information, 12(7), 286. https://doi.org/10.3390/ijgi12070286',
+  },
+]
 
 // Team credits: the 3 people who built this project. `photo` is an
 // imported image, cropped to a head-and-shoulders square from the
@@ -123,20 +126,24 @@ import bisheshPhoto from '../assets/team/team-bishesh.jpg'
 import aayushPhoto from '../assets/team/team-aayush.jpg'
 import anujPhoto from '../assets/team/team-anuj.jpg'
 
+// Order matters here (both the landing page's own 3-across team-showcase
+// grid and CreditsSection's own grid render in this exact order) --
+// Bishesh Khanal specifically in the middle position, at explicit
+// request, not first.
 export const TEAM_CREDITS = [
-  {
-    id: 1,
-    name: 'Bishesh Khanal',
-    email: 'bisheshkhanal036@gmail.com',
-    linkedin: 'https://www.linkedin.com/in/bisheshkhanal',
-    photo: bisheshPhoto,
-  },
   {
     id: 2,
     name: 'Aayush Roka',
     email: 'er.rokaayush77@gmail.com',
     linkedin: 'https://www.linkedin.com/in/aayushroka77',
     photo: aayushPhoto,
+  },
+  {
+    id: 1,
+    name: 'Bishesh Khanal',
+    email: 'bisheshkhanal036@gmail.com',
+    linkedin: 'https://www.linkedin.com/in/bisheshkhanal',
+    photo: bisheshPhoto,
   },
   {
     id: 3,

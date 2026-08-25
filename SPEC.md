@@ -2629,6 +2629,314 @@ them.
     matrices, 422 for an AOI outside METEOR's domain, 503 for a missing
     local file, and the compute-cache-reuse check). Full suite (464
     tests) green.
+- **Bulk "Auto-classify all" action** (CriteriaPanel.jsx), at explicit
+  request: an option, once an AOI is set (drawn, or selected via basin/
+  district — all three set the same `state.aoi` shape, so this was
+  deliberately never restricted to basin selection specifically) and at
+  least one criterion is checked, to remake every checked continuous
+  criterion's risk classes from that area's own real value distribution
+  in one click, rather than opening each criterion's own "Customize
+  breaks" section individually. Not new backend/data-fetch logic --
+  `POST /api/overlay/criteria/breaks` (equal-interval/quantile/Jenks
+  candidate breaks over the current AOI) already existed and was
+  already reachable per-criterion; this is a frontend convenience layer
+  over it.
+  - Defaults to **Jenks Natural Breaks**, not Quantile or Equal
+    Interval -- the one method actually named for and designed to find
+    natural clusters in a variable's own distribution, the closest
+    match to "remake the classes based on the features of that area."
+    A method dropdown next to the button lets the bulk action use
+    Equal Interval/Quantile instead, same as the per-criterion picker.
+  - Categorical criteria (currently only `worldcover_land_cover`) are
+    silently skipped -- no "breaks" concept applies to discrete land-
+    cover codes, only manual per-code class assignment -- with a small
+    hint noting how many were skipped and why, rather than erroring or
+    pretending they were included.
+  - Refactored `ClassificationEditor.jsx`'s own per-criterion method-
+    switch logic (apply already-fetched breaks immediately if the
+    method's data was already loaded for this AOI, otherwise just set
+    the method and let the existing fetch effect pick it up -- a native
+    `<details>` always mounts its children even while collapsed, so
+    that effect runs regardless of whether "Customize breaks" happens
+    to be expanded) out into a new shared `lib/classification.js`
+    export, `selectClassificationMethod` -- both the per-criterion
+    buttons and the new bulk action now take the exact same path,
+    rather than two copies of this non-obvious behavior that could
+    quietly drift apart.
+  - A real premature-success bug caught before it shipped, not by a
+    test: the bulk action's own "All N applied" summary was originally
+    keyed on `entry.method === method` alone, which the button's click
+    handler sets synchronously for every criterion on the same render
+    -- criteria that still needed a fetch would flash "All N applied"
+    for one render before their `fetch.status` ever left `'idle'`.
+    Fixed by requiring `fetch.status === 'loaded'` too.
+  - Verified live end-to-end (headless-Chrome CDP): drew a real AOI,
+    checked Elevation, Slope, and Land Cover, clicked "Auto-classify
+    all (2)" (Land Cover correctly excluded from the count), watched it
+    genuinely take several real seconds (a real backend computation
+    over real DEM/slope rasters, not instant), and confirmed real,
+    area-specific Jenks breaks landed in each criterion's own break
+    inputs (e.g. elevation breaks 1295/1438/1604/1811m against that
+    AOI's own real 1105-2104m range) -- screenshotted. Also confirmed
+    no regression on the per-criterion method buttons: switching
+    Elevation to Equal Interval after the bulk fetch applied instantly
+    (no re-fetch, reusing the same already-loaded response) with
+    correctly equal-width breaks.
+- **Validation methodology overhaul**, at explicit request, after real
+  usage surfaced a real problem: an AUC of 0.556 had been computed
+  against `nepal_2024_terai` for a Kathmandu-area risk surface -- the
+  wrong reference AOI entirely (that event's own real geometry is
+  Terai-only, already documented above), telling little about the
+  surface it was supposedly validating. Three changes, together:
+  - **AUC-ROC kept as the single PRIMARY statistic** (unchanged
+    mechanics) -- confirmed as "conceptually correct for a
+    susceptibility ranking" and kept front and center in both panels.
+  - **A real Kathmandu-area validation reference, finally**: sourced
+    live from Nepal's BIPAD Portal (`bipadportal.gov.np`), the national
+    Disaster Information Management System owned by NDRRMA -- its own
+    public, unauthenticated REST API (`/api/v1/incident/?hazard=11`)
+    returns 2,999 verified flood-occurrence POINTS nationwide
+    (2011-06-05 to 2026-08-24), 139 of them genuinely within Kathmandu
+    Valley (checked directly, not assumed) -- the gap every prior
+    source in `D:\New folder\README.md` hit. Registered as a new
+    `nepal_bipad_flood_points` validation event
+    (`app/data/config.py`). A real, live-verified finding along the
+    way: `get_observed_flood_mask`/`get_validation_extent_geojson`
+    (`validation_extent.py`) needed **zero code changes** for point
+    geometries -- both geopandas' I/O and `rasterio.rasterize()` are
+    already geometry-type-agnostic, confirmed with a direct test
+    against the real file before registering it, not assumed.
+    Full provenance (including the "license not formally verified,
+    unlike UNOSAT's confirmed CC BY-SA" caveat) written up in
+    `D:\New folder\README.md`'s own new section.
+  - **Precision/recall/F1/IoU/PR-AUC removed entirely** (not caveated,
+    not hidden behind a flag) from both `/validate` and
+    `/compare-meteor` -- "the wrong question for a ranking, where the
+    whole point is 5 ordered classes, not a single yes/no cutoff" was
+    the standing critique; `app/overlay/confusion_metrics.py` (and its
+    7 tests) deleted outright as a result, `success_rate.py` reverted
+    to just `auc`/`curve` (its `zero_positive_hint` parameterization
+    kept -- still needed for `meteor_comparison.py`'s own reuse of the
+    AUC computation), `PrecisionRecallChart.jsx` deleted as dead code.
+  - **New: frequency-ratio-per-class** (`app/overlay/frequency_ratio.py`)
+    -- "does risk increase monotonically across classes", the
+    literature-standard, directly communicable complement to AUC (Lee &
+    Pradhan 2007's own method): for each hazard class 1-5, what
+    fraction of that class's own pixels really flooded, plus a
+    `monotonic` boolean. A class absent from the AOI gets
+    `flooded_fraction: null`, never a misleading `0.0` conflating
+    "doesn't occur here" with "occurs here and never floods" -- and is
+    excluded from the monotonicity check itself, not treated as a
+    sequence break.
+  - Frontend: new `FrequencyRatioChart.jsx` (dataviz skill loaded and
+    followed before writing it) -- a single-series bar chart, one bar
+    per hazard class, each colored via the SAME
+    `riskValueToCssColor((hazard_class-1)/4)` mapping
+    CriterionSnapshot/ReportOverlay already use for a class swatch,
+    not a chart-local palette; a class absent from the AOI draws as a
+    hollow/dashed outline instead of a phantom zero-height bar; the
+    y-axis auto-scales to the real data range rather than a fixed
+    0-100%, since a point-inventory event's own fractions are
+    genuinely tiny by design (formatting handled by a new shared
+    `lib/formatFraction.js`, adaptive precision so a value like
+    0.002% never silently rounds to a misleading "0.00%").
+  - Both response models (`ValidateResponse`/`CompareMeteorResponse`)
+    updated to match: `frequency_ratio`/`monotonic` added,
+    `pr_auc`/`precision_recall_curve`/`precision`/`recall`/`f1`/`iou`/
+    the 4 raw confusion-matrix pixel counts removed. An additive-only
+    change this was not -- a real, intentional breaking change to both
+    endpoints' response shape, done in one pass rather than deprecating
+    fields gradually, since nothing outside this project's own frontend
+    consumes them yet.
+  - 8 new backend tests (`test_frequency_ratio.py`, hand-built hazard-
+    class rasters including a real absent-class/monotonicity-skip
+    case), `test_confusion_metrics.py` deleted, 3 PR-AUC-specific tests
+    trimmed from `test_success_rate.py`, both router test files updated
+    for the new response shape plus explicit `assert "precision" not in
+    body`-style negative checks. Full suite (461 tests) green.
+  - Verified live end-to-end (headless-Chrome CDP + direct curl against
+    the real endpoint): a real Kathmandu AOI against the new BIPAD
+    point event returned AUC 0.360-0.575 across different runs (a real,
+    honest, un-inflated number -- one run scored below 0.5, reported
+    plainly rather than smoothed over) with `monotonic: true`, and the
+    same AOI against METEOR returned AUC 0.382-0.444 with its own
+    frequency-ratio chart -- both screenshotted, confirming the chart
+    renders correctly at real (often sub-0.01%) magnitudes and the
+    warning callout/attribution/curve-label wiring from the prior two
+    entries above all still work unchanged.
+- **Landing page redesign**, at explicit request, using inunda.ai
+  ("keeping this as the gold standard") as the visual reference --
+  live-screenshotted through several scroll positions via headless-
+  Chrome CDP first (a JS-rendered scrollytelling SPA WebFetch's own
+  markdown conversion couldn't see) to actually extract its design
+  language rather than guess at it: dark theme, huge centered
+  typography, one concept per full-height screen, a small letterspaced
+  eyebrow above each heading, generous negative space, a cyan/teal
+  accent, a side scroll-progress-dot rail.
+  - **Hero**: reordered to name -> tagline -> graphic -> supporting
+    detail, per explicit request. New `HeroGraphic.jsx` -- a
+    placeholder, not a final illustration (explicitly permitted) --
+    built from the app's OWN existing visual language rather than a
+    generic motif (an earlier hero illustration had been removed
+    before this session for being exactly that, "not good enough"):
+    5 concentric rings via `riskValueToCssColor`, the same ramp the
+    map's own risk surface/hazard-class legend already use, with
+    `Logo.jsx`'s own river-bend glyph traced across the middle at hero
+    scale -- the same shape a viewer already saw small in the nav, not
+    a second unrelated motif. A subtle CSS pulse animation, disabled
+    under `prefers-reduced-motion`.
+  - **Methodology expanded from 1 section (4 cards in a grid) to 4
+    full-height scroll sections** -- "How to use it" / "What is AHP?"
+    / "The method" (clusters) / "Criterion vs. validation" (METEOR) --
+    matching inunda's own "one concept per screen" pattern instead of
+    several ideas competing for attention on one screen. New shared
+    `MethodScene` wrapper in `LandingPage.jsx` so a 5th scene later
+    needs no new markup pattern.
+  - **Dark theme confirmed already default** -- `initialTheme()`
+    (`AppStateContext.jsx`) already defaults to `'dark'` from an
+    earlier "midnight precision instrument" redesign decision predating
+    this session; verified live, no code change needed.
+  - **Every academic citation removed from the landing page itself**,
+    at explicit request ("Sarlahi papers" -- the actual reference is
+    Parajuli et al. 2023's Siraha Municipality study; not literally
+    named "Sarlahi" anywhere in this codebase, but the same district-
+    study citation) -- `(Saaty, 1980)` and `Parajuli et al. (2023)`
+    both used to appear directly in the landing page's own prose (the
+    latter reusing `METHOD_INTRO.body[0]` verbatim, sourced from
+    `literature.js`, which is right for the in-tool `LiteratureModal`
+    but wrong once citations are meant to live ONLY behind an info
+    button). Both sentences rewritten citation-free for the landing
+    page's own copy; the citations themselves aren't lost -- new
+    `METHODOLOGY_CITATIONS` in `config/attribution.js` (copied verbatim
+    from `backend/app/data/attribution.py`'s own constant of the same
+    name) renders as a new "Methodology" group in `CreditsSection.jsx`,
+    which only `AboutModal.jsx` (the in-tool ℹ️ "About this project"
+    button) renders -- `LandingPage.jsx` builds its own separate markup
+    from the same config data and never touches this new export.
+    Data-source LICENSE attributions (Copernicus DEM, WorldCover, OSM,
+    CHIRPS, ...) deliberately kept on the front page's own "Data
+    sources" section -- a different category from a methodology paper
+    citation, and required by several of those sources' own license
+    terms -- with a new closing line pointing to the info button for
+    the rest. Verified live: swept the entire rendered landing page's
+    own text for "Parajuli"/"Saaty"/"et al" -- the only "et al" left is
+    CHIRPS's own required attribution string, confirmed by locating it
+    directly, not assumed.
+  - **METEOR overlay map control now hidden unless "Flood Hazard
+    (METEOR)" is checked as a criterion**, at explicit request (it
+    previously always showed regardless of context, cluttering the map
+    with a type/return-period/eye-toggle control for a layer that
+    might not even be part of the current risk surface).
+    `MeteorFloodControl` gained an `updateVisibility()` escape-hatch
+    method (same "push updates in" pattern `ValidationExtentControl`'s
+    own `updateEvents()` already uses) -- a plain container
+    `display:none` toggle, not `map.addControl`/`removeControl`, so
+    re-showing it never rebuilds its own two `<select>`s and loses
+    whatever the user had picked. `TOGGLE_CRITERION`'s own reducer case
+    also now force-resets `meteorFloodVisible` to `false` when METEOR
+    is specifically unchecked, so the actual overlay layer can never be
+    left silently "on" with its own toggle button no longer on screen
+    to turn it back off. Verified live end-to-end: hidden by default,
+    appears the instant the checkbox is checked, disappears the instant
+    it's unchecked.
+  - Frontend production build clean; no backend changes this entry.
+- **Landing page follow-up corrections**, at explicit request, revising
+  three specific pieces of the prior entry above:
+  - **METEOR overlay control reverted to always-visible** -- the prior
+    entry's "hidden unless the METEOR criterion is checked" gating was
+    the wrong call; it's a standalone reference layer meant to be
+    available regardless of current input selections, not tied to
+    criteria state at all. That gating (the `updateVisibility()`
+    escape hatch, its own ref/effect in `MapView.jsx`, and
+    `TOGGLE_CRITERION`'s force-reset of `meteorFloodVisible`) removed
+    outright, not just disabled. In its place: `MeteorFloodControl`
+    simplified from a type + return-period + toggle 3-control cluster
+    down to a single toggle, fixed to Fluvial (Defended), 1-in-100y --
+    the one combination that actually matches the criterion's own
+    local raw-data file (`backend/app/data/config.py`'s
+    `METEOR_FLOOD_TYPE`/`METEOR_FLOOD_RETURN_PERIOD` defaults), so the
+    map's reference overlay and the criterion (when checked) can never
+    silently disagree about which METEOR flavor each is showing.
+    `SET_METEOR_FLOOD_TYPE`/`SET_METEOR_FLOOD_RETURN_PERIOD` (now
+    unreachable -- nothing dispatches them any more) removed from the
+    reducer; `meteorFloodType`/`meteorFloodReturnPeriod` state kept
+    (still read by `MeteorFloodLegend.jsx` and the tile-URL builder),
+    just no longer writable via UI. Verified live: control visible
+    with zero criteria checked, zero dropdowns, one toggle, correct
+    fixed legend label, and the overlay itself genuinely renders on
+    toggle.
+  - **Hero section: continuous scroll-scrubbed scale**, at explicit
+    request -- every other element on this page still uses
+    `useScrollZoom.js`'s own binary IntersectionObserver reveal (a
+    deliberate, documented prior design choice: universally supported,
+    no per-frame listener cost), but the hero specifically now needs a
+    genuinely continuous value tied to scroll position, which that
+    mechanism can only coarsely approximate. New `useHeroScrollScale.js`
+    -- a real (rAF-throttled) scroll listener, the one deliberate
+    exception to the "no scroll listener" principle above, scoped to
+    exactly one section rather than a pattern repeated per-section:
+    tracks the hero's own `getBoundingClientRect().top` against its own
+    height, maps that to `sin(progress * π)` so the whole hero content
+    block (title, tagline, graphic, description, actions, facts,
+    animated together as one group, not independently) scales from
+    0.86 at the very top of the page, up to a true 1.0 peak exactly at
+    the section's own scroll midpoint, back down to 0.86 by the time
+    it's scrolled past -- verified live by sampling the actual computed
+    `transform` at 6 scroll fractions (0, 0.25, 0.5, 0.75, 1.0, 1.2 of
+    the hero's own height), confirming the peak lands precisely at 0.5
+    and holds steady past 1.0 rather than overshooting. Applied via an
+    inline style updated every frame, deliberately with NO CSS
+    `transition` on it (would visibly lag behind/fight the already-
+    smooth per-frame updates); disabled under `prefers-reduced-motion`
+    the same way `useScrollZoom.js` already is.
+  - **Team order: Bishesh Khanal moved to the middle position**, at
+    explicit request -- `TEAM_CREDITS` (`config/attribution.js`,
+    shared by both the landing page's own team-showcase grid and
+    `CreditsSection.jsx`) reordered to Aayush / Bishesh / Anuj. Verified
+    live in the rendered 3-across grid.
+  - Frontend production build clean; no backend changes this entry.
+- **Three small, real bugs fixed**, all at explicit report:
+  - **BIPAD point inventory wasn't rendering on the map at all** -- a
+    real, live-caught bug, not a sizing issue as first suspected: the
+    validation-extent overlay's own layer (`MapView.jsx`) was `type:
+    'fill'`, which renders NOTHING for Point/MultiPoint geometries in
+    MapLibre (fill only applies to polygons) -- `nepal_2024_terai`
+    (a polygon extent) always worked, `nepal_bipad_flood_points` (this
+    session's own new point inventory) never had a chance to render at
+    all regardless of point size. Fixed with a second layer on the same
+    source, `type: 'circle'` (`VALIDATION_EXTENT_POINTS_LAYER`) --
+    always added alongside the fill layer regardless of which event is
+    loaded, not conditionally chosen by inspecting geometry type: a
+    circle layer is itself already a safe no-op over polygon geometries
+    the same way fill is a no-op over points, so both can coexist
+    unconditionally. Sized deliberately large (7px radius, white
+    stroke) for real visibility, per the report. Verified live:
+    screenshotted real magenta circle markers rendering correctly over
+    Kathmandu, tracing real BIPAD incident locations.
+  - **Native `<select>` dropdown popups unreadable in dark mode** -- a
+    real, live-caught bug: `.basemap-control__select` (and every other
+    `<select>` in the app) correctly themes its own CLOSED box via this
+    app's own CSS, but the native OPTIONS POPUP that appears on click
+    is a separate browser-rendered surface outside that CSS's reach --
+    without an explicit signal, most browsers render that popup with
+    LIGHT-mode native defaults regardless of the page's own dark theme,
+    putting this app's own light `--color-text` text on the browser's
+    own light popup background: functionally invisible, matching the
+    report exactly ("the dropdown menu is the same color as font").
+    Fixed two ways: `color-scheme: dark`/`light` added to `:root`/
+    `[data-theme='light']` (the browser-native, standards-based fix for
+    exactly this class of problem), plus explicit `background`/`color`
+    on `select option` as a defensive backup in case some browser
+    doesn't fully honor `color-scheme` for popup content. Verified live
+    via computed styles on a real `<option>` element (not just the
+    declared CSS) -- background and text color now genuinely contrast.
+  - **METEOR overlay control had no visible label** -- after last
+    entry's simplification down to a single icon-only toggle button
+    (dropdowns removed), the control lost all on-screen text, unlike
+    every sibling control in the same group. Fixed with a plain
+    `<span class="basemap-control__label">` showing "Fluvial
+    (Defended), 1-in-100y" directly, not just in the hover title.
+  - Frontend production build clean; no backend changes this entry.
 - Not yet implemented: AOI persistence, and shelter identification. The
   GeoTIFF file route is a simple
   direct-read endpoint, not a general static-asset server or CDN — fine

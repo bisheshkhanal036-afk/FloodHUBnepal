@@ -11,15 +11,16 @@
 import { useState } from 'react'
 import { compareToMeteor } from '../api/client'
 import { aucQuality } from '../lib/aucQuality'
+import { formatFraction } from '../lib/formatFraction'
 import { useAppState } from '../state/AppStateContext'
-import PrecisionRecallChart from './PrecisionRecallChart'
+import FrequencyRatioChart from './FrequencyRatioChart'
 import SuccessRateChart from './SuccessRateChart'
 
-// Same three flood types MapView.jsx's own METEOR overlay control
-// offers (METEOR_FLOOD_TYPES there) -- duplicated as a tiny label map
-// rather than exported/shared, since it's three fixed strings, not
-// logic, and this component only ever needs to *display* whichever one
-// the backend's response says it actually compared against.
+// The 3 flood types METEOR's own data actually distinguishes (FD/FU/P)
+// -- a tiny label map, not shared/exported anywhere else, since this
+// component only ever needs to *display* whichever one the backend's
+// response says it actually compared against (config.METEOR_FLOOD_TYPE,
+// fixed server-side, not caller-selectable).
 const METEOR_FLOOD_TYPE_LABELS = { FD: 'Fluvial (Defended)', FU: 'Fluvial (Undefended)', P: 'Pluvial' }
 
 function formatFloodType(type) {
@@ -80,44 +81,18 @@ export default function MeteorComparisonPanel() {
           </div>
 
           <p className="panel__hint">
-            METEOR models {(result.meteor_flooded_fraction * 100).toFixed(1)}% of this AOI as flooded (
+            METEOR models {formatFraction(result.meteor_flooded_fraction)} of this AOI's valid pixels as flooded (
             {result.n_meteor_flooded_pixels.toLocaleString()} of {result.n_valid_pixels.toLocaleString()} pixels
             compared) under {formatFloodType(result.meteor_flood_type)}, {formatReturnPeriod(result.meteor_return_period)}.
           </p>
 
           <SuccessRateChart curve={result.curve} capturedLabel="METEOR-modeled flooding" />
 
-          <div className="validation-panel__metrics">
-            <div className="validation-panel__metric">
-              <span className="validation-panel__metric-value">{result.precision.toFixed(2)}</span>
-              <span className="validation-panel__metric-label">Precision</span>
-            </div>
-            <div className="validation-panel__metric">
-              <span className="validation-panel__metric-value">{result.recall.toFixed(2)}</span>
-              <span className="validation-panel__metric-label">Recall</span>
-            </div>
-            <div className="validation-panel__metric">
-              <span className="validation-panel__metric-value">{result.f1.toFixed(2)}</span>
-              <span className="validation-panel__metric-label">F1</span>
-            </div>
-            <div className="validation-panel__metric">
-              <span className="validation-panel__metric-value">{result.iou.toFixed(2)}</span>
-              <span className="validation-panel__metric-label">IoU</span>
-            </div>
-          </div>
           <p className="panel__hint">
-            Precision/recall/F1/IoU compare this AOI's <strong>High</strong> and <strong>Very High</strong> hazard
-            pixels directly against METEOR's own modeled flood extent (a single fixed threshold, unlike the two
-            curves below, which sweep every possible cutoff).
+            <strong>Frequency ratio</strong>: of each hazard class's own pixels, what fraction METEOR also models as
+            flooded — a well-behaved risk surface should show this increasing from Very Low to Very High.
           </p>
-
-          <div className="validation-panel__pr-auc">
-            <span className="validation-panel__pr-auc-value">{result.pr_auc.toFixed(3)}</span>
-            <span className="validation-panel__pr-auc-label">
-              PR-AUC — compare against {(result.meteor_flooded_fraction * 100).toFixed(1)}% (random baseline), not 0.5
-            </span>
-          </div>
-          <PrecisionRecallChart curve={result.precision_recall_curve} observedFloodedFraction={result.meteor_flooded_fraction} />
+          <FrequencyRatioChart byClass={result.frequency_ratio} monotonic={result.monotonic} />
 
           <button type="button" className="link-button" onClick={() => setExpanded((v) => !v)}>
             {expanded ? 'Hide' : 'Show'} data attribution

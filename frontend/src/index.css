@@ -25,6 +25,20 @@
      hairline borders + a one-step surface value-shift, not shadow --
      shadow tokens below are kept thin, for genuinely floating chrome
      (modal, dropdown) only. */
+  /* Tells the browser to render its OWN native UI chrome (a <select>'s
+     own dropdown popup, scrollbars, etc.) with dark-appropriate
+     defaults instead of light ones -- a real, live-reported bug this
+     fixes: .basemap-control__select (and every other <select> here)
+     sets `background: transparent`/inherits var(--color-text) for its
+     OWN closed box, which this app's own CSS fully controls, but the
+     native OPTIONS POPUP that appears on click is a separate rendering
+     surface outside this app's CSS reach -- without this property, most
+     browsers render that popup with LIGHT-mode native defaults
+     regardless of the page's own dark theme, putting this app's own
+     light `--color-text` text on the browser's own light popup
+     background: functionally invisible. `color-scheme` is exactly the
+     browser-native mechanism for this class of problem, not a CSS hack. */
+  color-scheme: dark;
   --color-bg: #08090a;
   --color-bg-alt: #0c0d0e;
   --color-panel: #101113;
@@ -102,6 +116,7 @@
    opted into explicitly via [data-theme='light'], the inverse of the
    previous dark-is-the-override arrangement. */
 :root[data-theme='light'] {
+  color-scheme: light;
   --color-bg: #f7f8f8;
   --color-bg-alt: #eef0f1;
   --color-panel: #ffffff;
@@ -176,6 +191,17 @@ select {
   background: var(--color-panel);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
+}
+
+/* Belt-and-suspenders alongside :root's own color-scheme above: explicit
+   colors on <option> itself, in case a given browser's native dropdown
+   popup doesn't fully honor color-scheme for every element it contains.
+   Applies even to a <select> that overrides its OWN closed-box
+   background to transparent (.basemap-control__select) -- the popup's
+   <option> list still gets a real, explicit dark background either way. */
+select option {
+  background: var(--color-panel);
+  color: var(--color-text);
 }
 
 input[type='checkbox'],
@@ -287,6 +313,19 @@ input[type='radio'] {
   font-size: var(--text-xs);
   padding: 0 0.4rem;
   cursor: pointer;
+}
+
+/* MeteorFloodControl's own fixed (non-interactive) label -- same
+   spacing/type as .basemap-control__select above, so a plain <span>
+   sits flush with an actual dropdown in the same control group despite
+   not being one itself. */
+.basemap-control__label {
+  display: flex;
+  align-items: center;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  padding: 0 0.5rem;
+  white-space: nowrap;
 }
 
 .basemap-control__toggle {
@@ -1573,62 +1612,6 @@ input[type='radio'] {
   color: var(--color-text);
 }
 
-/* PR-AUC's own hero row -- visually secondary to the AUC hero above it
-   (smaller value size) since AUC/success-rate is this panel's headline
-   metric and PR-AUC is a second, related summary, not a competing one. */
-.validation-panel__pr-auc {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
-  margin-top: var(--space-2);
-}
-
-.validation-panel__pr-auc-value {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: var(--text-lg);
-  font-variant-numeric: tabular-nums;
-  color: var(--color-primary);
-}
-
-.validation-panel__pr-auc-label {
-  font-size: var(--text-sm);
-  color: var(--color-text-muted);
-}
-
-/* Precision/recall/F1/IoU -- four secondary stat tiles at the single
-   High/Very-High hazard operating point (not swept, unlike the two AUCs
-   above), so they read as one small group rather than four more heroes. */
-.validation-panel__metrics {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--space-2);
-}
-
-.validation-panel__metric {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  padding: var(--space-2);
-  background: var(--color-panel-alt);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  text-align: center;
-}
-
-.validation-panel__metric-value {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: var(--text-lg);
-  font-variant-numeric: tabular-nums;
-  color: var(--color-text);
-}
-
-.validation-panel__metric-label {
-  font-size: var(--text-xs);
-  color: var(--color-text-muted);
-}
-
 .success-rate-chart {
   display: flex;
   flex-direction: column;
@@ -1700,6 +1683,75 @@ input[type='radio'] {
 }
 
 .success-rate-chart__tooltip strong {
+  color: var(--color-text);
+}
+
+/* FrequencyRatioChart.jsx -- bars colored per-class via the same
+   riskValueToCssColor mapping CriterionSnapshot/ReportOverlay already
+   use, not a chart-local palette. */
+.frequency-ratio-chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.frequency-ratio-chart__header {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.frequency-ratio-chart__monotonic {
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.frequency-ratio-chart__monotonic--yes {
+  color: var(--color-ok);
+}
+
+.frequency-ratio-chart__monotonic--no {
+  color: var(--color-warn);
+}
+
+.frequency-ratio-chart__svg {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1 / 1;
+  max-width: 260px;
+}
+
+.frequency-ratio-chart__axis {
+  stroke: var(--color-border-strong);
+  stroke-width: 0.4;
+}
+
+.frequency-ratio-chart__bar-absent {
+  fill: none;
+  stroke-width: 0.6;
+  stroke-dasharray: 1.2 0.8;
+  opacity: 0.5;
+}
+
+.frequency-ratio-chart__class-label {
+  font-size: 3.6px;
+  fill: var(--color-text-muted);
+}
+
+.frequency-ratio-chart__legend-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.frequency-ratio-chart__tooltip {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  min-height: 2.4em;
+}
+
+.frequency-ratio-chart__tooltip strong {
   color: var(--color-text);
 }
 
@@ -1786,6 +1838,33 @@ input[type='radio'] {
 .criteria-panel__select-all {
   display: block;
   margin-bottom: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+/* AutoClassifyAll (CriteriaPanel.jsx) -- the bulk "remake the classes
+   automatically from this area's own data" action. */
+.auto-classify {
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-panel-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.auto-classify__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.auto-classify__method {
+  background: var(--color-panel);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem 0.5rem;
+  font-family: var(--font-body);
   font-size: var(--text-sm);
 }
 
@@ -2006,10 +2085,12 @@ input[type='radio'] {
   font-size: var(--text-md);
 }
 
-/* No illustration column -- an earlier version paired the hero text
-   with a standalone SVG graphic; removed at the user's request. The
-   hero is now a single centered column, carried by typography, the
-   Logo mark, and a plain radial background wash instead. */
+/* A single centered column -- name, tagline, graphic, then supporting
+   detail below, in that order, at explicit request. (An earlier version
+   had a standalone SVG graphic here too, removed at the time as "not
+   good enough"; HeroGraphic.jsx now reinstates one, built from the
+   app's own existing risk-ramp/Logo visual language rather than a
+   generic motif -- see that component's own docstring.) */
 .hero--centered {
   display: flex;
   flex-direction: column;
@@ -2031,30 +2112,65 @@ input[type='radio'] {
   /* No background here anymore -- see .zoom-section--hero for why. */
 }
 
-.hero__eyebrow {
-  font-size: var(--text-base);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--color-primary);
-  margin: 0 0 var(--space-4);
-}
-
 .hero__title {
   font-family: var(--font-display);
   font-size: var(--text-display);
   line-height: 1.02;
   letter-spacing: var(--tracking-tighter);
-  margin: 0 0 var(--space-6);
+  margin: 0 0 var(--space-4);
   color: var(--color-text);
 }
 
-.hero__description {
+/* The tagline -- immediately under the name, above the graphic, per
+   the requested name -> tagline -> graphic order. Deliberately not
+   styled like a heading (no display font) -- one plain, legible line. */
+.hero__tagline {
   font-size: var(--text-lg);
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-6);
+}
+
+.hero__description {
+  font-size: var(--text-base);
   line-height: 1.65;
   color: var(--color-text-muted);
   max-width: 42rem;
-  margin: 0 auto var(--space-8);
+  margin: var(--space-6) auto var(--space-8);
+}
+
+/* HeroGraphic.jsx -- concentric risk-ramp rings + the Logo mark's own
+   river-bend glyph at hero scale. */
+.hero-graphic {
+  display: flex;
+  justify-content: center;
+  margin: var(--space-2) 0;
+}
+
+.hero-graphic__svg {
+  width: min(60vw, 260px);
+  height: auto;
+}
+
+.hero-graphic__ring {
+  transform-origin: center;
+  animation: hero-graphic-pulse 4.5s ease-in-out infinite;
+}
+
+@keyframes hero-graphic-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-graphic__ring {
+    animation: none;
+    opacity: 0.6;
+  }
 }
 
 .hero__actions {
@@ -2220,6 +2336,18 @@ input[type='radio'] {
   }
 }
 
+/* HeroSection's own wrapper (LandingPage.jsx) -- transform is set
+   inline, per animation frame, by useHeroScrollScale.js, NOT via a CSS
+   transition: a transition here would visibly lag behind (fight) the
+   scroll-scrub's own already-smooth per-frame updates rather than help.
+   Always fully opaque (unlike .zoom-section__inner above) -- this is a
+   continuous grow/shrink, never a from-hidden reveal. */
+.hero-scroll-scale {
+  width: 100%;
+  transform-origin: center;
+  will-change: transform;
+}
+
 .zoom-section__heading {
   text-align: center;
   font-size: clamp(2rem, 3.2vw, 2.75rem);
@@ -2233,83 +2361,87 @@ input[type='radio'] {
   margin: 0 0 var(--space-8);
 }
 
-/* "How it works": 4 cards mixing a numbered step list with plain prose.
-   A FIXED 2-column grid (not auto-fit, like team-showcase's own fixed
-   repeat(3, ...) -- auto-fit with a 22rem minmax fit 3 columns at
-   ordinary desktop widths here, which read as unbalanced: 3 cards of
-   very different content lengths sharing one stretched row, with the
-   4th wrapping alone underneath). `align-items: start` keeps each card
-   sized to its own content instead of stretching to match its row's
-   tallest neighbor, which a mismatched 2-column pairing (numbered list
-   vs. a short paragraph) would otherwise leave visibly empty at the
-   bottom. */
-.method-showcase {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
-  gap: var(--space-5);
-  max-width: 60rem;
+/* Points to the in-tool info button for methodology citations -- the
+   Data sources section's own closing line, since this page carries no
+   academic citations itself (see LandingPage.jsx's own top comment). */
+.zoom-section__footnote {
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  margin: var(--space-8) 0 0;
+}
+
+/* Methodology, now 4 separate full-screen scenes (LandingPage.jsx's
+   MethodScene, one per <MethodScene>) rather than 4 cards crammed into
+   one section -- inunda.ai's own "one concept per screen" scrollytelling
+   pattern, at explicit request ("keeping this as the gold standard").
+   Each scene is a single centered column: a small letterspaced eyebrow,
+   the (shared) .zoom-section__heading, then either prose or the
+   numbered step list below -- no card border/background, unlike the
+   old cramped-grid version, since a full-height section IS the visual
+   container now. */
+.zoom-section--method-scene {
+  text-align: center;
+}
+
+.method-scene__eyebrow {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--color-primary);
+  margin: 0 0 var(--space-3);
+}
+
+.method-scene__body {
+  max-width: 42rem;
   margin: 0 auto;
 }
 
-.method-showcase__card {
-  background: var(--color-panel);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-6);
-  min-width: 0;
-}
-
-.method-showcase__title {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: var(--text-lg);
-  margin: 0 0 var(--space-4);
-}
-
-.method-showcase__text {
+.method-scene__text {
   color: var(--color-text-muted);
-  font-size: var(--text-sm);
+  font-size: var(--text-lg);
   line-height: 1.7;
   margin: 0;
 }
 
-.method-showcase__steps {
+.method-scene__steps {
   list-style: none;
   counter-reset: method-step;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-4);
+  text-align: left;
 }
 
-.method-showcase__steps li {
+.method-scene__steps li {
   counter-increment: method-step;
   position: relative;
-  padding-left: 2.4rem;
+  padding-left: 2.8rem;
   color: var(--color-text-muted);
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   line-height: 1.6;
 }
 
-.method-showcase__steps li strong {
+.method-scene__steps li strong {
   color: var(--color-text);
 }
 
-.method-showcase__steps li::before {
+.method-scene__steps li::before {
   content: counter(method-step);
   position: absolute;
   left: 0;
   top: 0;
-  width: 1.6rem;
-  height: 1.6rem;
+  width: 1.9rem;
+  height: 1.9rem;
   border-radius: var(--radius-full);
   background: var(--color-primary-soft);
   color: var(--color-primary);
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2591,11 +2723,6 @@ input[type='radio'] {
   .team-showcase {
     grid-template-columns: 1fr;
     max-width: 24rem;
-  }
-
-  .method-showcase {
-    grid-template-columns: 1fr;
-    max-width: 28rem;
   }
 }
 

@@ -3,7 +3,14 @@ index-based flood-susceptibility map (already named, not newly invented
 here, in config/literature.js's own METHOD_INTRO: "validated against an
 observed flood inventory (success-rate / AUC)", citing Chung & Fabbri's
 original method as applied in this project's own cited literature --
-Kazakis et al. 2015, Das 2019).
+Kazakis et al. 2015, Das 2019). Kept as the app's single PRIMARY
+validation statistic, at explicit request -- conceptually the correct
+one for a susceptibility RANKING (it scores the whole ordering, swept
+over every possible cutoff), unlike a threshold-based confusion-matrix
+statistic (precision/recall/F1/IoU), which this project deliberately
+does not compute at all: see frequency_ratio.py's own docstring for the
+complementary, threshold-free "does risk increase monotonically across
+classes" check this app uses instead.
 
 The idea: sort every pixel in the AOI by the model's own continuous risk
 score, highest first. Walk down that ranking accumulating area; a good
@@ -18,25 +25,10 @@ the single summary statistic -- 0.5 is what an uninformative
 Deliberately NOT compared against METEOR's own modeled hazard output --
 see this project's own prior discussion on why that only checks
 agreement between two models, not real-world accuracy. This module
-compares against app/data/validation_extent.py's real satellite-
-observed flood extent instead.
-
-Also computes the precision-recall curve and its own area (PR-AUC) from
-that exact same descending-risk ranking, since both curves are just two
-different plots of the identical sweep -- rank every pixel by risk,
-score.  Walk down that ranking one cutoff at a time (top-1 highest-risk
-pixel predicted positive, top-2, ...); at each cutoff k the success-rate
-curve's own y-axis (cumulative observed flooding captured / total
-observed flooding) IS recall by definition, so no new computation is
-needed for that half. The only new quantity is precision at each cutoff
-(captured flooding / k, i.e. of the k pixels predicted positive at this
-cutoff, what fraction really flooded) -- computed from the exact same
-`cum_flooded` array success_rate's own curve already builds. Unlike the
-success-rate curve's own AUC (whose random-ranking baseline is a fixed
-0.5 regardless of the flooded fraction), PR-AUC's own uninformative
-baseline is the flooded fraction itself (a random ranking's precision
-hovers around the base rate at every cutoff) -- callers should compare
-pr_auc against `observed_flooded_fraction`, not against 0.5.
+compares against app/data/validation_extent.py's real, satellite-
+observed or point-inventory flood data instead (meteor_comparison.py
+reuses this same function for its own, separately-labeled model-
+agreement AUC -- see that module's own docstring).
 """
 
 from __future__ import annotations
@@ -55,14 +47,6 @@ class SuccessRateResult:
     # 0.0 to 1.0 on both axes, n_bins+1 points including both endpoints
     # -- enough to plot a real curve, not just report the scalar AUC.
     curve: list[tuple[float, float]]
-    # Area under the precision-recall curve below -- see this module's
-    # own docstring for why its baseline is observed_flooded_fraction,
-    # not 0.5.
-    pr_auc: float
-    # (recall, precision) pairs, same n_bins+1 cutoffs as `curve` above
-    # (recall at each cutoff is literally `curve`'s own y-value at that
-    # same point) -- plot directly as the precision-recall curve.
-    precision_recall_curve: list[tuple[float, float]]
     n_valid_pixels: int
     n_observed_flooded_pixels: int
     observed_flooded_fraction: float
@@ -147,28 +131,9 @@ def compute_success_rate_curve(
 
     auc = float(np.trapezoid(capture_fracs, area_fracs))
 
-    # Precision at each of the same cutoffs: of the `pixel_counts[i]`
-    # highest-risk pixels predicted positive at that cutoff, what
-    # fraction really flooded. At the k=0 cutoff (predicting nothing
-    # positive) precision is mathematically undefined -- defined as 1.0
-    # here, the same boundary convention scikit-learn's own
-    # precision_recall_curve uses at its highest-threshold endpoint,
-    # rather than an arbitrary 0.0 that would understate the curve.
-    safe_pixel_counts = np.clip(pixel_counts, 1, n_valid)
-    precision_fracs = np.where(
-        pixel_counts > 0, cum_flooded[safe_pixel_counts - 1] / safe_pixel_counts, 1.0
-    )
-    # x = recall (capture_fracs), which is non-decreasing in area_fracs
-    # by construction (a cumulative sum of a 0/1 array can never
-    # decrease) -- trapezoid over it is a real area, not just a sum
-    # over an arbitrarily-ordered sequence.
-    pr_auc = float(np.trapezoid(precision_fracs, capture_fracs))
-
     return SuccessRateResult(
         auc=auc,
         curve=list(zip(area_fracs.tolist(), capture_fracs.tolist())),
-        pr_auc=pr_auc,
-        precision_recall_curve=list(zip(capture_fracs.tolist(), precision_fracs.tolist())),
         n_valid_pixels=n_valid,
         n_observed_flooded_pixels=n_flooded,
         observed_flooded_fraction=n_flooded / n_valid,

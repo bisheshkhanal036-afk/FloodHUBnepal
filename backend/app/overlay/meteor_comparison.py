@@ -10,12 +10,17 @@ one disagree, where do they agree" -- worth knowing, never a substitute
 for the real thing.
 
 Deliberately kept as its own module/endpoint/UI section for exactly that
-reason: it reuses success_rate.py's and confusion_metrics.py's own
+reason: it reuses success_rate.py's and frequency_ratio.py's own
 comparison machinery (both fully generic over what the "second mask"
 represents -- see their own docstrings) but is never merged into
 validate.py's own event list or exposed through "Validate" language
 anywhere in the API or the frontend. A model-agreement result must never
-read as if it were validation against ground truth.
+read as if it were validation against ground truth. Same metric
+philosophy as validate.py too: AUC as the primary statistic, frequency-
+ratio-per-class as a complement, no threshold-based confusion-matrix
+statistic (precision/recall/F1/IoU) -- the same "wrong question for a
+ranking" reasoning applies here, if anything more so, since this is
+model-vs-model agreement rather than a check against real occurrences.
 
 --- Binarizing METEOR's continuous depth into a flooded/not-flooded mask ---
 
@@ -37,7 +42,7 @@ from app.data import config
 from app.data.aoi import AOI
 from app.data.meteor_flood import get_meteor_flood_hazard
 
-from .confusion_metrics import ConfusionMetricsResult, compute_confusion_metrics
+from .frequency_ratio import FrequencyRatioResult, compute_frequency_ratio
 from .hazard_classes import HAZARD_CLASS_NODATA, risk_surface_to_hazard_classes
 from .service import OverlayCriterionRequest, compute_overlay
 from .success_rate import SuccessRateResult, compute_success_rate_curve
@@ -53,7 +58,7 @@ _ZERO_METEOR_FLOODED_HINT = (
 @dataclass(frozen=True)
 class MeteorComparisonResult:
     success_rate: SuccessRateResult
-    confusion_metrics: ConfusionMetricsResult
+    frequency_ratio: FrequencyRatioResult
     risk_surface_cache_key: str
     meteor_flood_type: str
     meteor_return_period: str
@@ -103,15 +108,13 @@ def compare_risk_surface_to_meteor(
     hazard_classes = risk_surface_to_hazard_classes(
         overlay_result.risk_surface.risk_surface, overlay_result.risk_surface.nodata
     )
-    confusion_metrics = compute_confusion_metrics(
-        hazard_classes, HAZARD_CLASS_NODATA, meteor_flooded, zero_positive_hint=_ZERO_METEOR_FLOODED_HINT
-    )
+    frequency_ratio = compute_frequency_ratio(hazard_classes, HAZARD_CLASS_NODATA, meteor_flooded)
 
     attribution = sorted(set(overlay_result.attribution) | {meteor_result.attribution})
 
     return MeteorComparisonResult(
         success_rate=success_rate,
-        confusion_metrics=confusion_metrics,
+        frequency_ratio=frequency_ratio,
         risk_surface_cache_key=overlay_result.cache_key,
         meteor_flood_type=config.METEOR_FLOOD_TYPE,
         meteor_return_period=config.METEOR_FLOOD_RETURN_PERIOD,

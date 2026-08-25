@@ -121,17 +121,17 @@ function basemapMapStyle(styleKey) {
 //
 // Layer id convention verified live via WMTS GetCapabilities: 3 flood
 // types x 10 return periods = 30 layers, named "{type}-{years}" (e.g.
-// "fd-100"). Defaults (fd/100) match backend/app/data/config.py's own
-// METEOR_FLOOD_TYPE/METEOR_FLOOD_RETURN_PERIOD defaults for the
-// criterion, though the two are independently selectable -- this
-// overlay reads METEOR's live tile service, not the local file the
-// criterion needs downloaded.
-const METEOR_FLOOD_TYPES = [
-  { value: 'fd', label: 'Fluvial (Defended)' },
-  { value: 'fu', label: 'Fluvial (Undefended)' },
-  { value: 'p', label: 'Pluvial' },
-]
-const METEOR_FLOOD_RETURN_PERIODS = [5, 10, 20, 50, 75, 100, 200, 250, 500, 1000]
+// "fd-100"). Fixed to Fluvial (Defended), 1-in-100y -- not user-
+// selectable -- at explicit request: this is the one combination that
+// matches backend/app/data/config.py's own METEOR_FLOOD_TYPE/
+// METEOR_FLOOD_RETURN_PERIOD defaults for the criterion (the only
+// combination the criterion has local raw data for at all), so the map's
+// own reference overlay always shows the same METEOR flavor the
+// criterion itself would use, rather than letting the two silently
+// diverge across 30 possible combinations.
+const METEOR_FLOOD_TYPE = 'fd'
+const METEOR_FLOOD_TYPE_LABEL = 'Fluvial (Defended)'
+const METEOR_FLOOD_RETURN_PERIOD = 100
 const METEOR_FLOOD_ATTRIBUTION =
   'METEOR Project flood hazard maps (Fathom global flood hazard framework) — Open Data Commons Open Database License (ODbL)'
 
@@ -219,11 +219,17 @@ class BasemapControl {
   }
 }
 
-// Same shape as BasemapControl above (two selects + a toggle button,
-// plain DOM, one-way dispatch), for the METEOR flood hazard reference
-// overlay -- see this file's METEOR_FLOOD_TYPES/meteorFloodTiles comment
-// for what the overlay itself is and why it's a separate thing from the
+// Same shape as BasemapControl above (a toggle button, plain DOM, one-
+// way dispatch), for the METEOR flood hazard reference overlay -- see
+// this file's METEOR_FLOOD_TYPE/meteorFloodTiles comment for what the
+// overlay itself is and why it's a separate thing from the
 // flood_hazard_meteor criterion.
+// Always visible, regardless of whether "Flood Hazard (METEOR)" is
+// checked as a criterion -- at explicit request: this is a reference
+// overlay useful to look at on its own, not gated on whatever's
+// currently selected as input. No type/return-period picker -- fixed to
+// METEOR_FLOOD_TYPE/METEOR_FLOOD_RETURN_PERIOD above, a plain toggle for
+// that one specific overlay.
 class MeteorFloodControl {
   constructor(dispatch, getState) {
     this._dispatch = dispatch
@@ -234,38 +240,20 @@ class MeteorFloodControl {
     const container = document.createElement('div')
     container.className = 'maplibregl-ctrl maplibregl-ctrl-group basemap-control meteor-flood-control'
 
-    const typeSelect = document.createElement('select')
-    typeSelect.className = 'basemap-control__select'
-    typeSelect.title = 'METEOR flood hazard: flood type'
-    for (const { value, label } of METEOR_FLOOD_TYPES) {
-      const option = document.createElement('option')
-      option.value = value
-      option.textContent = label
-      typeSelect.appendChild(option)
-    }
-    typeSelect.value = this._getState().meteorFloodType
-    typeSelect.addEventListener('change', () => {
-      this._dispatch({ type: 'SET_METEOR_FLOOD_TYPE', floodType: typeSelect.value })
-    })
-
-    const periodSelect = document.createElement('select')
-    periodSelect.className = 'basemap-control__select'
-    periodSelect.title = 'METEOR flood hazard: return period'
-    for (const years of METEOR_FLOOD_RETURN_PERIODS) {
-      const option = document.createElement('option')
-      option.value = String(years)
-      option.textContent = `1-in-${years}y`
-      periodSelect.appendChild(option)
-    }
-    periodSelect.value = String(this._getState().meteorFloodReturnPeriod)
-    periodSelect.addEventListener('change', () => {
-      this._dispatch({ type: 'SET_METEOR_FLOOD_RETURN_PERIOD', returnPeriod: Number(periodSelect.value) })
-    })
+    // A visible label, not just a hover title -- with the type/return-
+    // period dropdowns gone (fixed now, see this class's own docstring
+    // above), the control had shrunk to a single icon-only button with
+    // no on-screen text at all, unlike every other control in this
+    // group (BasemapControl/ValidationExtentControl both show their own
+    // current selection as real visible text, not just a tooltip).
+    const label = document.createElement('span')
+    label.className = 'basemap-control__label'
+    label.textContent = `${METEOR_FLOOD_TYPE_LABEL}, 1-in-${METEOR_FLOOD_RETURN_PERIOD}y`
 
     const toggleButton = document.createElement('button')
     toggleButton.type = 'button'
     toggleButton.className = 'basemap-control__toggle'
-    toggleButton.title = 'Show/hide METEOR flood hazard reference overlay'
+    toggleButton.title = `Show/hide METEOR flood hazard reference overlay (${METEOR_FLOOD_TYPE_LABEL}, 1-in-${METEOR_FLOOD_RETURN_PERIOD}y)`
     const syncToggleLabel = () => {
       toggleButton.textContent = this._getState().meteorFloodVisible ? '🌊' : '〰️'
     }
@@ -278,8 +266,7 @@ class MeteorFloodControl {
       toggleButton.textContent = toggleButton.textContent === '🌊' ? '〰️' : '🌊'
     })
 
-    container.appendChild(typeSelect)
-    container.appendChild(periodSelect)
+    container.appendChild(label)
     container.appendChild(toggleButton)
     this._container = container
     return container
@@ -296,8 +283,8 @@ class MeteorFloodControl {
 // overlay, the visual counterpart to ValidationPanel's own AUC number
 // (sidebar step 6) -- "the validation events should be able to be
 // overlaid, in the same place as the meteor flood overlay," at explicit
-// request. Unlike METEOR_FLOOD_TYPES/PERIODS (fixed constants known at
-// import time), the event list is fetched from the backend
+// request. Unlike METEOR_FLOOD_TYPE/METEOR_FLOOD_RETURN_PERIOD (fixed
+// constants known at import time), the event list is fetched from the backend
 // asynchronously and can still be empty the moment this control is
 // constructed -- `updateEvents()` lets the owning MapView component
 // repopulate the select once GET /api/overlay/validation-events
@@ -399,6 +386,19 @@ const DISTRICTS_SOURCE = 'districts'
 const RISK_SURFACE_SOURCE = 'risk-surface'
 const VALIDATION_EXTENT_SOURCE = 'validation-extent'
 const VALIDATION_EXTENT_LAYER = 'validation-extent'
+// A real, live-caught bug: nepal_bipad_flood_points (backend/app/data/
+// config.py) is a POINT inventory, not a polygon extent like
+// nepal_2024_terai -- a 'fill' layer renders literally nothing for
+// Point/MultiPoint geometries in MapLibre (fill only applies to
+// polygons), so that event's own toggle silently did nothing visible on
+// the map. Fixed with a SECOND layer on the same source, 'circle' type
+// -- always added alongside the fill layer regardless of which event is
+// currently loaded, not conditionally chosen by inspecting geometry
+// type: a circle layer is itself already a safe no-op over polygon
+// geometries the exact same way fill is a no-op over points, so both
+// layers can coexist unconditionally and whichever one actually matches
+// the loaded event's own geometry type is the one that renders.
+const VALIDATION_EXTENT_POINTS_LAYER = 'validation-extent-points'
 
 export default function MapView() {
   const containerRef = useRef(null)
@@ -556,10 +556,10 @@ export default function MapView() {
     else map.once('load', apply)
   }, [state.basemapVisible])
 
-  // --- METEOR flood hazard reference overlay: source/layer swap on
-  // type/return-period change, same "remove + re-add" reasoning as the
-  // basemap style-switch effect above (a plain setTiles() would leave a
-  // stale attribution string pinned to whichever layer loaded first). ---
+  // --- METEOR flood hazard reference overlay: source/layer created once
+  // on mount, fixed to METEOR_FLOOD_TYPE/METEOR_FLOOD_RETURN_PERIOD
+  // (no longer user-selectable, so nothing left that would need this to
+  // re-run and swap the source/layer later). ---
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
@@ -568,7 +568,7 @@ export default function MapView() {
       if (map.getSource(METEOR_FLOOD_SOURCE)) map.removeSource(METEOR_FLOOD_SOURCE)
       map.addSource(METEOR_FLOOD_SOURCE, {
         type: 'raster',
-        tiles: meteorFloodTiles(state.meteorFloodType, state.meteorFloodReturnPeriod),
+        tiles: meteorFloodTiles(METEOR_FLOOD_TYPE, METEOR_FLOOD_RETURN_PERIOD),
         tileSize: 256,
         attribution: METEOR_FLOOD_ATTRIBUTION,
       })
@@ -578,11 +578,14 @@ export default function MapView() {
       // interactive layers, not on top of them.
       const firstLayerId = map.getStyle().layers.find((l) => l.id !== BASEMAP_LAYER)?.id
       map.addLayer({ id: METEOR_FLOOD_LAYER, type: 'raster', source: METEOR_FLOOD_SOURCE, paint: { 'raster-opacity': 0.7 } }, firstLayerId)
-      map.setLayoutProperty(METEOR_FLOOD_LAYER, 'visibility', state.meteorFloodVisible ? 'visible' : 'none')
+      // stateRef, not the closure's own `state` -- this effect now only
+      // ever runs once (empty deps below), so `state` here would freeze
+      // at whatever meteorFloodVisible was on the very first render.
+      map.setLayoutProperty(METEOR_FLOOD_LAYER, 'visibility', stateRef.current.meteorFloodVisible ? 'visible' : 'none')
     }
     if (map.isStyleLoaded()) apply()
     else map.once('load', apply)
-  }, [state.meteorFloodType, state.meteorFloodReturnPeriod])
+  }, [])
 
   // --- METEOR flood hazard overlay visibility toggle -- cheap layout-
   // property flip, same shape as the basemap visibility effect above. ---
@@ -645,19 +648,42 @@ export default function MapView() {
           } else {
             map.addSource(VALIDATION_EXTENT_SOURCE, { type: 'geojson', data: geojson })
             const firstLayerId = map.getStyle().layers.find((l) => l.id !== BASEMAP_LAYER)?.id
+            // stateRef, not the closure's own `state`, for both layers'
+            // own initial visibility below -- this async fetch can
+            // resolve well after the render that started it, so a
+            // toggle click in between must still be reflected rather
+            // than reverting to whatever it was when the fetch began.
+            const initialVisibility = stateRef.current.validationExtentVisible ? 'visible' : 'none'
             map.addLayer(
               {
                 id: VALIDATION_EXTENT_LAYER,
                 type: 'fill',
                 source: VALIDATION_EXTENT_SOURCE,
                 paint: { 'fill-color': '#e930c8', 'fill-opacity': 0.55 },
-                // stateRef, not the closure's own `state` -- this async
-                // fetch can resolve well after the render that started
-                // it, so a toggle click in between must still be
-                // reflected in the layer's own initial visibility
-                // rather than reverting to whatever it was when the
-                // fetch began.
-                layout: { visibility: stateRef.current.validationExtentVisible ? 'visible' : 'none' },
+                layout: { visibility: initialVisibility },
+              },
+              firstLayerId
+            )
+            // Sized deliberately large (not MapLibre's own default ~5px)
+            // and given a white stroke for contrast against whatever
+            // basemap color happens to sit underneath -- a real, live-
+            // reported problem: at the default size the BIPAD point
+            // inventory's own markers were easy to miss entirely,
+            // especially at a zoomed-out view where a full AOI's worth
+            // of points are sparse.
+            map.addLayer(
+              {
+                id: VALIDATION_EXTENT_POINTS_LAYER,
+                type: 'circle',
+                source: VALIDATION_EXTENT_SOURCE,
+                paint: {
+                  'circle-radius': 7,
+                  'circle-color': '#e930c8',
+                  'circle-opacity': 0.9,
+                  'circle-stroke-width': 1.5,
+                  'circle-stroke-color': '#ffffff',
+                },
+                layout: { visibility: initialVisibility },
               },
               firstLayerId
             )
@@ -697,7 +723,12 @@ export default function MapView() {
   useEffect(() => {
     const map = mapRef.current
     if (!map || !map.getLayer(VALIDATION_EXTENT_LAYER)) return
-    map.setLayoutProperty(VALIDATION_EXTENT_LAYER, 'visibility', state.validationExtentVisible ? 'visible' : 'none')
+    const visibility = state.validationExtentVisible ? 'visible' : 'none'
+    map.setLayoutProperty(VALIDATION_EXTENT_LAYER, 'visibility', visibility)
+    // Both layers are always created together (the effect above), so
+    // the fill layer's own existence check just above already
+    // guarantees the points layer exists too.
+    map.setLayoutProperty(VALIDATION_EXTENT_POINTS_LAYER, 'visibility', visibility)
   }, [state.validationExtentVisible])
 
   // --- draw mode: disable/enable normal map dragging so drag = draw, not pan ---

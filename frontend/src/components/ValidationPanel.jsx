@@ -12,8 +12,9 @@
 import { useEffect } from 'react'
 import { listValidationEvents, validateRiskSurface } from '../api/client'
 import { aucQuality } from '../lib/aucQuality'
+import { formatFraction } from '../lib/formatFraction'
 import { useAppState } from '../state/AppStateContext'
-import PrecisionRecallChart from './PrecisionRecallChart'
+import FrequencyRatioChart from './FrequencyRatioChart'
 import SuccessRateChart from './SuccessRateChart'
 
 export default function ValidationPanel() {
@@ -108,44 +109,19 @@ export default function ValidationPanel() {
           </div>
 
           <p className="panel__hint">
-            {(result.observed_flooded_fraction * 100).toFixed(1)}% of this AOI was actually flooded (
+            {formatFraction(result.observed_flooded_fraction)} of this AOI's valid pixels were actually flooded (
             {result.n_observed_flooded_pixels.toLocaleString()} of {result.n_valid_pixels.toLocaleString()} pixels
-            compared) in {result.event_label}.
+            compared) in {result.event_label}. For a point-inventory event this is a tiny number by design — one
+            pixel per known occurrence location, not a filled extent.
           </p>
 
           <SuccessRateChart curve={result.curve} />
 
-          <div className="validation-panel__metrics">
-            <div className="validation-panel__metric">
-              <span className="validation-panel__metric-value">{result.precision.toFixed(2)}</span>
-              <span className="validation-panel__metric-label">Precision</span>
-            </div>
-            <div className="validation-panel__metric">
-              <span className="validation-panel__metric-value">{result.recall.toFixed(2)}</span>
-              <span className="validation-panel__metric-label">Recall</span>
-            </div>
-            <div className="validation-panel__metric">
-              <span className="validation-panel__metric-value">{result.f1.toFixed(2)}</span>
-              <span className="validation-panel__metric-label">F1</span>
-            </div>
-            <div className="validation-panel__metric">
-              <span className="validation-panel__metric-value">{result.iou.toFixed(2)}</span>
-              <span className="validation-panel__metric-label">IoU</span>
-            </div>
-          </div>
           <p className="panel__hint">
-            Precision/recall/F1/IoU compare this AOI's <strong>High</strong> and <strong>Very High</strong> hazard
-            pixels directly against the real observed flood extent (a single fixed threshold, unlike the two curves
-            below, which sweep every possible cutoff).
+            <strong>Frequency ratio</strong>: of each hazard class's own pixels, what fraction really flooded — a
+            well-behaved risk surface should show this increasing from Very Low to Very High.
           </p>
-
-          <div className="validation-panel__pr-auc">
-            <span className="validation-panel__pr-auc-value">{result.pr_auc.toFixed(3)}</span>
-            <span className="validation-panel__pr-auc-label">
-              PR-AUC — compare against {(result.observed_flooded_fraction * 100).toFixed(1)}% (random baseline), not 0.5
-            </span>
-          </div>
-          <PrecisionRecallChart curve={result.precision_recall_curve} observedFloodedFraction={result.observed_flooded_fraction} />
+          <FrequencyRatioChart byClass={result.frequency_ratio} monotonic={result.monotonic} />
 
           <div className="attribution">
             <h5>Data attribution</h5>

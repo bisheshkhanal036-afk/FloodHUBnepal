@@ -195,8 +195,25 @@ class ValidationEventOut(BaseModel):
     label: str
 
 
+class FrequencyRatioClassOut(BaseModel):
+    hazard_class: int = Field(..., ge=1, le=5)
+    hazard_label: str
+    pixel_count: int
+    flooded_pixel_count: int
+    flooded_fraction: float | None = Field(
+        None, description="null iff pixel_count == 0 -- this class doesn't occur anywhere in this AOI, not '0% of it flooded'."
+    )
+
+
 class ValidateResponse(BaseModel):
-    auc: float = Field(..., description="Area under the success-rate curve. 0.5 = no better than random ranking; 1.0 = perfect.")
+    auc: float = Field(
+        ...,
+        description=(
+            "Area under the success-rate curve -- this app's PRIMARY validation statistic, the "
+            "conceptually correct one for a susceptibility ranking. 0.5 = no better than random "
+            "ranking; 1.0 = perfect."
+        ),
+    )
     curve: list[tuple[float, float]] = Field(
         ...,
         description=(
@@ -205,36 +222,36 @@ class ValidateResponse(BaseModel):
             "success-rate curve."
         ),
     )
-    pr_auc: float = Field(
+    frequency_ratio: list[FrequencyRatioClassOut] = Field(
         ...,
+        min_length=5,
+        max_length=5,
         description=(
-            "Area under the precision-recall curve, from the same descending-risk-score sweep as "
-            "`auc`. Unlike `auc`, an uninformative (random-ranking) model does NOT score ~0.5 here — "
-            "compare pr_auc against `observed_flooded_fraction` instead, which is what a random "
-            "ranking's precision hovers around at every cutoff."
+            "Always all 5 hazard classes (1 Very Low .. 5 Very High), ascending — for each, what "
+            "fraction of that class's own pixels actually flooded. A well-behaved susceptibility map "
+            "should show this increasing (or at least never decreasing) from class 1 to class 5 -- "
+            "see `monotonic`."
         ),
     )
-    precision_recall_curve: list[tuple[float, float]] = Field(
-        ..., description="(recall, precision) pairs, same cutoffs as `curve` — plot directly as the precision-recall curve."
-    )
-    precision: float = Field(
+    monotonic: bool = Field(
         ...,
         description=(
-            "Of the pixels this risk surface classifies High or Very High hazard, what fraction "
-            "really flooded (single operating point, not swept — see hazard_classes.HIGH_RISK_CLASSES)."
+            "True iff flooded_fraction is non-decreasing across every consecutive pair of hazard "
+            "classes that both actually occur in this AOI (absent classes -- flooded_fraction=null "
+            "-- are skipped, not treated as a break). The single most communicable pass/fail signal "
+            "this endpoint returns: does this risk surface's own class ordering track real "
+            "flood-occurrence rates in the right direction."
         ),
     )
-    recall: float = Field(..., description="Of the pixels that really flooded, what fraction this risk surface classified High or Very High hazard.")
-    f1: float = Field(..., description="Harmonic mean of precision and recall at the same High/Very High operating point.")
-    iou: float = Field(
-        ..., description="Intersection-over-union (Jaccard index) between the High/Very High hazard area and the real observed flood extent."
-    )
-    true_positive_pixels: int = Field(..., description="Pixels both classified High/Very High hazard and really flooded.")
-    false_positive_pixels: int = Field(..., description="Pixels classified High/Very High hazard but not really flooded.")
-    false_negative_pixels: int = Field(..., description="Pixels really flooded but not classified High/Very High hazard.")
-    true_negative_pixels: int = Field(..., description="Pixels neither classified High/Very High hazard nor really flooded.")
     n_valid_pixels: int = Field(..., description="Pixels compared (risk surface had a real value at).")
-    n_observed_flooded_pixels: int = Field(..., description="Of those, how many the real satellite-observed event actually flooded.")
+    n_observed_flooded_pixels: int = Field(
+        ...,
+        description=(
+            "Of those, how many the real observed reference actually flooded. For a point-inventory "
+            "event (see GET /api/overlay/validation-events), this is a tiny number by design -- one "
+            "pixel per known occurrence location, not a filled extent -- not evidence of a data problem."
+        ),
+    )
     observed_flooded_fraction: float
     risk_surface_cache_key: str = Field(..., description="The same cache_key POST /compute would return for this AOI/criteria/weights — the risk surface this AUC was computed against.")
     event: str
@@ -259,18 +276,12 @@ class CompareMeteorRequest(BaseModel):
 
 
 class CompareMeteorResponse(BaseModel):
-    auc: float = Field(..., description="Area under the success-rate curve, against METEOR's own modeled flood extent instead of a real one. Same 0.5/1.0 meaning as POST /validate's `auc`.")
+    auc: float = Field(..., description="Area under the success-rate curve, against METEOR's own modeled flood extent instead of a real one. Same 0.5/1.0 meaning as POST /validate's `auc`, and same PRIMARY-statistic role.")
     curve: list[tuple[float, float]] = Field(..., description="Same shape as POST /validate's `curve`, against METEOR's modeled extent.")
-    pr_auc: float = Field(..., description="Same meaning as POST /validate's `pr_auc` — compare against `meteor_flooded_fraction`, not 0.5.")
-    precision_recall_curve: list[tuple[float, float]] = Field(..., description="Same shape as POST /validate's `precision_recall_curve`.")
-    precision: float = Field(..., description="Of the pixels this risk surface classifies High or Very High hazard, what fraction METEOR also models as flooded.")
-    recall: float = Field(..., description="Of the pixels METEOR models as flooded, what fraction this risk surface classified High or Very High hazard.")
-    f1: float = Field(..., description="Harmonic mean of precision and recall at the same High/Very High operating point.")
-    iou: float = Field(..., description="Intersection-over-union between the High/Very High hazard area and METEOR's own modeled flood extent.")
-    true_positive_pixels: int
-    false_positive_pixels: int
-    false_negative_pixels: int
-    true_negative_pixels: int
+    frequency_ratio: list[FrequencyRatioClassOut] = Field(
+        ..., min_length=5, max_length=5, description="Same meaning as POST /validate's `frequency_ratio`, scored against METEOR's own modeled extent instead."
+    )
+    monotonic: bool = Field(..., description="Same meaning as POST /validate's `monotonic`.")
     n_valid_pixels: int = Field(..., description="Pixels compared (risk surface had a real value at).")
     n_meteor_flooded_pixels: int = Field(..., description="Of those, how many METEOR models as flooded (depth_m > 0) for the configured flood_type/return_period.")
     meteor_flooded_fraction: float

@@ -57,15 +57,19 @@ function initialState() {
     // as the flood_hazard_meteor *criterion* (overlay/sources.py), which
     // reads the same organization's downloadable numeric GeoTIFFs
     // instead. Off by default (an opt-in reference layer, not part of
-    // the base map); type/return-period mirror backend/app/data/
-    // config.py's METEOR_FLOOD_TYPE/METEOR_FLOOD_RETURN_PERIOD naming
-    // convention, though this dropdown talks to METEOR's own live WMTS
-    // tile service directly, not the backend, so it isn't limited to
-    // whichever single local GeoTIFF a deployment happens to have
-    // downloaded for the criterion.
+    // the base map) and always available regardless of whether that
+    // criterion is checked -- a standalone reference, not gated on
+    // current input selections. Fixed to Fluvial Defended, 1-in-100y --
+    // no longer user-selectable (MeteorFloodControl no longer offers a
+    // type/return-period picker at all), matching
+    // backend/app/data/config.py's own METEOR_FLOOD_TYPE/
+    // METEOR_FLOOD_RETURN_PERIOD defaults for the criterion, so the
+    // overlay and the criterion (when checked) always agree on which
+    // METEOR flavor they're each showing. Still read (not written) by
+    // MeteorFloodLegend.jsx and MapView.jsx's own tile-URL builder.
     meteorFloodVisible: false,
     meteorFloodType: 'fd', // 'fd' | 'fu' | 'p' -- Fluvial Defended | Fluvial Undefended | Pluvial
-    meteorFloodReturnPeriod: 100, // years; one of MapView.jsx's METEOR_FLOOD_RETURN_PERIODS
+    meteorFloodReturnPeriod: 100, // years
 
     aoiMode: 'draw', // 'draw' | 'basin' | 'district'
     aoi: null, // { bbox: [minx,miny,maxx,maxy], polygon: geom|null, source: 'draw'|'basin'|'district', basinId?, basinLevel?, districtPcode?, label? }
@@ -259,12 +263,6 @@ function reducer(state, action) {
 
     case 'TOGGLE_METEOR_FLOOD_VISIBLE':
       return { ...state, meteorFloodVisible: !state.meteorFloodVisible }
-
-    case 'SET_METEOR_FLOOD_TYPE':
-      return { ...state, meteorFloodType: action.floodType }
-
-    case 'SET_METEOR_FLOOD_RETURN_PERIOD':
-      return { ...state, meteorFloodReturnPeriod: action.returnPeriod }
 
     case 'TOGGLE_RISK_SURFACE_VISIBLE':
       return { ...state, riskSurfaceVisible: !state.riskSurfaceVisible }

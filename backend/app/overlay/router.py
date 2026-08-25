@@ -25,6 +25,7 @@ from .models import (
     CompareMeteorResponse,
     CriterionBreaksRequest,
     CriterionBreaksResponse,
+    FrequencyRatioClassOut,
     OverlayComputeRequest,
     OverlayComputeResponse,
     ValidateRequest,
@@ -165,21 +166,41 @@ def validation_extent_geojson(event: str) -> dict:
         raise HTTPException(status_code=503, detail={"error": "data_source_unavailable", "message": str(exc)}) from exc
 
 
+def _frequency_ratio_out(fr) -> list[FrequencyRatioClassOut]:
+    """Shared by /validate and /compare-meteor -- both build their own
+    `frequency_ratio` response field from a frequency_ratio.FrequencyRatioResult
+    the exact same way.
+    """
+    return [
+        FrequencyRatioClassOut(
+            hazard_class=c.hazard_class,
+            hazard_label=c.hazard_label,
+            pixel_count=c.pixel_count,
+            flooded_pixel_count=c.flooded_pixel_count,
+            flooded_fraction=c.flooded_fraction,
+        )
+        for c in fr.by_class
+    ]
+
+
 @router.post("/validate", response_model=ValidateResponse)
 def validate(payload: ValidateRequest) -> ValidateResponse:
     """Validates the same risk surface POST /compute would produce for
     this AOI/criteria/final_weights against a real satellite-observed
-    flood extent (not another model's output — see app/data/
-    validation_extent.py's own module docstring for why that distinction
-    matters). Reuses POST /compute's own cache: an AOI/criteria/weights
-    combination already computed via /compute is not recomputed here.
+    flood extent or point inventory (not another model's output — see
+    app/data/validation_extent.py's own module docstring for why that
+    distinction matters). Reuses POST /compute's own cache: an AOI/
+    criteria/weights combination already computed via /compute is not
+    recomputed here.
 
-    Returns two families of metrics: threshold-free (success_rate.py's
-    `auc`/`curve` and `pr_auc`/`precision_recall_curve`, swept over
-    every possible cutoff of the continuous risk score) and threshold-
-    based (confusion_metrics.py's `precision`/`recall`/`f1`/`iou`, all
-    scored at the one already-meaningful High/Very-High hazard-class
-    operating point this app uses everywhere else).
+    Returns `auc`/`curve` (success_rate.py, this app's own PRIMARY
+    validation statistic -- swept over every possible cutoff of the
+    continuous risk score) and `frequency_ratio`/`monotonic`
+    (frequency_ratio.py, a simpler, directly communicable complement:
+    does each individual hazard class's own real flood-occurrence rate
+    actually increase with its risk class). Deliberately does NOT
+    return a threshold-based confusion-matrix statistic (precision/
+    recall/F1/IoU) — see frequency_ratio.py's own docstring for why.
 
     Responds 422 if the criteria/weights are malformed (same as POST
     /compute), if `event` doesn't name a registered validation event, or
@@ -202,20 +223,11 @@ def validate(payload: ValidateRequest) -> ValidateResponse:
         raise HTTPException(status_code=503, detail={"error": "data_source_unavailable", "message": str(exc)}) from exc
 
     sr = result.success_rate
-    cm = result.confusion_metrics
     return ValidateResponse(
         auc=sr.auc,
         curve=sr.curve,
-        pr_auc=sr.pr_auc,
-        precision_recall_curve=sr.precision_recall_curve,
-        precision=cm.precision,
-        recall=cm.recall,
-        f1=cm.f1,
-        iou=cm.iou,
-        true_positive_pixels=cm.true_positive,
-        false_positive_pixels=cm.false_positive,
-        false_negative_pixels=cm.false_negative,
-        true_negative_pixels=cm.true_negative,
+        frequency_ratio=_frequency_ratio_out(result.frequency_ratio),
+        monotonic=result.frequency_ratio.monotonic,
         n_valid_pixels=sr.n_valid_pixels,
         n_observed_flooded_pixels=sr.n_observed_flooded_pixels,
         observed_flooded_fraction=sr.observed_flooded_fraction,
@@ -236,14 +248,12 @@ def compare_meteor(payload: CompareMeteorRequest) -> CompareMeteorResponse:
     docstring for why the two are kept deliberately separate). Reuses
     POST /compute's own cache the same way POST /validate does.
 
-    Same two metric families POST /validate returns (threshold-free
-    auc/curve/pr_auc/precision_recall_curve, and threshold-based
-    precision/recall/f1/iou at the High/Very-High hazard operating
-    point) — scored against METEOR's own `depth_m > 0` flooded mask
-    instead of a real observed extent, for whichever single
-    flood_type/return_period this server has a local METEOR file
-    downloaded for (`meteor_flood_type`/`meteor_return_period` in the
-    response — not caller-selectable; see app/data/meteor_flood.py).
+    Same two metrics POST /validate returns (`auc`/`curve` and
+    `frequency_ratio`/`monotonic`) — scored against METEOR's own
+    `depth_m > 0` flooded mask instead of a real observed extent, for
+    whichever single flood_type/return_period this server has a local
+    METEOR file downloaded for (`meteor_flood_type`/`meteor_return_period`
+    in the response — not caller-selectable; see app/data/meteor_flood.py).
 
     Responds 422 if the criteria/weights are malformed (same as POST
     /compute), or if the AOI falls entirely outside METEOR's own modeled
@@ -265,20 +275,11 @@ def compare_meteor(payload: CompareMeteorRequest) -> CompareMeteorResponse:
         raise HTTPException(status_code=503, detail={"error": "data_source_unavailable", "message": str(exc)}) from exc
 
     sr = result.success_rate
-    cm = result.confusion_metrics
     return CompareMeteorResponse(
         auc=sr.auc,
         curve=sr.curve,
-        pr_auc=sr.pr_auc,
-        precision_recall_curve=sr.precision_recall_curve,
-        precision=cm.precision,
-        recall=cm.recall,
-        f1=cm.f1,
-        iou=cm.iou,
-        true_positive_pixels=cm.true_positive,
-        false_positive_pixels=cm.false_positive,
-        false_negative_pixels=cm.false_negative,
-        true_negative_pixels=cm.true_negative,
+        frequency_ratio=_frequency_ratio_out(result.frequency_ratio),
+        monotonic=result.frequency_ratio.monotonic,
         n_valid_pixels=sr.n_valid_pixels,
         n_meteor_flooded_pixels=sr.n_observed_flooded_pixels,
         meteor_flooded_fraction=sr.observed_flooded_fraction,
