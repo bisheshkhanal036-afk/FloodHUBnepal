@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.ahp import router as ahp_router
 from app.basins import router as basins_router
+from app.citizen import router as citizen_router
 from app.districts import router as districts_router
 from app.overlay import router as overlay_router
 
@@ -49,6 +50,7 @@ app.add_middleware(
 
 app.include_router(ahp_router)
 app.include_router(basins_router)
+app.include_router(citizen_router)
 app.include_router(districts_router)
 app.include_router(overlay_router)
 
