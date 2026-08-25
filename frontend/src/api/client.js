@@ -155,3 +155,21 @@ export function generateReport(payload) {
 export function absoluteDataUrl(relativeUrl) {
   return `${API_BASE_URL}${relativeUrl}`
 }
+
+// --- Citizen Mode -----------------------------------------------------
+// Deliberately separate from the overlay endpoints above: Citizen Mode
+// asks one fixed question with one validated configuration, and cannot
+// be reconfigured from the client (see backend/app/citizen/router.py).
+
+/** Flood susceptibility at one point, in plain language. `lang` is 'en' | 'ne'. */
+export function assessLocation({ lat, lon, lang = 'en' }) {
+  return requestJson('/api/citizen/assess', {
+    method: 'POST',
+    body: JSON.stringify({ lat, lon, lang }),
+  })
+}
+
+/** What Citizen Mode covers and how accurate it measured. */
+export function fetchCitizenCoverage() {
+  return requestJson('/api/citizen/coverage')
+}
