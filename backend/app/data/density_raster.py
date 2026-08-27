@@ -39,9 +39,10 @@ def compute_density_raster(features: gpd.GeoDataFrame, grid: AOIGrid, window_rad
     transform; here, for *area* coverage, all_touched=True would
     systematically overstate density by counting a pixel as "covered"
     just because a polygon edge clips its corner) — then runs a
-    circular-kernel moving-window mean of that mask via convolution, the
-    same construction as hydrology.py's drainage-density line-density
-    transform, generalized from line length to area coverage.
+    circular-kernel moving-window mean of that mask via convolution
+    (moving_window.py, shared with hydrology.py's drainage-density
+    line-density transform -- this is that same construction,
+    generalized from line length to area coverage).
 
     The window's own cell count (the density's denominator) is the
     kernel's full size, not however many of its cells actually landed
@@ -57,7 +58,7 @@ def compute_density_raster(features: gpd.GeoDataFrame, grid: AOIGrid, window_rad
     legitimately all-zero density, not missing data (get_osm_features
     itself is what raises if the underlying source is unavailable).
     """
-    from scipy.ndimage import convolve
+    from .moving_window import circular_kernel, circular_window_sum, radius_in_pixels
 
     if features.crs is not None and str(features.crs) != grid.crs:
         features = features.to_crs(grid.crs)
@@ -75,11 +76,9 @@ def compute_density_raster(features: gpd.GeoDataFrame, grid: AOIGrid, window_rad
         dtype=np.uint8,
     )
 
-    radius_px = max(1, round(window_radius_m / grid.resolution_m))
-    yy, xx = np.ogrid[-radius_px : radius_px + 1, -radius_px : radius_px + 1]
-    kernel = ((xx**2 + yy**2) <= radius_px**2).astype(np.float64)
+    kernel = circular_kernel(radius_in_pixels(window_radius_m, grid.resolution_m))
 
-    covered_cell_count = convolve(coverage_mask.astype(np.float64), kernel, mode="constant", cval=0.0)
+    covered_cell_count = circular_window_sum(coverage_mask, kernel)
     density = covered_cell_count / kernel.sum()
     return density.astype(np.float32)
 
