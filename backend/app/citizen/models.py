@@ -12,7 +12,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from .profile import VALIDATION
+from .context import FLOOD_HISTORY_RADIUS_M
+from .profile import CITIZEN_CRITERIA, RISK_DIRECTION, VALIDATION, normalized_weights
 from .service import Assessment
 
 # --- bilingual copy ---------------------------------------------------
@@ -83,6 +84,83 @@ REASON_TEXT = {
     },
 }
 
+
+# --- supporting-evidence copy (context.py) ---
+
+CONTEXT_TEXT = {
+    "history_none": {
+        "en": "No floods have been officially recorded within {radius_km} km of here since 2011.",
+        "ne": "सन् २०११ यता यहाँबाट {radius_km} किमि भित्र कुनै आधिकारिक बाढी अभिलेख छैन।",
+    },
+    "history_some": {
+        "en": "{n} flood(s) officially recorded within {radius_km} km of here since 2011.",
+        "ne": "सन् २०११ यता यहाँबाट {radius_km} किमि भित्र {n} वटा बाढी आधिकारिक रूपमा अभिलेख गरिएको छ।",
+    },
+    "history_caveat": {
+        "en": (
+            "Records come from BIPAD (NDRRMA, Government of Nepal). Floods are logged where "
+            "people report them, so busy areas appear more often than empty ones — an absence "
+            "of records is not proof an area is safe."
+        ),
+        "ne": (
+            "अभिलेखहरू BIPAD (NDRRMA, नेपाल सरकार) बाट लिइएको हो। मानिसहरूले खबर गरेको ठाउँमा "
+            "मात्र बाढी दर्ता हुन्छ, त्यसैले बाक्लो बस्तीमा बढी देखिन्छ — अभिलेख नहुनुले त्यो ठाउँ "
+            "सुरक्षित छ भन्ने प्रमाणित गर्दैन।"
+        ),
+    },
+    "percentile": {
+        "en": "This location is more flood-prone than about {pct}% of the Kathmandu Valley.",
+        "ne": "यो स्थान काठमाडौं उपत्यकाको करिब {pct}% भन्दा बढी बाढी-जोखिममा छ।",
+    },
+    "river_context": {
+        "en": "The nearest named river is the {name}, about {dist} m away.",
+        "ne": "नजिकको नदी {name} हो, करिब {dist} मिटर टाढा।",
+    },
+    "river_not_a_reason": {
+        "en": (
+            "Being near a river matters less here than you might expect: in our checks against "
+            "real flood records, distance to a river did not predict flooding in this valley. "
+            "Most recorded flooding in Kathmandu is drainage failure away from the main channels, "
+            "so river distance is shown for orientation only and is not part of the score."
+        ),
+        "ne": (
+            "यहाँ नदीको नजिक हुनुले तपाईंले सोचेभन्दा कम अर्थ राख्छ: वास्तविक बाढी अभिलेखसँग "
+            "गरिएको जाँचमा नदीबाटको दूरीले यस उपत्यकामा बाढीको पूर्वानुमान गरेन। काठमाडौंमा "
+            "अभिलेख भएका धेरैजसो बाढी मुख्य नदीभन्दा टाढा ढल अवरुद्ध भएर हुने गरेको छ। त्यसैले "
+            "नदीको दूरी दिशाबोधका लागि मात्र देखाइएको हो, अंकमा गणना गरिएको छैन।"
+        ),
+    },
+    "criterion_percentile_raises": {
+        "en": "higher than {pct}% of the valley",
+        "ne": "उपत्यकाको {pct}% भन्दा बढी",
+    },
+    "criterion_percentile_lowers": {
+        "en": "lower than {inv}% of the valley",
+        "ne": "उपत्यकाको {inv}% भन्दा कम",
+    },
+    "how_it_works": {
+        "en": (
+            "The score combines {n} things about the land itself, each weighted by how much it "
+            "matters. Weights come from a published study of this exact watershed (Chaudhary et "
+            "al., 2024); the class boundaries are set from the actual spread of values across "
+            "the valley, not copied from elsewhere."
+        ),
+        "ne": (
+            "यो अंकले जमिनसम्बन्धी {n} कुरालाई तिनको महत्त्व अनुसार जोडेर बनाइएको हो। महत्त्व "
+            "यही जलाधार क्षेत्रको प्रकाशित अध्ययन (Chaudhary et al., 2024) बाट लिइएको हो; "
+            "वर्ग सीमाहरू उपत्यकाकै वास्तविक तथ्याङ्कबाट निकालिएको हो।"
+        ),
+    },
+}
+
+CRITERION_LABEL = {
+    "hand": {"en": "Height above the nearest stream", "ne": "नजिकको खोलाभन्दा उचाइ"},
+    "dem_elevation": {"en": "Elevation", "ne": "समुद्री सतहबाट उचाइ"},
+    "dem_slope": {"en": "Steepness of the ground", "ne": "जमिनको ढलान"},
+    "twi": {"en": "Tendency to collect water", "ne": "पानी जम्मा हुने प्रवृत्ति"},
+    "drainage_density": {"en": "Density of nearby streams", "ne": "वरपरका खोलाको घनत्व"},
+}
+
 NOT_COVERED_TEXT = {
     "en": (
         "This location is outside the Kathmandu Valley pilot area. "
@@ -133,6 +211,39 @@ class ReasonOut(BaseModel):
     value: float
     unit: str
     severity: str
+    criterion_id: str = ""
+    criterion_label: str = ""
+    percentile: int = -1
+    percentile_text: str = ""
+    risk_class: int = 0
+    weight: float = 0.0
+
+
+class FloodRecordOut(BaseModel):
+    date: str
+    distance_m: int
+    hazard: str
+    place: str | None = None
+
+
+class FloodHistoryOut(BaseModel):
+    count: int
+    radius_km: float
+    summary: str
+    caveat: str
+    records: list[FloodRecordOut] = []
+
+
+class NearestRiverOut(BaseModel):
+    name: str
+    distance_m: int
+    text: str
+    not_a_reason_text: str
+
+
+class HowItWorksOut(BaseModel):
+    text: str
+    criteria: list[dict]
 
 
 class ValidationOut(BaseModel):
@@ -157,6 +268,12 @@ class CitizenAssessResponse(BaseModel):
     summary: str | None = None
     reasons: list[ReasonOut] = []
 
+    risk_percentile: int = -1
+    percentile_text: str | None = None
+    flood_history: FloodHistoryOut | None = None
+    nearest_river: NearestRiverOut | None = None
+    how_it_works: HowItWorksOut | None = None
+
     message: str | None = None
     disclaimer: str
     experimental_notice: str
@@ -177,6 +294,24 @@ class CitizenAssessResponse(BaseModel):
         if not a.covered:
             return cls(**base, message=NOT_COVERED_TEXT[lang])
 
+        def _pct_text(r) -> str:
+            """Phrase the percentile by the criterion's own direction, not
+            by whether it raised or lowered risk.
+
+            These are different things and conflating them produced a
+            real contradiction: elevation at the 20th percentile RAISES
+            flood risk (low ground floods), but describing it as "higher
+            than 20% of the valley" next to the sentence "among the
+            lower-lying ground" reads as nonsense. What the reader needs
+            is where the VALUE sits -- lower than 80% of the valley --
+            which is precisely why it raises risk.
+            """
+            if r.percentile < 0:
+                return ""
+            ascending = RISK_DIRECTION.get(r.criterion_id) == "ascending"
+            key = "criterion_percentile_raises" if ascending else "criterion_percentile_lowers"
+            return CONTEXT_TEXT[key][lang].format(pct=r.percentile, inv=100 - r.percentile)
+
         reasons = [
             ReasonOut(
                 code=r.code,
@@ -184,9 +319,52 @@ class CitizenAssessResponse(BaseModel):
                 value=r.value,
                 unit=r.unit,
                 severity=r.severity,
+                criterion_id=r.criterion_id,
+                criterion_label=CRITERION_LABEL.get(r.criterion_id, {}).get(lang, r.criterion_id),
+                percentile=r.percentile,
+                percentile_text=_pct_text(r),
+                risk_class=r.risk_class,
+                weight=r.weight,
             )
             for r in a.reasons
         ]
+
+        radius_km = round(FLOOD_HISTORY_RADIUS_M / 1000.0, 1)
+        n_hist = len(a.flood_history)
+        history = FloodHistoryOut(
+            count=n_hist,
+            radius_km=radius_km,
+            summary=(CONTEXT_TEXT["history_some"] if n_hist else CONTEXT_TEXT["history_none"])[lang]
+            .format(n=n_hist, radius_km=radius_km),
+            caveat=CONTEXT_TEXT["history_caveat"][lang],
+            records=[
+                FloodRecordOut(date=r.date, distance_m=r.distance_m, hazard=r.hazard, place=r.place)
+                for r in a.flood_history[:8]
+            ],
+        )
+
+        river = None
+        if a.nearest_river is not None:
+            river = NearestRiverOut(
+                name=a.nearest_river.name,
+                distance_m=a.nearest_river.distance_m,
+                text=CONTEXT_TEXT["river_context"][lang].format(
+                    name=a.nearest_river.name, dist=a.nearest_river.distance_m),
+                not_a_reason_text=CONTEXT_TEXT["river_not_a_reason"][lang],
+            )
+
+        weights = normalized_weights()
+        how = HowItWorksOut(
+            text=CONTEXT_TEXT["how_it_works"][lang].format(n=len(CITIZEN_CRITERIA)),
+            criteria=[
+                {
+                    "id": cid,
+                    "label": CRITERION_LABEL.get(cid, {}).get(lang, cid),
+                    "weight_pct": round(100 * weights.get(cid, 0.0)),
+                }
+                for cid in CITIZEN_CRITERIA
+            ],
+        )
 
         return cls(
             **base,
@@ -197,6 +375,14 @@ class CitizenAssessResponse(BaseModel):
             summary=RISK_SUMMARY[a.risk_level][lang],
             reasons=reasons,
             cache_key=a.cache_key,
+            risk_percentile=a.risk_percentile,
+            percentile_text=(
+                CONTEXT_TEXT["percentile"][lang].format(pct=a.risk_percentile)
+                if a.risk_percentile >= 0 else None
+            ),
+            flood_history=history,
+            nearest_river=river,
+            how_it_works=how,
             validation=ValidationOut(
                 auc=VALIDATION["auc_success_rate"],
                 auc_holdout=VALIDATION["auc_prediction_rate_2020plus"],

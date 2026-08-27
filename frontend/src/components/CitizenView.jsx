@@ -46,6 +46,12 @@ const UI = {
       `no better than guessing. ${v.note}`,
     langToggle: 'नेपाली',
     tapped: 'Selected location',
+    history: 'Flood records near here',
+    riverHeading: 'Nearest river',
+    howHeading: 'How this is worked out',
+    weightsIntro: 'What the score is based on',
+    showDetail: 'Show the full breakdown',
+    hideDetail: 'Hide the breakdown',
   },
   ne: {
     title: 'आफ्नो क्षेत्र हेर्नुहोस्',
@@ -66,6 +72,12 @@ const UI = {
       `भन्दा राम्रो होइन। ${v.note}`,
     langToggle: 'English',
     tapped: 'छानिएको स्थान',
+    history: 'यस वरपरका बाढी अभिलेख',
+    riverHeading: 'नजिकको नदी',
+    howHeading: 'यो कसरी निकालिएको हो',
+    weightsIntro: 'अंक केमा आधारित छ',
+    showDetail: 'पूरा विवरण हेर्नुहोस्',
+    hideDetail: 'विवरण लुकाउनुहोस्',
   },
 }
 
@@ -78,6 +90,7 @@ export default function CitizenView({ onBack }) {
   const [error, setError] = useState(null)
   const [slowHint, setSlowHint] = useState(false)
   const [picked, setPicked] = useState(null)
+  const [showDetail, setShowDetail] = useState(false)
 
   const mapContainer = useRef(null)
   const mapRef = useRef(null)
@@ -243,17 +256,82 @@ export default function CitizenView({ onBack }) {
                     <p className="citizen-risk__summary">{result.summary}</p>
                   </div>
 
+                  {result.percentile_text && (
+                    <p className="citizen__percentile">{result.percentile_text}</p>
+                  )}
+
                   {result.reasons?.length > 0 && (
                     <section className="citizen__reasons">
                       <h2>{t.whyThis}</h2>
                       <ul>
                         {result.reasons.map((r) => (
                           <li key={r.code} className={`citizen__reason citizen__reason--${r.severity}`}>
-                            {r.text}
+                            <span className="citizen__reason-text">{r.text}</span>
+                            {showDetail && r.percentile_text && (
+                              <span className="citizen__reason-detail">
+                                {r.criterion_label} · {r.percentile_text} · weight {Math.round(r.weight * 100)}%
+                              </span>
+                            )}
                           </li>
                         ))}
                       </ul>
+                      <button
+                        type="button"
+                        className="citizen__detail-toggle"
+                        onClick={() => setShowDetail((v) => !v)}
+                      >
+                        {showDetail ? t.hideDetail : t.showDetail}
+                      </button>
                     </section>
+                  )}
+
+                  {/* Real recorded floods nearby. The strongest evidence we
+                      can offer, because the reader can check it against
+                      their own memory of the place. */}
+                  {result.flood_history && (
+                    <section className="citizen__history">
+                      <h2>{t.history}</h2>
+                      <p className="citizen__history-summary">{result.flood_history.summary}</p>
+                      {result.flood_history.records?.length > 0 && (
+                        <ul>
+                          {result.flood_history.records.map((h, i) => (
+                            <li key={`${h.date}-${h.distance_m}-${i}`}>
+                              <span className="citizen__history-date">{h.date}</span>
+                              <span className="citizen__history-dist">{h.distance_m} m</span>
+                              <span className="citizen__history-place">{h.place}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <p className="citizen__history-caveat">{result.flood_history.caveat}</p>
+                    </section>
+                  )}
+
+                  {/* Context only -- never a reason. See the backend's
+                      context.py on why river distance is deliberately not
+                      part of the score in this valley. */}
+                  {result.nearest_river && (
+                    <section className="citizen__river">
+                      <h2>{t.riverHeading}</h2>
+                      <p>{result.nearest_river.text}</p>
+                      <p className="citizen__river-note">{result.nearest_river.not_a_reason_text}</p>
+                    </section>
+                  )}
+
+                  {result.how_it_works && (
+                    <details className="citizen__how">
+                      <summary>{t.howHeading}</summary>
+                      <p>{result.how_it_works.text}</p>
+                      <ul className="citizen__weights">
+                        {result.how_it_works.criteria.map((c) => (
+                          <li key={c.id}>
+                            <span className="citizen__weight-bar" style={{ width: `${c.weight_pct * 2}%` }} />
+                            <span className="citizen__weight-label">{c.label}</span>
+                            <span className="citizen__weight-pct">{c.weight_pct}%</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
                   )}
 
                   {result.validation && (

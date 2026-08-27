@@ -2921,3 +2921,98 @@ input[type='radio'] {
   color: #d9a33f;
   text-align: center;
 }
+
+/* --- Citizen Mode: supporting evidence -------------------------------
+   Added when the answer grew from "HIGH + two sentences" into something
+   a reader can actually check. Visual weight is deliberately ordered:
+   the risk label dominates, real flood records come next, and the
+   model's own workings sit last behind a disclosure. */
+
+.citizen__percentile {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary, #a8b8be);
+  padding: 10px 12px;
+  border-radius: var(--radius-sm, 6px);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.citizen__reason { display: flex; flex-direction: column; gap: 3px; }
+.citizen__reason-text { display: block; }
+.citizen__reason-detail {
+  font-size: 0.76rem;
+  color: var(--text-tertiary, #74868d);
+  font-variant-numeric: tabular-nums;
+}
+
+.citizen__detail-toggle {
+  align-self: flex-start;
+  margin-top: 10px;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  color: var(--accent, #45b5bf);
+  font-size: 0.82rem;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* Recorded floods. Given real visual weight -- this is the most
+   verifiable thing on the page. */
+.citizen__history h2,
+.citizen__river h2 {
+  margin: 0 0 8px;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-tertiary, #74868d);
+}
+.citizen__history-summary { margin: 0 0 10px; font-size: 0.92rem; line-height: 1.5; }
+.citizen__history ul { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.citizen__history li {
+  display: grid;
+  grid-template-columns: 88px 58px 1fr;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 0.84rem;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm, 6px);
+  background: rgba(224, 112, 95, 0.07);
+}
+.citizen__history-date { font-variant-numeric: tabular-nums; color: var(--text-primary, #dfe8ea); }
+.citizen__history-dist { font-variant-numeric: tabular-nums; color: var(--text-tertiary, #74868d); text-align: right; }
+.citizen__history-place { color: var(--text-secondary, #a8b8be); }
+.citizen__history-caveat,
+.citizen__river-note {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--text-tertiary, #74868d);
+}
+
+.citizen__river p { margin: 0 0 6px; font-size: 0.92rem; line-height: 1.5; }
+
+.citizen__how { font-size: 0.85rem; color: var(--text-secondary, #a8b8be); }
+.citizen__how summary { cursor: pointer; color: var(--accent, #45b5bf); }
+.citizen__how > p { margin: 8px 0 12px; line-height: 1.55; }
+.citizen__weights { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.citizen__weights li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm, 6px);
+  overflow: hidden;
+  font-size: 0.82rem;
+}
+.citizen__weight-bar {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  background: var(--accent-soft, #10333a);
+  z-index: 0;
+}
+.citizen__weight-label,
+.citizen__weight-pct { position: relative; z-index: 1; }
+.citizen__weight-pct { font-variant-numeric: tabular-nums; color: var(--text-tertiary, #74868d); }

@@ -1,0 +1,1162 @@
+[
+ {
+  "id": 39258,
+  "hazard": "Flood",
+  "lon": 85.39605017,
+  "lat": 27.73677411,
+  "date": "2018-08-15",
+  "title": "Flood at Gokarneshwor Municipality-4"
+ },
+ {
+  "id": 39257,
+  "hazard": "Flood",
+  "lon": 85.37434162,
+  "lat": 27.75834517,
+  "date": "2018-08-15",
+  "title": "Flood at Budhanilakantha Municipality-13"
+ },
+ {
+  "id": 46669,
+  "hazard": "Flood",
+  "lon": 85.40610191,
+  "lat": 27.66539467,
+  "date": "2020-05-05",
+  "title": "Flood at Katunje, Suryabinayak Municipality-5"
+ },
+ {
+  "id": 32930,
+  "hazard": "Flood",
+  "lon": 85.44123,
+  "lat": 27.67418,
+  "date": "2016-07-26",
+  "title": "Flood at Bhaktapur Municipality-9"
+ },
+ {
+  "id": 39259,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2018-08-15",
+  "title": "Flood at Sinamangal, Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 39256,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2018-08-15",
+  "title": "Flood at Sundarijal, Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 44203,
+  "hazard": "Flood",
+  "lon": 85.4878684,
+  "lat": 27.69529678,
+  "date": "2019-08-17",
+  "title": "Flood at Kharipati, Changunarayan Municipality-7"
+ },
+ {
+  "id": 44119,
+  "hazard": "Flood",
+  "lon": 85.45695878,
+  "lat": 27.70395992,
+  "date": "2019-08-11",
+  "title": "Flood at Khaling , Changunarayan Municipality-5"
+ },
+ {
+  "id": 44108,
+  "hazard": "Flood",
+  "lon": 85.40030133,
+  "lat": 27.71306935,
+  "date": "2019-08-11",
+  "title": "Flood at Mulpani, Kageshwori Manahora Municipality-6"
+ },
+ {
+  "id": 74188,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2024-08-29",
+  "title": "Flood at Mathillo Dulalgaau Shreenagar , Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 44054,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2019-08-05",
+  "title": "Flood at snao bhyrang , Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 56740,
+  "hazard": "Flood",
+  "lon": 85.31599758,
+  "lat": 27.70979168,
+  "date": "2021-10-05",
+  "title": "Flood at Kantipath, Kathmandu Metropolitan City-1"
+ },
+ {
+  "id": 73422,
+  "hazard": "Flood",
+  "lon": 85.355644,
+  "lat": 27.68337593,
+  "date": "2024-07-25",
+  "title": "Flood at Narephat , Kathmandu Metropolitan City-32"
+ },
+ {
+  "id": 43754,
+  "hazard": "Flood",
+  "lon": 85.21962797,
+  "lat": 27.56243878,
+  "date": "2019-07-16",
+  "title": "Flood at Aduwa, Indrasarowar Rural Municipality-3"
+ },
+ {
+  "id": 43613,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2019-07-12",
+  "title": "Flood at Kuleshwor, Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 78686,
+  "hazard": "Flood",
+  "lon": 85.25104278,
+  "lat": 27.69447458,
+  "date": "2025-04-10",
+  "title": "Flood at Chandragiri Municipality-12"
+ },
+ {
+  "id": 42394,
+  "hazard": "Flood",
+  "lon": 85.33523491,
+  "lat": 27.69151769,
+  "date": "2019-04-20",
+  "title": "Flood at Bijuli Bazar, Kathmandu Metropolitan City-10"
+ },
+ {
+  "id": 81313,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2025-07-22",
+  "title": "Flood at Bishalnagar Simrik Marga , Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 39329,
+  "hazard": "Flood",
+  "lon": 85.34583048,
+  "lat": 27.84035961,
+  "date": "2018-08-17",
+  "title": "Flood at Shivapuri Rural Municipality-6"
+ },
+ {
+  "id": 39328,
+  "hazard": "Flood",
+  "lon": 85.16131498,
+  "lat": 27.82934157,
+  "date": "2018-08-18",
+  "title": "Flood at Belkotgadhi Municipality-11"
+ },
+ {
+  "id": 39312,
+  "hazard": "Flood",
+  "lon": 85.4878684,
+  "lat": 27.69529678,
+  "date": "2018-08-16",
+  "title": "Flood at Changunarayan Municipality-7"
+ },
+ {
+  "id": 39096,
+  "hazard": "Flood",
+  "lon": 85.30641671,
+  "lat": 27.69542056,
+  "date": "2018-08-05",
+  "title": "Flood at Kathmandu Metropolitan City-12"
+ },
+ {
+  "id": 39079,
+  "hazard": "Flood",
+  "lon": 85.40610191,
+  "lat": 27.66539467,
+  "date": "2018-08-05",
+  "title": "Flood at Suryabinayak Municipality-5"
+ },
+ {
+  "id": 7400,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2012-09-02",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 47615,
+  "hazard": "Flood",
+  "lon": 85.30641671,
+  "lat": 27.69542056,
+  "date": "2020-07-20",
+  "title": "Flood at Taku, Kathmandu Metropolitan City-12"
+ },
+ {
+  "id": 38676,
+  "hazard": "Flood",
+  "lon": 85.355644,
+  "lat": 27.68337593,
+  "date": "2018-07-12",
+  "title": "Flood at Kathmandu Metropolitan City-32"
+ },
+ {
+  "id": 7393,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2012-09-01",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 39263,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2018-08-15",
+  "title": "Flood at Guheshori, Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 39262,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2018-08-15",
+  "title": "Flood at Tinkune, Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 39261,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2018-08-15",
+  "title": "Flood at Maitidevi, Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 39260,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2018-08-15",
+  "title": "Flood at Kalopool, Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 55605,
+  "hazard": "Flood",
+  "lon": 85.34759841,
+  "lat": 27.65399931,
+  "date": "2021-06-16",
+  "title": "Flood at Harisiddi, Mahalaxmi Municipality-4"
+ },
+ {
+  "id": 35335,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2017-08-08",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 35281,
+  "hazard": "Flood",
+  "lon": 85.44123,
+  "lat": 27.67418,
+  "date": "2017-08-03",
+  "title": "Flood at Bhaktapur Municipality-9"
+ },
+ {
+  "id": 35164,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2017-07-14",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 4531,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2013-08-14",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 33086,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2016-07-31",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 32868,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2016-07-23",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 4495,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2013-08-09",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 56643,
+  "hazard": "Flood",
+  "lon": 85.23213587,
+  "lat": 27.70894357,
+  "date": "2021-09-20",
+  "title": "Flood at tribeni chok, Chandragiri Municipality-1"
+ },
+ {
+  "id": 6012,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2014-09-19",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 5868,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2014-07-30",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 5840,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2014-07-21",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 4429,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2013-07-25",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 4214,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2013-06-25",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 4213,
+  "hazard": "Flood",
+  "lon": 85.44123,
+  "lat": 27.67418,
+  "date": "2013-06-24",
+  "title": "Flood at Bhaktapur Municipality-9"
+ },
+ {
+  "id": 4199,
+  "hazard": "Flood",
+  "lon": 85.44123,
+  "lat": 27.67418,
+  "date": "2013-06-22",
+  "title": "Flood at Bhaktapur Municipality-9"
+ },
+ {
+  "id": 4192,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2013-06-22",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 3008,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2011-09-26",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 2779,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2011-08-15",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 2611,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2011-07-20",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 2435,
+  "hazard": "Flood",
+  "lon": 85.44123,
+  "lat": 27.67418,
+  "date": "2011-07-01",
+  "title": "Flood at Bhaktapur Municipality-9"
+ },
+ {
+  "id": 4358,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2013-07-17",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 58740,
+  "hazard": "Flood",
+  "lon": 85.57154218,
+  "lat": 27.57609075,
+  "date": "2022-04-11",
+  "title": "Flood at aarubot, Dhulikhel Municipality-12"
+ },
+ {
+  "id": 56312,
+  "hazard": "Flood",
+  "lon": 85.40867266,
+  "lat": 27.72530702,
+  "date": "2021-08-19",
+  "title": "Flood at Mulpani, Kageshwori Manahora Municipality-5"
+ },
+ {
+  "id": 56481,
+  "hazard": "Flood",
+  "lon": 85.26825445,
+  "lat": 27.86568312,
+  "date": "2021-08-31",
+  "title": "Flood at kumalthandi, Likhu Rural Municipality-6"
+ },
+ {
+  "id": 56556,
+  "hazard": "Flood",
+  "lon": 85.37787074,
+  "lat": 27.7106988,
+  "date": "2021-09-06",
+  "title": "Flood at gothara, Kageshwori Manahora Municipality-8"
+ },
+ {
+  "id": 56693,
+  "hazard": "Flood",
+  "lon": 85.36271154,
+  "lat": 27.73231956,
+  "date": "2021-09-05",
+  "title": "Flood at Kapan Tarkari bajar, Budhanilakantha Municipality-11"
+ },
+ {
+  "id": 59928,
+  "hazard": "Flood",
+  "lon": 85.32223003,
+  "lat": 27.84133497,
+  "date": "2022-07-20",
+  "title": "Flood at Chapakot, Shivapuri Rural Municipality-7"
+ },
+ {
+  "id": 60162,
+  "hazard": "Flood",
+  "lon": 85.409725,
+  "lat": 27.69941741,
+  "date": "2022-08-10",
+  "title": "Flood at Duwakotbesi, Changunarayan Municipality-1"
+ },
+ {
+  "id": 60163,
+  "hazard": "Flood",
+  "lon": 85.43445777,
+  "lat": 27.71605518,
+  "date": "2022-08-10",
+  "title": "Flood at Indrayanipool, Changunarayan Municipality-4"
+ },
+ {
+  "id": 60161,
+  "hazard": "Flood",
+  "lon": 85.37368359,
+  "lat": 27.68145892,
+  "date": "2022-08-10",
+  "title": "Flood at Sanothami, Madhyapur Thimi Municipality-2"
+ },
+ {
+  "id": 35027,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2017-06-24",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 4623,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2013-09-04",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 44055,
+  "hazard": "Flood",
+  "lon": 85.26025025,
+  "lat": 27.72084148,
+  "date": "2019-08-05",
+  "title": "Flood at Nagarjun Municipality-5"
+ },
+ {
+  "id": 82029,
+  "hazard": "Flood",
+  "lon": 85.33523491,
+  "lat": 27.69151769,
+  "date": "2025-08-22",
+  "title": "Flood at Sankhamul , Kathmandu Metropolitan City-10"
+ },
+ {
+  "id": 82019,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2025-08-22",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 47106,
+  "hazard": "Flood",
+  "lon": 85.24012105,
+  "lat": 27.79152675,
+  "date": "2020-06-25",
+  "title": "Flood at Laska, Kakani Rural Municipality-2"
+ },
+ {
+  "id": 83094,
+  "hazard": "Flood",
+  "lon": 85.5022593,
+  "lat": 27.57859404,
+  "date": "2025-10-04",
+  "title": "Flood at Panauti Municipality-8"
+ },
+ {
+  "id": 46981,
+  "hazard": "Flood",
+  "lon": 85.41634955,
+  "lat": 27.6724945,
+  "date": "2020-06-10",
+  "title": "Flood at Chundevi, Bhaktapur Municipality-1"
+ },
+ {
+  "id": 46885,
+  "hazard": "Flood",
+  "lon": 85.47641364,
+  "lat": 27.59656292,
+  "date": "2020-05-27",
+  "title": "Flood at Tribeni Ghat, Panauti Municipality-3"
+ },
+ {
+  "id": 46883,
+  "hazard": "Flood",
+  "lon": 85.43785166,
+  "lat": 27.64583221,
+  "date": "2020-05-27",
+  "title": "Flood at Sipadol, Suryabinayak Municipality-8"
+ },
+ {
+  "id": 4201,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2013-06-23",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 56156,
+  "hazard": "Flood",
+  "lon": 85.55807341,
+  "lat": 27.83135195,
+  "date": "2021-07-31",
+  "title": "Flood at Melamchibajar, Melamchi Municipality-11"
+ },
+ {
+  "id": 56158,
+  "hazard": "Flood",
+  "lon": 85.52959607,
+  "lat": 27.88497727,
+  "date": "2021-08-01",
+  "title": "Flood at Helambu Rural Municipality-4"
+ },
+ {
+  "id": 56159,
+  "hazard": "Flood",
+  "lon": 85.56126653,
+  "lat": 27.88888196,
+  "date": "2021-08-01",
+  "title": "Flood at Gauribyasi, Helambu Rural Municipality-3"
+ },
+ {
+  "id": 47335,
+  "hazard": "Flood",
+  "lon": 85.28564095,
+  "lat": 27.75962741,
+  "date": "2020-07-10",
+  "title": "Flood at Dahalkthoke, Tarakeshwor Municipality-5"
+ },
+ {
+  "id": 66000,
+  "hazard": "Flood",
+  "lon": 85.52959607,
+  "lat": 27.88497727,
+  "date": "2023-08-25",
+  "title": "Flood at Gyalthum, Helambu Rural Municipality-4"
+ },
+ {
+  "id": 65767,
+  "hazard": "Flood",
+  "lon": 85.36936048,
+  "lat": 27.74257431,
+  "date": "2023-08-08",
+  "title": "Flood at Kapan-Paiyutar, Budhanilakantha Municipality-11"
+ },
+ {
+  "id": 65571,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2023-07-23",
+  "title": "Flood at Ranibari, Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 66020,
+  "hazard": "Flood",
+  "lon": 85.52959607,
+  "lat": 27.88497727,
+  "date": "2023-08-25",
+  "title": "Flood at Gyalthum, Helambu Rural Municipality-4"
+ },
+ {
+  "id": 65992,
+  "hazard": "Flood",
+  "lon": 85.52959607,
+  "lat": 27.88497727,
+  "date": "2023-08-23",
+  "title": "Flood at Dhungre Bazar, Helambu Rural Municipality-4"
+ },
+ {
+  "id": 71338,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2024-05-08",
+  "title": "Flood at Sattale , Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 72326,
+  "hazard": "Flood",
+  "lon": 85.55807341,
+  "lat": 27.83135195,
+  "date": "2024-06-24",
+  "title": "Flood at Phatte , Melamchi Municipality-11"
+ },
+ {
+  "id": 72459,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2024-06-28",
+  "title": "Flood at Tokha Ganesh Temple , Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 72755,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2024-07-06",
+  "title": "Flood at Dakshinkali Temple , Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 72890,
+  "hazard": "Flood",
+  "lon": 85.34197261,
+  "lat": 27.61225159,
+  "date": "2024-07-07",
+  "title": "Flood at Jharubarasi, Godawari_Lalitpur Municipality-13"
+ },
+ {
+  "id": 74021,
+  "hazard": "Flood",
+  "lon": 85.31658324,
+  "lat": 27.72520205,
+  "date": "2024-08-21",
+  "title": "Flood at Bishwohal , Kathmandu Metropolitan City-26"
+ },
+ {
+  "id": 73405,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2024-07-25",
+  "title": "Flood at Tallo Gajadnath , Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 73495,
+  "hazard": "Flood",
+  "lon": 85.44123,
+  "lat": 27.67418,
+  "date": "2024-07-30",
+  "title": "Flood at Dadhikot , Bhaktapur Municipality-9"
+ },
+ {
+  "id": 73520,
+  "hazard": "Flood",
+  "lon": 85.29320013,
+  "lat": 27.68993592,
+  "date": "2024-07-31",
+  "title": "Flood at Kuleshwor , Kathmandu Metropolitan City-14"
+ },
+ {
+  "id": 73514,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2024-07-31",
+  "title": "Flood at Dipjyoti Miteri Bridge , Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 73563,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2024-07-31",
+  "title": "Flood at Chalnakhel , Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 73523,
+  "hazard": "Flood",
+  "lon": 85.29320013,
+  "lat": 27.68993592,
+  "date": "2024-07-31",
+  "title": "Flood at Kathmandu Metropolitan City-14"
+ },
+ {
+  "id": 73685,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2024-08-06",
+  "title": "Flood at Panchdhara , Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 73828,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2024-08-13",
+  "title": "Flood at Panipokhari , Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 74659,
+  "hazard": "Flood",
+  "lon": 85.57969795,
+  "lat": 27.62023078,
+  "date": "2024-09-28",
+  "title": "Flood at Khaba Bajar , Dhulikhel Municipality-8"
+ },
+ {
+  "id": 74588,
+  "hazard": "Flood",
+  "lon": 85.3979191,
+  "lat": 27.65183655,
+  "date": "2024-09-28",
+  "title": "Flood at Dadhikot Shrijanshil Tole , Suryabinayak Municipality-4"
+ },
+ {
+  "id": 74616,
+  "hazard": "Flood",
+  "lon": 85.28968064,
+  "lat": 27.67902036,
+  "date": "2024-09-27",
+  "title": "Flood at Sundarighat , Kirtipur Municipality-10"
+ },
+ {
+  "id": 74743,
+  "hazard": "Flood",
+  "lon": 85.31881196,
+  "lat": 27.65306582,
+  "date": "2024-09-28",
+  "title": "Flood at Nakhipot Kantipur Colony , Lalitpur Metropolitan City-14"
+ },
+ {
+  "id": 74740,
+  "hazard": "Flood",
+  "lon": 85.31881196,
+  "lat": 27.65306582,
+  "date": "2024-09-28",
+  "title": "Flood at Karnatipur Colony , Lalitpur Metropolitan City-14"
+ },
+ {
+  "id": 74827,
+  "hazard": "Flood",
+  "lon": 85.29320013,
+  "lat": 27.68993592,
+  "date": "2024-09-28",
+  "title": "Flood at Balkhu / Kuleshwor Basti , Kathmandu Metropolitan City-14"
+ },
+ {
+  "id": 74846,
+  "hazard": "Flood",
+  "lon": 85.44123,
+  "lat": 27.67418,
+  "date": "2024-09-28",
+  "title": "Flood at Balkot , Bhaktapur Municipality-9"
+ },
+ {
+  "id": 74841,
+  "hazard": "Flood",
+  "lon": 85.29320013,
+  "lat": 27.68993592,
+  "date": "2024-09-28",
+  "title": "Flood at Balkhu , Kathmandu Metropolitan City-14"
+ },
+ {
+  "id": 74840,
+  "hazard": "Flood",
+  "lon": 85.355644,
+  "lat": 27.68337593,
+  "date": "2024-09-28",
+  "title": "Flood at Narephat , Kathmandu Metropolitan City-32"
+ },
+ {
+  "id": 82203,
+  "hazard": "Flood",
+  "lon": 85.35637534,
+  "lat": 27.73422332,
+  "date": "2025-08-27",
+  "title": "Flood at Budhanilakantha Municipality-10"
+ },
+ {
+  "id": 74937,
+  "hazard": "Flood",
+  "lon": 85.37537747,
+  "lat": 27.63587261,
+  "date": "2024-09-28",
+  "title": "Flood at Sankhadevi , Mahalaxmi Municipality-8"
+ },
+ {
+  "id": 74948,
+  "hazard": "Flood",
+  "lon": 85.29320013,
+  "lat": 27.68993592,
+  "date": "2024-09-28",
+  "title": "Flood at Shukumbasi Tole , Kathmandu Metropolitan City-14"
+ },
+ {
+  "id": 81373,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2025-07-28",
+  "title": "Flood at Sundarijal Sundarimai Temple , Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 79614,
+  "hazard": "Flood",
+  "lon": 85.53269224,
+  "lat": 27.60576579,
+  "date": "2025-05-12",
+  "title": "Flood at Panauti Municipality-5"
+ },
+ {
+  "id": 80651,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2025-06-22",
+  "title": "Flood at Chamati , Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 79879,
+  "hazard": "Flood",
+  "lon": 85.22473545,
+  "lat": 27.59824365,
+  "date": "2025-05-20",
+  "title": "Flood at mahalaxmikhola, Indrasarowar Rural Municipality-4"
+ },
+ {
+  "id": 80517,
+  "hazard": "Flood",
+  "lon": 85.44123,
+  "lat": 27.67418,
+  "date": "2025-06-17",
+  "title": "Flood at Bhaktapur Municipality-9"
+ },
+ {
+  "id": 91745,
+  "hazard": "Flood",
+  "lon": 85.43785166,
+  "lat": 27.64583221,
+  "date": "2026-07-17",
+  "title": "Flood at Doleshwor , Suryabinayak Municipality-8"
+ },
+ {
+  "id": 92582,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2026-08-03",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 91915,
+  "hazard": "Flood",
+  "lon": 85.44123,
+  "lat": 27.67418,
+  "date": "2026-07-19",
+  "title": "Flood at Bhaktapur Municipality-9"
+ },
+ {
+  "id": 6009,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2014-09-19",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 75001,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2024-09-28",
+  "title": "Flood at All, Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 80671,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2025-06-22",
+  "title": "Flood at Chappalkharkhana , Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 80648,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2025-06-22",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 80649,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2025-06-22",
+  "title": "Flood at Khahare , Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 80730,
+  "hazard": "Flood",
+  "lon": 85.32975395,
+  "lat": 27.74967635,
+  "date": "2025-06-25",
+  "title": "Flood at Behind Grandi Hospital , Tokha Municipality-6"
+ },
+ {
+  "id": 80736,
+  "hazard": "Flood",
+  "lon": 85.3046066,
+  "lat": 27.72776967,
+  "date": "2025-06-27",
+  "title": "Flood at Miteri Bridge , Kathmandu Metropolitan City-16"
+ },
+ {
+  "id": 80737,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2025-06-27",
+  "title": "Flood at Sanobaipas , Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 80839,
+  "hazard": "Flood",
+  "lon": 85.3046066,
+  "lat": 27.72776967,
+  "date": "2025-07-01",
+  "title": "Flood at Kathmandu Metropolitan City-16"
+ },
+ {
+  "id": 80890,
+  "hazard": "Flood",
+  "lon": 85.3046066,
+  "lat": 27.72776967,
+  "date": "2025-07-05",
+  "title": "Flood at Valley Cold Store, Kathmandu Metropolitan City-16"
+ },
+ {
+  "id": 80646,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2025-06-22",
+  "title": "Flood at Tinchuli , Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 80647,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2025-06-22",
+  "title": "Flood at Greenland Chowk , Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 80609,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2025-06-20",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 62839,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2023-03-19",
+  "title": "Flood at Samakhusi , Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 82213,
+  "hazard": "Flood",
+  "lon": 85.45803242,
+  "lat": 27.55401172,
+  "date": "2025-08-28",
+  "title": "Flood at Debarkhola at Digaun, border of Panauti Sub-distri, Panauti Municipality-12"
+ },
+ {
+  "id": 92311,
+  "hazard": "Flood",
+  "lon": 85.44123,
+  "lat": 27.67418,
+  "date": "2026-07-28",
+  "title": "Flood at Tathali , Bhaktapur Municipality-9"
+ },
+ {
+  "id": 90065,
+  "hazard": "Flood",
+  "lon": 85.33373805,
+  "lat": 27.66266467,
+  "date": "2026-05-28",
+  "title": "Flood at Lalitpur Metropolitan City-17"
+ },
+ {
+  "id": 90069,
+  "hazard": "Flood",
+  "lon": 85.32079099,
+  "lat": 27.70399452,
+  "date": "2026-05-28",
+  "title": "Flood at Kathmandu Metropolitan City-28"
+ },
+ {
+  "id": 90070,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2026-05-28",
+  "title": "Flood at Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 90092,
+  "hazard": "Flood",
+  "lon": 85.31881196,
+  "lat": 27.65306582,
+  "date": "2026-05-28",
+  "title": "Flood at Lalitpur Metropolitan City-14"
+ },
+ {
+  "id": 92221,
+  "hazard": "Flood",
+  "lon": 85.3209611,
+  "lat": 27.69285649,
+  "date": "2026-07-27",
+  "title": "Flood at Teku Black Bridge , Kathmandu Metropolitan City-11"
+ },
+ {
+  "id": 90711,
+  "hazard": "Flood",
+  "lon": 85.37856,
+  "lat": 27.69912,
+  "date": "2026-06-20",
+  "title": "Flood at Kavrasthali, Kageshwori Manahora Municipality-9"
+ },
+ {
+  "id": 91421,
+  "hazard": "Flood",
+  "lon": 85.30611403,
+  "lat": 27.70287692,
+  "date": "2026-07-11",
+  "title": "Flood at Bishnumati Corridor , Kathmandu Metropolitan City-23"
+ },
+ {
+  "id": 91461,
+  "hazard": "Flood",
+  "lon": 85.30666837,
+  "lat": 27.70595402,
+  "date": "2026-07-11",
+  "title": "Flood at Bishnumati Corridor , Kathmandu Metropolitan City-24"
+ },
+ {
+  "id": 91466,
+  "hazard": "Flood",
+  "lon": 85.44123,
+  "lat": 27.67418,
+  "date": "2026-07-11",
+  "title": "Flood at Jitpur , Bhaktapur Municipality-9"
+ },
+ {
+  "id": 91417,
+  "hazard": "Flood",
+  "lon": 85.28968064,
+  "lat": 27.67902036,
+  "date": "2026-07-11",
+  "title": "Flood at Sundari Ghat , Kirtipur Municipality-10"
+ },
+ {
+  "id": 91420,
+  "hazard": "Flood",
+  "lon": 85.30666837,
+  "lat": 27.70595402,
+  "date": "2026-07-11",
+  "title": "Flood at Kankeshwori Temple , Kathmandu Metropolitan City-24"
+ },
+ {
+  "id": 92641,
+  "hazard": "Flood",
+  "lon": 85.40030133,
+  "lat": 27.71306935,
+  "date": "2026-08-04",
+  "title": "Flood at Mulpani , Kageshwori Manahora Municipality-6"
+ },
+ {
+  "id": 93207,
+  "hazard": "Flood",
+  "lon": 85.35637534,
+  "lat": 27.73422332,
+  "date": "2026-08-15",
+  "title": "Flood at Kapan Sungava Tole , Budhanilkantha Municipality-10"
+ }
+]
