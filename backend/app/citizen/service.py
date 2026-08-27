@@ -30,6 +30,8 @@ Three things this module is careful about:
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -134,12 +136,69 @@ class PilotSurface:
     raw: dict[str, tuple[np.ndarray, float, str]]
 
 
-def get_pilot_surface() -> PilotSurface:
-    """The pilot-area risk surface, computed once and cached.
+# The pilot surface, held in memory for the life of the process.
+#
+# cached_or_compute (app/data/cache.py) is a DISK cache -- it unpickles
+# from disk on every call, with no in-memory layer. That is the right
+# design there, since it backs many different AOIs across many criterion
+# sources and memoising all of them would be unbounded. But Citizen Mode
+# has exactly ONE surface, every request needs it, and it is large:
+# measured at 215 MB, taking 6.7 s to unpickle cold and ~2.4 s warm.
+# Without this memo every single /api/citizen/assess request paid that
+# again, which is most of the ~1.8-5 s a request was taking.
+#
+# Bounded by construction: one entry, replaced only if the AOI or breaks
+# version change. The lock makes the first concurrent burst after start
+# compute once rather than N times -- FastAPI serves requests from a
+# threadpool, so simultaneous cold requests are the normal case, not an
+# edge case.
+_pilot_surface: "PilotSurface | None" = None
+_pilot_key: tuple | None = None
+_pilot_lock = threading.Lock()
 
-    Cached through the same cached_or_compute the rest of the data layer
-    uses, so a restart does not re-pay the ~60 s compute.
+
+def get_pilot_surface() -> PilotSurface:
+    """The pilot-area risk surface: in memory if already loaded, else
+    from the disk cache, else computed (~60 s).
+
+    Call warm_pilot_surface() at startup to keep that cost off the first
+    user request.
     """
+    global _pilot_surface, _pilot_key
+
+    key = (PILOT_BBOX, _BREAKS_VERSION, CITIZEN_CRITERIA)
+    if _pilot_surface is not None and _pilot_key == key:
+        return _pilot_surface
+
+    with _pilot_lock:
+        # Re-check inside the lock: another thread may have loaded it
+        # while this one waited.
+        if _pilot_surface is not None and _pilot_key == key:
+            return _pilot_surface
+        surface = _load_pilot_surface()
+        _pilot_surface, _pilot_key = surface, key
+        return surface
+
+
+def warm_pilot_surface() -> None:
+    """Load (or compute) the pilot surface ahead of any user request.
+
+    Intended for application startup, off the request path -- see
+    app/main.py's lifespan hook. Failures are logged and swallowed on
+    purpose: a warm-up that cannot reach its data must not stop the
+    service from starting, since every other endpoint is unaffected and
+    /api/citizen/assess will simply retry (and surface a real error) on
+    first use.
+    """
+    try:
+        t0 = time.monotonic()
+        get_pilot_surface()
+        logger.info("citizen: pilot surface warm in %.1fs", time.monotonic() - t0)
+    except Exception:
+        logger.exception("citizen: pilot surface warm-up failed; will retry on first request")
+
+
+def _load_pilot_surface() -> PilotSurface:
     aoi = AOI(bbox_4326=PILOT_BBOX)
 
     def _compute() -> PilotSurface:
