@@ -9,7 +9,10 @@ produced the AOI. Shelter-identification logic described in SPEC.md is
 still not implemented — that's a later phase.
 """
 
+import logging
 import os
+import threading
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,9 +23,44 @@ from app.citizen import router as citizen_router
 from app.districts import router as districts_router
 from app.overlay import router as overlay_router
 
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Warm Citizen Mode's pilot surface in the background at startup.
+
+    That surface is ~215 MB and is needed by every /api/citizen/assess
+    request. Loading it from the disk cache takes ~6.7 s cold, and
+    computing it from scratch (fresh deployment, or after the cache is
+    cleared) takes ~60 s. Without this, the first member of the public
+    to open Citizen Mode paid that cost.
+
+    Deliberately on a daemon thread rather than awaited here: the whole
+    point is that the container reports ready and every other endpoint
+    (AHP, basins, districts, overlay) serves immediately, while this
+    loads behind them. Awaiting it would trade one slow request for a
+    slow startup, which is worse -- it would also delay health checks.
+
+    warm_pilot_surface() swallows and logs its own failures, so a
+    missing or unreadable cache cannot prevent the app from starting;
+    the first real request retries and surfaces a proper error.
+    """
+    from app.citizen.service import warm_pilot_surface
+
+    if os.environ.get("CITIZEN_WARMUP", "1") != "0":
+        threading.Thread(target=warm_pilot_surface, name="citizen-warmup", daemon=True).start()
+        logger.info("citizen: pilot-surface warm-up started in background")
+    else:
+        logger.info("citizen: pilot-surface warm-up disabled (CITIZEN_WARMUP=0)")
+
+    yield
+
+
 app = FastAPI(
     title="Flood Risk Mapping API — Kathmandu Valley",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # The frontend (Vite dev server) runs in the browser on a different origin

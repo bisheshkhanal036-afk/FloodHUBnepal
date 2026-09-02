@@ -329,16 +329,14 @@ def compute_drainage_density_raster(
     cell); at 10m resolution the two are close enough not to matter for
     a risk-ranking use case. Confirmed.
     """
-    from scipy.ndimage import convolve
+    from .moving_window import circular_kernel, circular_window_sum, radius_in_pixels
 
     stream_mask = valid_mask & (flow_accumulation >= threshold_cells)
     stream_length_m = np.where(stream_mask, resolution_m, 0.0)
 
-    radius_px = max(1, round(window_radius_m / resolution_m))
-    yy, xx = np.ogrid[-radius_px : radius_px + 1, -radius_px : radius_px + 1]
-    kernel = ((xx**2 + yy**2) <= radius_px**2).astype(np.float64)
+    kernel = circular_kernel(radius_in_pixels(window_radius_m, resolution_m))
 
-    window_stream_length_m = convolve(stream_length_m, kernel, mode="constant", cval=0.0)
+    window_stream_length_m = circular_window_sum(stream_length_m, kernel)
     window_area_km2 = kernel.sum() * (resolution_m**2) / 1_000_000.0
 
     density_km_per_km2 = (window_stream_length_m / 1000.0) / window_area_km2

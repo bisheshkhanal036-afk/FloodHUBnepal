@@ -30,6 +30,8 @@ Three things this module is careful about:
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -40,6 +42,13 @@ from app.data.cache import cached_or_compute
 from app.overlay.compute import RISK_SURFACE_NODATA, CriterionRaster
 from app.overlay.service import OverlayCriterionRequest, compute_overlay
 
+from .context import (
+    NearestRiver,
+    FloodRecord,
+    nearby_flood_history,
+    nearest_named_river,
+    percentile_of,
+)
 from .profile import (
     CITIZEN_CRITERIA,
     N_CLASSES,
@@ -59,19 +68,35 @@ PILOT_NAME_NE = "काठमाडौं उपत्यका"
 # Quantile breaks are computed from the pilot surface's own data, which is
 # what the validation measured (+0.036 AUC over the previously hardcoded
 # breaks). Bumped if the break derivation itself changes.
-_BREAKS_VERSION = "v1"
+_BREAKS_VERSION = "v2"
+
+# Cells sampled per layer for percentile lookups. 200k gives percentile
+# resolution far finer than the 1% we report, at trivial memory cost.
+_PERCENTILE_SAMPLE = 200_000
 
 
 @dataclass
 class Reason:
     """One plain-language explanation of the score, with the number that
     produced it so the user can check it themselves.
+
+    `percentile` says where this value sits among all valid cells in the
+    pilot area (0-100). "Flatter than 92% of the valley" is far more
+    actionable than "2.3 degrees", and it is what turns a reason from an
+    assertion into a comparison the reader can reason about.
+    `risk_class` is the 1-5 class this criterion contributed, and
+    `weight` how much that class counted -- together they let the UI
+    show the actual arithmetic behind the score.
     """
 
     code: str
     value: float
     unit: str
     severity: str  # "raises" | "lowers"
+    criterion_id: str = ""
+    percentile: int = -1
+    risk_class: int = 0
+    weight: float = 0.0
 
 
 @dataclass
@@ -84,6 +109,11 @@ class Assessment:
     risk_score: float | None = None
     reasons: list[Reason] = field(default_factory=list)
     cache_key: str | None = None
+    # Supporting evidence (context.py) -- what makes the answer
+    # checkable rather than merely stated.
+    risk_percentile: int = -1
+    flood_history: list[FloodRecord] = field(default_factory=list)
+    nearest_river: NearestRiver | None = None
 
 
 def _quantile_rules(values: np.ndarray, criterion_id: str) -> list[dict]:
@@ -132,14 +162,77 @@ class PilotSurface:
     cache_key: str
     criterion_rasters: list[CriterionRaster]
     raw: dict[str, tuple[np.ndarray, float, str]]
+    # Sorted valid values per layer, for percentile lookups. Built once
+    # with the surface and subsampled, so "where does this point sit
+    # relative to the whole valley" costs a binary search per request
+    # rather than sorting millions of cells.
+    risk_sorted: np.ndarray = field(default_factory=lambda: np.empty(0))
+    raw_sorted: dict[str, np.ndarray] = field(default_factory=dict)
+
+
+# The pilot surface, held in memory for the life of the process.
+#
+# cached_or_compute (app/data/cache.py) is a DISK cache -- it unpickles
+# from disk on every call, with no in-memory layer. That is the right
+# design there, since it backs many different AOIs across many criterion
+# sources and memoising all of them would be unbounded. But Citizen Mode
+# has exactly ONE surface, every request needs it, and it is large:
+# measured at 215 MB, taking 6.7 s to unpickle cold and ~2.4 s warm.
+# Without this memo every single /api/citizen/assess request paid that
+# again, which is most of the ~1.8-5 s a request was taking.
+#
+# Bounded by construction: one entry, replaced only if the AOI or breaks
+# version change. The lock makes the first concurrent burst after start
+# compute once rather than N times -- FastAPI serves requests from a
+# threadpool, so simultaneous cold requests are the normal case, not an
+# edge case.
+_pilot_surface: "PilotSurface | None" = None
+_pilot_key: tuple | None = None
+_pilot_lock = threading.Lock()
 
 
 def get_pilot_surface() -> PilotSurface:
-    """The pilot-area risk surface, computed once and cached.
+    """The pilot-area risk surface: in memory if already loaded, else
+    from the disk cache, else computed (~60 s).
 
-    Cached through the same cached_or_compute the rest of the data layer
-    uses, so a restart does not re-pay the ~60 s compute.
+    Call warm_pilot_surface() at startup to keep that cost off the first
+    user request.
     """
+    global _pilot_surface, _pilot_key
+
+    key = (PILOT_BBOX, _BREAKS_VERSION, CITIZEN_CRITERIA)
+    if _pilot_surface is not None and _pilot_key == key:
+        return _pilot_surface
+
+    with _pilot_lock:
+        # Re-check inside the lock: another thread may have loaded it
+        # while this one waited.
+        if _pilot_surface is not None and _pilot_key == key:
+            return _pilot_surface
+        surface = _load_pilot_surface()
+        _pilot_surface, _pilot_key = surface, key
+        return surface
+
+
+def warm_pilot_surface() -> None:
+    """Load (or compute) the pilot surface ahead of any user request.
+
+    Intended for application startup, off the request path -- see
+    app/main.py's lifespan hook. Failures are logged and swallowed on
+    purpose: a warm-up that cannot reach its data must not stop the
+    service from starting, since every other endpoint is unaffected and
+    /api/citizen/assess will simply retry (and surface a real error) on
+    first use.
+    """
+    try:
+        t0 = time.monotonic()
+        get_pilot_surface()
+        logger.info("citizen: pilot surface warm in %.1fs", time.monotonic() - t0)
+    except Exception:
+        logger.exception("citizen: pilot surface warm-up failed; will retry on first request")
+
+
+def _load_pilot_surface() -> PilotSurface:
     aoi = AOI(bbox_4326=PILOT_BBOX)
 
     def _compute() -> PilotSurface:
@@ -158,12 +251,29 @@ def get_pilot_surface() -> PilotSurface:
             )
 
         result = compute_overlay(aoi, criteria, normalized_weights(), complete=True)
+
+        # Subsample before sorting: percentiles to the nearest 1% do not
+        # need every one of several million cells, and this keeps both
+        # the sort and the pickled surface small.
+        rng = np.random.default_rng(0)
+
+        def _sample(arr: np.ndarray, nodata: float | None) -> np.ndarray:
+            v = arr[np.isfinite(arr)]
+            if nodata is not None:
+                v = v[v != nodata]
+            if v.size > _PERCENTILE_SAMPLE:
+                v = rng.choice(v, _PERCENTILE_SAMPLE, replace=False)
+            return np.sort(v)
+
+        risk_arr = result.risk_surface.risk_surface
         return PilotSurface(
-            risk=result.risk_surface.risk_surface,
+            risk=risk_arr,
             grid=result.risk_surface.grid,
             cache_key=result.cache_key,
             criterion_rasters=result.criterion_rasters,
             raw=raw,
+            risk_sorted=_sample(risk_arr, RISK_SURFACE_NODATA),
+            raw_sorted={cid: _sample(a, nd) for cid, (a, nd, _u) in raw.items()},
         )
 
     return cached_or_compute("citizen_pilot", aoi, _compute, version=_BREAKS_VERSION)
@@ -239,10 +349,23 @@ def _build_reasons(surface: PilotSurface, r: int, c: int) -> list[Reason]:
         # Distance from the neutral middle class, weighted by how much
         # this criterion counts at all.
         influence = weights.get(cid, 0.0) * abs(cls - 3)
-        scored.append((influence, Reason(code=code, value=round(value, 1), unit=unit, severity=severity)))
+        scored.append((influence, Reason(
+            code=code,
+            value=round(value, 1),
+            unit=unit,
+            severity=severity,
+            criterion_id=cid,
+            percentile=percentile_of(value, surface.raw_sorted.get(cid, np.empty(0))),
+            risk_class=cls,
+            weight=round(weights.get(cid, 0.0), 4),
+        )))
 
     scored.sort(key=lambda t: (-t[0], 0 if t[1].severity == "raises" else 1))
-    return [reason for _, reason in scored[:3]]
+    # All contributing criteria, not a top-3 slice: the point of this
+    # rewrite is that a reader can see the whole basis of the score,
+    # including the factors that pulled it DOWN. The UI decides how
+    # many to show before 'more detail'.
+    return [reason for _, reason in scored]
 
 
 def assess(lon: float, lat: float) -> Assessment:
@@ -271,4 +394,7 @@ def assess(lon: float, lat: float) -> Assessment:
         risk_score=round(score, 4),
         reasons=_build_reasons(surface, r, c),
         cache_key=surface.cache_key,
+        risk_percentile=percentile_of(score, surface.risk_sorted),
+        flood_history=nearby_flood_history(lon, lat),
+        nearest_river=nearest_named_river(lon, lat),
     )
