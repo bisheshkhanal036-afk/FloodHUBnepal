@@ -1,9 +1,9 @@
 # SPEC — Flood Risk Mapping & Shelter Identification, Kathmandu Valley
 
 Status: **Backend (AHP engine, geospatial data layer with 14 registered
-criterion sources, overlay engine, vulnerability-classification/reporting)
-and a working, redesigned frontend map UI implemented; shelter
-identification still pending** — see §5. This document defines
+criterion sources, overlay engine, vulnerability-classification/reporting,
+shelter-site identification) and a working, redesigned frontend map UI
+implemented** — see §5. This document defines
 the shared data contracts and project-wide conventions that every phase
 (backend, frontend, analysis pipeline) must follow.
 
@@ -642,6 +642,66 @@ Documented as a known limitation rather than mitigated (e.g. via a
 buffered read or a coarser fallback), matching the same "document
 first, decide on a fix only if it matters in practice" approach already
 taken for `hand`'s gaps. Flagged as a decision to confirm.
+
+### 3.7 Shelter-site identification — `backend/app/overlay/shelters.py`
+
+`POST /api/overlay/shelters` ranks real OSM building footprints inside
+an AOI as candidate emergency-shelter **sites**, given the same
+`aoi`/`criteria`/`final_weights`/`complete` inputs `POST /compute`
+already takes (plus the optional knobs below) — reusing
+`compute_overlay`'s own risk-surface cache exactly the way
+`POST /report` already does, so a caller that already computed this
+combination pays no extra risk-surface cost.
+
+**Scope, explicit.** This identifies suitable sites from the AOI's
+*existing building stock*, never existing tagged emergency shelters or
+shelter-type buildings (schools, hospitals, community halls) specifically
+— this project's buildings dataset (§3.6's `app/data/osm.py`) is
+geometry-only, with no amenity/`building=school|hospital` tag preserved
+through the FlatGeobuf extract pipeline. A real building's own footprint
+area (computed on the UTM grid, §2.1's CRS convention) is used as a size
+proxy instead: any building at or above `min_footprint_area_m2` (default
+`config.SHELTER_MIN_FOOTPRINT_AREA_M2`, 250 m² — a structurally
+reasonable, not-literature-calibrated placeholder, in the same
+documented-placeholder spirit as `DRAINAGE_DENSITY_THRESHOLD_CELLS`) is
+treated as a candidate large/institutional-scale structure. This is a
+site-suitability ranking from what's really on the ground, not a
+classification of what a building actually *is*.
+
+**Scoring.** Every candidate is scored on three factors:
+
+| Factor | Signal | Direction |
+|---|---|---|
+| Safety | The building's own hazard class (1-5), majority-overlap sampled — the exact same rule/implementation `building_classification.py`'s report-facing `classify_buildings` already uses, reused rather than reimplemented so the two features can never disagree about a building's hazard class. | Any candidate in `HIGH_RISK_CLASSES` (4-5) is **excluded outright**, never merely down-ranked — a site itself in the high/very-high hazard zone cannot be a safe shelter regardless of how it scores otherwise. |
+| Accessibility | Distance to the nearest road, `distance_raster.py`'s existing `dist_to_road` machinery. | Closer is better. |
+| Service value | Local population density at the site, `population.py`. | Higher is better. |
+
+Each factor is **min-max normalized across the AOI's own surviving
+candidates** — deliberately *not* `RiskSurface.value_range`'s fixed
+`[1, 5]`-derived `[0, 1]` scale (§3.4). That fixed-range convention
+exists to keep one *stored, cross-AOI-comparable hazard score* meaning
+the same thing everywhere; a shelter ranking is inherently a
+within-AOI comparison ("which of THESE buildings, in THIS area, is the
+better choice") with no cross-AOI comparability claim to protect, so
+ordinary min-max normalization is the right tool here, not a violation
+of that convention. A candidate missing a signal at its own location
+(e.g. a population coverage gap) scores at the midpoint (0.5) on that
+factor — neither penalized nor favored for a data gap. The three
+normalized scores combine via a transparent weighted mean
+(`safety_weight`/`accessibility_weight`/`service_weight`, equal thirds
+by default, all caller-overridable) into one `suitability_score` (0-1,
+AOI-local only), and candidates are ranked descending, truncated to
+`top_n` (default `config.SHELTER_DEFAULT_TOP_N`, 20).
+
+**Response.** Each returned candidate carries its footprint geometry
+(the buildings source's own original CRS, EPSG:4326 in production),
+footprint area, hazard class/label, distance to road (nullable — null
+only if the AOI has zero road features at all), population density
+(nullable), `suitability_score`, and `rank`. The response also reports
+`total_buildings_in_aoi` and three exclusion counts
+(`excluded_too_small`/`excluded_high_hazard`/`excluded_no_data`) so a
+caller can tell "zero candidates" apart from "every building was
+excluded, and here's why."
 
 ## 4. Local development
 
@@ -2937,14 +2997,297 @@ them.
     `<span class="basemap-control__label">` showing "Fluvial
     (Defended), 1-in-100y" directly, not just in the hover title.
   - Frontend production build clean; no backend changes this entry.
-- Not yet implemented: AOI persistence, and shelter identification. The
-  GeoTIFF file route is a simple
-  direct-read endpoint, not a general static-asset server or CDN — fine
-  for local dev and this phase's needs, but worth revisiting if the
-  cache grows large or needs to be served from object storage in a real
-  deployment. The `drainage_density`/`hand` stream-extraction threshold
-  and moving-window radius are structurally-reasonable placeholders, not
-  literature-calibrated values (§3.6) — pending real calibration against
-  a known Kathmandu Valley stream network. The frontend's bundle
-  (~1.1MB main chunk, mostly MapLibre GL + geotiff.js) isn't code-split
-  — fine for local dev, worth revisiting before any real deployment.
+- **Shelter identification** (`POST /api/overlay/shelters` + sidebar
+  step 8 "Shelters") — the item SPEC.md's own status line had named as
+  pending since the first version of this document. Ranks real OSM
+  building footprints in the AOI as candidate emergency-shelter SITES
+  by multi-criteria suitability: safety (the building's own hazard
+  class, majority-overlap sampled — building_classification.py's exact
+  rule, reused rather than reimplemented, so this feature and the
+  vulnerability report can never disagree about a building's hazard
+  class), accessibility (distance to the nearest road,
+  distance_raster.py's existing dist_to_road machinery), and service
+  value (local population density at the site, population.py). Any
+  candidate sitting in a HIGH_RISK_CLASSES (4/5) hazard zone is
+  excluded outright, never merely down-ranked — a site that is itself
+  in the high/very-high hazard zone cannot be a safe shelter regardless
+  of how it scores on the other two factors.
+  - **Scope, explicit**: this identifies suitable SITES from the AOI's
+    existing building stock, not existing tagged emergency shelters or
+    shelter-TYPE buildings specifically (schools, hospitals, ...). This
+    project's buildings dataset (`app/data/osm.py`'s `get_osm_features`)
+    is geometry-only — no amenity/`building=school|hospital` tag
+    survives through the FlatGeobuf extract pipeline this project's OSM
+    tier already uses (§3.6's own osm.py write-up) — so a shelter-TYPE
+    classification isn't derivable from data this project already has
+    without a new data-engineering pass over the raw `.pbf`/shapefile
+    export, not attempted here. Instead, a real building's own footprint
+    area (computed on the UTM grid, never raw degrees — §2.1's CRS
+    convention applies here too) must clear `config.
+    SHELTER_MIN_FOOTPRINT_AREA_M2` (default 250 m², a structurally-
+    reasonable, not-literature-calibrated placeholder, same documented-
+    placeholder spirit as `DRAINAGE_DENSITY_THRESHOLD_CELLS`, per-
+    request overridable) to be considered a candidate — standard
+    practice for GIS shelter-siting when building-type attribution isn't
+    available, but a site-suitability ranking, not a shelter-type
+    classification, and documented as such so it's never mistaken for
+    "these ARE existing shelters."
+  - **Normalization, deliberately NOT the fixed-range [1,5] scale
+    RiskSurface.value_range uses (§3.4)**: each of the three factors is
+    min-max normalized across the AOI's own surviving candidates (a
+    missing signal at one candidate's own location — e.g. a population
+    coverage gap — scores at the midpoint 0.5, neither penalized nor
+    favored for a data gap) and combined via a transparent weighted mean
+    (equal thirds by default; `safety_weight`/`accessibility_weight`/
+    `service_weight` are caller-overridable). This is a within-AOI
+    ranking ("which of THESE buildings, in THIS area, is the better
+    choice"), not a stored, cross-AOI-comparable score, so ordinary
+    min-max normalization is the right tool — not a violation of
+    RiskSurface's own fixed-range convention, which exists specifically
+    to protect a DIFFERENT, cross-AOI-comparable value.
+  - Reuses `compute_overlay`'s own risk-surface cache untouched, same
+    shape `report.py`'s `compute_vulnerability_report` already
+    established: submitting the same aoi/criteria/final_weights/
+    complete already sent to `POST /compute` hits that cache rather than
+    recomputing.
+  - A real bug caught by this feature's own test suite before it
+    shipped: `_min_max_normalize`'s "every present value is identical"
+    branch originally scored every candidate at 1.0 (copy-pasted from
+    the wrong branch) instead of 0.5 — silently telling every equally-
+    scored candidate on that factor "you're the best," rather than "this
+    factor has no discriminating signal here." Caught by
+    `test_min_max_normalize_all_equal_scores_at_midpoint`, fixed before
+    the module was otherwise touched again.
+  - 13 new backend tests (`test_shelters.py`: exclusion of too-small and
+    high-hazard buildings, ranking sensitivity to accessibility/
+    population, the zero-roads-in-AOI None-not-excluded case, `top_n`
+    truncation, and 5 direct `_min_max_normalize` unit tests including
+    the bug above; `test_shelters_router.py`: the full endpoint end to
+    end via FastAPI's TestClient, `min_footprint_area_m2`/`top_n`
+    forwarding, and the shared `complete=False` rejection). Full suite
+    (491 tests) green, zero regressions to the existing 478.
+  - Frontend: `SheltersPanel.jsx` (sidebar step 8, gated on a loaded
+    `state.overlay` exactly like `ReportPanel`/`ValidationPanel`,
+    reusing the same `criteriaUsed`/`weightsUsed` snapshot so a shelter
+    ranking can never describe a different result than what's on
+    screen) renders the ranked list directly in the sidebar — compact
+    enough (≤200 candidates) that it doesn't need `ReportOverlay`'s own
+    map-covering-infographic treatment. `MapView.jsx` gained a
+    `shelter-candidates` layer (a distinct amber fill, `#f5b301`,
+    deliberately never the green-yellow-red hazard ramp any other layer
+    here uses, so a candidate reads as its own category of thing, not
+    one more hazard swatch) with rank-number labels and a click-to-
+    inspect popup, toggleable independently of the classified-buildings
+    layer the vulnerability report already has. New `shelters`/
+    `sheltersLayerVisible` state (`AppStateContext.jsx`), same reset-on-
+    `OVERLAY_LOADING` / auto-show-on-load shape `report`/
+    `reportOverlayVisible` already established. Verified live end to
+    end against the real running app (Docker, not a mock): a clean
+    production `vite build` (258 modules, zero errors), and a real
+    `POST /api/overlay/shelters` request against the live backend
+    correctly rejected an incomplete weight set with the same
+    `overlay_validation_error` shape `POST /compute` already returns.
+- Frontend: **a quality-of-life pass** — 7 items from a larger QOL
+  brainstorm the user asked for and then selected from, all shipped in
+  one pass; an 8th item from that same brainstorm (splitting the
+  sidebar's steps 5-8 into their own page — "landing page, then
+  configuration page, then result page" — was explicitly deferred at
+  the user's own request, "I'll work on it later," and is NOT done —
+  see the note at the end of this entry).
+  - **AOI persistence** (`state/AppStateContext.jsx`) — the single most
+    annoying loss-of-work moment this app had: a page refresh silently
+    threw away a drawn AOI, every checked criterion, and any AHP/manual
+    weighting work, with zero warning. New `FLOW_STORAGE_KEY`
+    (`'flood-risk-flow-v1'`, versioned, same try/catch-guarded
+    `localStorage` shape `THEME_STORAGE_KEY` already established) persists
+    exactly the "core flow" INPUT fields — `aoiMode`, `aoi`, `basinLevel`,
+    `criteriaEnabled`, `streamThresholdCells`, `weightMode`,
+    `ahpMatrices`, `manualWeights`, `classification` — on every relevant
+    change, restored via `applyPersistedFlowState` in `initialState()`.
+    Deliberately does **not** persist any fetched/computed RESULT
+    (`overlay`, `report`, `validation`, `shelters`, `meteorComparison`,
+    …) — those stay cheap to recompute from the restored inputs, and
+    persisting a stale result risked it being shown as if still current.
+    `applyPersistedFlowState` validates every field against the CURRENT
+    `config/criteria.js` `CRITERIA` list before trusting it (a persisted
+    blob from before a criterion was added/removed can't resurrect a
+    dangling id or corrupt the restored shape) — `criteriaEnabled`/
+    `classification`/`manualWeights` are filtered key-by-key, everything
+    else is validated by exact expected type/enum before being applied.
+    A real gap closed alongside this: `MapView.jsx`'s `DRAW_PREVIEW_SOURCE`
+    (the layer that visually renders a drawn rectangle's outline) was
+    only ever populated by the live mouse-drag interaction itself, never
+    re-derived from `state.aoi` — so a restored draw-mode AOI would
+    correctly `fitBounds` to the right area but show no visible boundary
+    at all until redrawn. Fixed with a new mount-only effect that
+    populates that same source from `state.aoi.bbox` via the existing
+    `bboxToPolygon` helper when `state.aoi.source === 'draw'` — basin/
+    district selections didn't need the equivalent, since their own
+    selected-highlight layers are already keyed live off
+    `state.aoi.basinId`/`districtPcode`, not a one-shot interaction
+    result.
+  - **Code-split the frontend bundle** (`App.jsx`) — the single
+    ~1.26MB main chunk this SPEC previously flagged (mostly MapLibre GL
+    + geotiff.js) was imported unconditionally at the top of `App.jsx`,
+    so even a landing-page-only visit who never launches the tool paid
+    for both libraries up front. `MapView`/`Sidebar`/`CitizenView`/
+    `ReportOverlay`/`DataGapNotice`/`MeteorFloodLegend` are now
+    `React.lazy()`-loaded behind a `<Suspense>` boundary (a plain
+    themed "Loading…" fallback, `ViewLoadingFallback`), only fetched
+    once a view that actually needs them is reached; `LandingPage`/
+    `ModeSelect` stay eager, since they're the real first paint and are
+    cheap on their own. Verified via a real production `vite build`:
+    the main entry chunk dropped from 1,260KB (gzip 366KB) to 187KB
+    (gzip 60KB), with `maplibre-gl` (802KB), `MapView`, `Sidebar`,
+    `CitizenView`, and `rasterPreview` (geotiff.js) now separate chunks
+    fetched on demand.
+  - **Debounce/guard rapid re-computes** — `ComputePanel.jsx`'s own
+    `handleCompute` already guarded itself (`if (disabled) return`) on
+    top of the button's own `disabled` attribute; the same guard
+    (`if (status === 'loading') return`) was missing from every other
+    async trigger handler in the app (`ReportPanel`, `ValidationPanel`'s
+    `handleValidate`, `MeteorComparisonPanel`, `SheltersPanel`) — a fast
+    double-click/double-Enter before React's own disabled-attribute
+    re-render lands could otherwise fire the same request twice. Closed
+    on all four.
+  - **Friendlier error messages + retry affordance** — new
+    `lib/friendlyError.js` (`friendlyErrorMessage(error, fallback)`)
+    translates an `ApiError`'s own `.code` (the backend's
+    `HTTPException(detail={"error": ...})` string — `data_source_
+    unavailable`, `overlay_validation_error`, `ahp_consistency_check_
+    failed`, etc., one entry per code currently raised anywhere in
+    `backend/app/*/router.py`) into a plain-language headline, while
+    still surfacing the real backend message underneath (collapsed
+    behind a `<details>`, never hidden — this project's own "document
+    the real cause, never hide it" convention, applied to end-user-
+    facing text too). An unmapped code or a plain network failure
+    (`status === 0`, `api/client.js`'s own no-response case) both
+    degrade to a sensible generic headline rather than crashing or
+    showing nothing. New shared `components/ErrorNotice.jsx` (headline +
+    collapsed detail + an optional one-click Retry button) replaces the
+    bare `<p className="field-error">{error?.message || '...'}</p>`
+    pattern repeated across the app — wired into `ComputePanel`,
+    `ReportPanel`, `ValidationPanel` (both its events-list fetch and its
+    validate action), `MeteorComparisonPanel`, `SheltersPanel`,
+    `AOIPanel` (both its basins and districts fetches),
+    `ClassificationEditor`'s per-criterion breaks fetch, and
+    `CriterionSnapshot`'s raster-thumbnail fetch — 10 sites total, each
+    now offering a real one-click retry of the exact same request
+    rather than requiring a full re-navigation through the sidebar.
+    `AHPPanel` is the one deliberate exception: its computation is
+    reactive (`useAhpAutoCompute`, debounced, re-fires on any matrix
+    edit), not a manual button trigger, so a Retry button has no clean
+    action to bind to — it gets the friendlier headline only, with a
+    comment explaining why no retry is offered there.
+  - **First-visit tour** — new `components/FirstVisitTour.jsx`, a
+    4-step walkthrough (Area of interest; Criteria & weighting; Compute;
+    Report/Validate/Compare/Shelters) shown automatically the first time
+    a visitor reaches the researcher tool view, gated on a third
+    `localStorage` flag (`'flood-risk-tour-seen'`, same shape as
+    `THEME_STORAGE_KEY`/`FLOW_STORAGE_KEY` above) so it never reappears
+    for a returning visitor. Reuses `AboutModal`'s own `.modal-overlay`/
+    `.modal` shell (a new narrower `.tour-modal` variant) rather than a
+    second modal treatment invented for this one case; Escape/Skip/click-
+    outside all dismiss and mark it seen, same as `AboutModal`'s own
+    Escape handling.
+  - **Dark-mode popup fix** (`index.css`) — a real, reported bug, not
+    just unstyled chrome: MapLibre's own click-to-inspect popups (the
+    classified-buildings and shelter-candidate popups, `MapView.jsx`)
+    render via `maplibre-gl.css`'s hardcoded-WHITE popup-content box,
+    but the popups' own inline HTML never set an explicit text color —
+    it inherited this app's dark-theme body text color (near-white),
+    producing white text on a white box, unreadable. Fixed with an
+    explicit `.maplibregl-popup-content`/`.maplibregl-popup-tip`/
+    `.maplibregl-popup-close-button` override block (this app's own
+    `--color-panel`/`--color-text`/`--color-border` tokens, `!important`
+    to override the library's own higher-specificity defaults — the
+    exact same pattern this file's existing `.maplibregl-ctrl-*`
+    overrides already use for the zoom/basemap/attribution chrome),
+    legible in both themes regardless of what color the surrounding
+    page happens to be using.
+  - **Deferred, at the user's explicit request**: splitting the sidebar
+    into "landing → configuration (steps 1-4) → results (steps 5-8)"
+    across separate pages — a real architectural change (a new `view`
+    state, the sidebar split in two, moving steps 5-8 and their own map
+    layers to a second page, a "back to configure" path) big enough that
+    the user asked to hold off and work on it themselves later, rather
+    than have it land inside this same QOL pass. Not started; the
+    current single-page sidebar (all 8 steps in one step-rail) is
+    unchanged.
+  - Verified live via two separate Playwright-in-Docker passes against
+    the real running app (both hit the same environment limitation —
+    this container's headless Chromium has no GPU/software rasterizer,
+    so MapLibre's WebGL canvas never composites to a screenshot; each
+    pass adapted around that rather than skipping verification
+    entirely, noted per-item below):
+    1. The lazy-loading split: landing → mode-select → tool view →
+       citizen view, each transition confirmed loading correctly (a
+       brief real "Loading…" Suspense flash, then the real view, no
+       chunk-load 404s, no stuck fallback) with zero console errors.
+       The one console error actually observed (`Failed to initialize
+       WebGL`) was confirmed to be the sandbox's own GPU-less headless
+       Chromium, not this diff — same failure reproduces regardless of
+       the lazy-loading change.
+    2. The AOI-persistence/tour/error-notice/popup-fix batch: the
+       first-visit tour appeared automatically on first reaching the
+       tool view and did not reappear after a reload (`localStorage`'s
+       own `flood-risk-tour-seen` flag, confirmed set). AOI persistence
+       itself was verified by setting a realistic AOI + 2 checked
+       criteria directly into the real `flood-risk-flow-v1`
+       `localStorage` key (the exact shape `AppStateContext.jsx` reads/
+       writes — live mouse-drag drawing wasn't reliably exercisable in
+       this same GPU-less sandbox) and confirming a reload correctly
+       restored "AOI set (drawn area)" with the exact bbox, both
+       criteria still checked, and weighting still complete. A real
+       compute (Elevation only) and a real report generation both
+       completed successfully (62,029 buildings classified) with zero
+       console errors throughout. The popup dark-mode fix itself
+       couldn't be screenshotted for the same WebGL/canvas reason
+       (clicking a building feature on a canvas that never visually
+       renders isn't reliable), so was confirmed by direct inspection
+       of `index.css`'s own popup override block and this app's actual
+       dark-theme token values (`--color-panel`/`--color-text`) instead
+       — the fix is genuinely dark-background/light-text, not
+       white-on-white, confirmed against the real values rather than
+       assumed correct from the diff alone.
+    Frontend production build clean throughout (261 modules, zero
+    errors); no backend changes this entry.
+- **Shelter-candidate map highlight**, at explicit follow-up request
+  ("make it so that the shelters are highlighted") — a real building's
+  own small footprint (`SHELTERS_FILL_LAYER`, §above) can be genuinely
+  hard to spot at anything but a close zoom, especially against a busy
+  basemap. `MapView.jsx` gained a new animated highlight layer
+  (`SHELTERS_HIGHLIGHT_LAYER`, a `circle` layer at each candidate's
+  approximate centroid — new `lib/geo.js` export `polygonCentroid`, a
+  cheap plain-average-of-ring-vertices centroid, good enough for
+  marker placement though not a true area-weighted one) rendered
+  *beneath* the footprint fill/rank-label layers so the pulse reads as
+  radiating out from behind each building, not painted over it. Pulses
+  via `requestAnimationFrame` (`startShelterHighlightPulse`, ticking
+  `circle-radius`/`circle-opacity` on a smooth sine wave, 1.8s period)
+  — MapLibre's own canvas-rendered paint properties have no CSS-
+  keyframe equivalent, so this is one of only two places in this file
+  (alongside the landing page's own `useHeroScrollScale.js`) that ticks
+  a paint property directly rather than relying on a CSS transition;
+  respects `prefers-reduced-motion` the same way that hook does (a
+  fixed, still-visible radius/opacity, never a suppressed one). The
+  animation loop is started once per shelters result (inside the same
+  effect that (re)creates the layer) and always cancelled — both on a
+  new result replacing it and on unmount — via a ref holding the
+  current `requestAnimationFrame` handle, so it can never keep ticking
+  a paint property on a layer that no longer exists. The highlight
+  layer is also click/hover-bound identically to the footprint fill
+  layer (same popup content either way), so the whole visibly-
+  highlighted area is clickable, not only a real building's own small
+  footprint. Frontend production build clean; no backend changes.
+- Not yet implemented: shelter-TYPE classification (distinct from the
+  site-suitability ranking §3.7 already documents), and the deferred
+  landing/configuration/results page split noted above. The GeoTIFF
+  file route is a simple direct-read endpoint, not a general static-
+  asset server or CDN — fine for local dev and this phase's needs, but
+  worth revisiting if the cache grows large or needs to be served from
+  object storage in a real deployment. The `drainage_density`/`hand`
+  stream-extraction threshold and moving-window radius are
+  structurally-reasonable placeholders, not literature-calibrated
+  values (§3.6) — pending real calibration against a known Kathmandu
+  Valley stream network.

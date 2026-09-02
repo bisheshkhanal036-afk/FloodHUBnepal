@@ -12,24 +12,35 @@ import { listBasins, listDistricts } from '../api/client'
 import { AREA_CAP_KM2 } from '../lib/geo'
 import { SUPPORT_STATUS_COLORS, SUPPORT_STATUS_LABELS, DISTRICT_FILL_COLOR } from '../lib/colorRamp'
 import { useAppState } from '../state/AppStateContext'
+import ErrorNotice from './ErrorNotice'
 
 export default function AOIPanel() {
   const { state, dispatch } = useAppState()
 
-  useEffect(() => {
-    if (state.aoiMode !== 'basin' || state.basins.status !== 'idle') return
+  function loadBasins() {
     dispatch({ type: 'BASINS_LOADING' })
     listBasins(state.basinLevel)
       .then((data) => dispatch({ type: 'BASINS_LOADED', data }))
       .catch((error) => dispatch({ type: 'BASINS_ERROR', error }))
-  }, [state.aoiMode, state.basinLevel, state.basins.status, dispatch])
+  }
 
-  useEffect(() => {
-    if (state.aoiMode !== 'district' || state.districts.status !== 'idle') return
+  function loadDistricts() {
     dispatch({ type: 'DISTRICTS_LOADING' })
     listDistricts()
       .then((data) => dispatch({ type: 'DISTRICTS_LOADED', data }))
       .catch((error) => dispatch({ type: 'DISTRICTS_ERROR', error }))
+  }
+
+  useEffect(() => {
+    if (state.aoiMode !== 'basin' || state.basins.status !== 'idle') return
+    loadBasins()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadBasins reads state.basinLevel fresh each call; the retry button below calls it directly instead of going through this effect
+  }, [state.aoiMode, state.basinLevel, state.basins.status, dispatch])
+
+  useEffect(() => {
+    if (state.aoiMode !== 'district' || state.districts.status !== 'idle') return
+    loadDistricts()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the retry button below calls loadDistricts directly instead of going through this effect
   }, [state.aoiMode, state.districts.status, dispatch])
 
   return (
@@ -81,7 +92,7 @@ export default function AOIPanel() {
           </div>
           {state.basins.status === 'loading' && <p className="panel__hint">Loading basins…</p>}
           {state.basins.status === 'error' && (
-            <p className="field-error">{state.basins.error?.message || 'Could not load basins.'}</p>
+            <ErrorNotice error={state.basins.error} fallback="Could not load basins." onRetry={loadBasins} />
           )}
           {state.basins.status === 'loaded' && (
             <>
@@ -102,7 +113,7 @@ export default function AOIPanel() {
         <>
           {state.districts.status === 'loading' && <p className="panel__hint">Loading districts…</p>}
           {state.districts.status === 'error' && (
-            <p className="field-error">{state.districts.error?.message || 'Could not load districts.'}</p>
+            <ErrorNotice error={state.districts.error} fallback="Could not load districts." onRetry={loadDistricts} />
           )}
           {state.districts.status === 'loaded' && (
             <>

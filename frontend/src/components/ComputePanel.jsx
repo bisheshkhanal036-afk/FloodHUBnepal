@@ -14,6 +14,7 @@ import { computeOverlayStream } from '../api/client'
 import { CRITERIA_BY_ID, STREAM_THRESHOLD_SOURCE_IDS } from '../config/criteria'
 import { rulesForClassification } from '../lib/classification'
 import { useAppState, useFinalWeights, useSelectedCriteriaIds } from '../state/AppStateContext'
+import ErrorNotice from './ErrorNotice'
 
 // dist_to_road/dist_to_river both read from a local OSM .pbf extract
 // when one is present (app/data/osm.py) -- parsing a real, full Nepal
@@ -106,7 +107,7 @@ export default function ComputePanel() {
         </p>
       )}
       {state.overlay.status === 'error' && (
-        <p className="field-error">{state.overlay.error?.message || 'Computation failed.'}</p>
+        <ErrorNotice error={state.overlay.error} fallback="Computation failed." onRetry={handleCompute} />
       )}
       {state.overlay.progressLog.length > 0 && (
         <ul className="compute-progress" ref={progressLogRef}>

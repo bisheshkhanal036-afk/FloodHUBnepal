@@ -427,4 +427,147 @@ VALIDATION_EVENTS = {
             "https://bipadportal.gov.np/"
         ),
     },
+    # nepal_2024_west_eosrs: EOS Data Analytics (EOS-RS) Sentinel-1 Flood
+    # Proxy Map, acquired 12 July 2024, v0.5 -- covers the July 2024
+    # monsoon flooding in far-western/Karnali Nepal, NOT the Terai
+    # (bounds verified directly: 79.45-82.59E, 27.60-30.94N -- Karnali/
+    # Sudurpaschim Province, west of every other registered event's
+    # coverage). Single flooded class (`DN`==100 for all 310,573
+    # polygons, confirmed by value-count before registering). License
+    # not formally verified in the delivered shapefile (no accompanying
+    # metadata/license file) -- used here as a named research-provider
+    # product with full attribution, same caveat class as
+    # nepal_bipad_flood_points above.
+    "nepal_2024_west_eosrs": {
+        "label": "Nepal floods, 12 Jul 2024 (Karnali/Sudurpaschim, EOS-RS Flood Proxy Map)",
+        "path": "EOS-RS_20240712_FPM_S1_Nepal_Floods_v0.5_shp/EOS-RS_20240712_FPM_S1_Nepal_Floods_v0.5_shp.shp",
+        "attribution": (
+            "EOS Data Analytics (EOS-RS). Sentinel-1 SAR Flood Proxy Map, Nepal, "
+            "acquired 12 July 2024, v0.5."
+        ),
+    },
+    # nepal_2024_west_mbrsc: Mohammed Bin Rashid Space Centre (MBRSC,
+    # UAE) flood map, derived from imagery dated 7-8 July 2024 (per the
+    # shapefile's own ArcGIS lineage metadata and folder/file naming) --
+    # the same July 2024 western-Nepal flood event nepal_2024_west_eosrs
+    # covers, from an independent provider/methodology (ArcGIS raster
+    # classification -> polygon, not EOS-RS's own Sentinel-1 proxy
+    # method), over a materially smaller extent (bounds 80.03-80.58E,
+    # 28.54-29.00N, entirely inside EOS-RS's own wider coverage --
+    # verified directly, not assumed). Kept as a separate event rather
+    # than merged with EOS-RS specifically so the two independent
+    # detections can be checked against each other, not silently
+    # blended into one. Native CRS UTM Zone 44N (EPSG:32644); no
+    # accompanying license/citation text found in the delivered
+    # metadata, same "not formally verified" caveat as
+    # nepal_2024_west_eosrs above.
+    "nepal_2024_west_mbrsc": {
+        "label": "Nepal floods, 8 Jul 2024 (Karnali, MBRSC flood map)",
+        "path": "MBRSC_NEPAL_FLOOD_08TH_JULY_SHP/NEPAL_FLOOD_08TH_JULY.shp",
+        "attribution": (
+            "Mohammed Bin Rashid Space Centre (MBRSC). Nepal flood extent map, "
+            "imagery dated 7-8 July 2024."
+        ),
+    },
+    # rasuwa_2026: this project's own hand-digitized flood extent for the
+    # 26 August 2026 Rasuwa/Bhote Koshi-Trishuli-Narayani corridor flood
+    # (the same event described in this repo's own SPEC.md project
+    # history) -- 10 polygons, ~19.15 km^2 total (summed from the
+    # shapefile's own geodesic `area` field, square kilometers),
+    # digitized in ArcGIS Pro directly against post-event imagery, not a
+    # third-party satellite product like every other event above. Native
+    # CRS UTM Zone 45N (EPSG:32645). Since this is the project's own
+    # field mapping rather than an external agency's release, its
+    # "attribution" names the project instead of an outside source.
+    "rasuwa_2026": {
+        "label": "Nepal floods, 26 Aug 2026 (Rasuwa/Bhote Koshi-Trishuli-Narayani corridor)",
+        "path": "Rasuwa 2026/Rasuwa-2026.shp",
+        "attribution": (
+            "FloodHUB project team. Hand-digitized post-event flood extent, Rasuwa/Bhote "
+            "Koshi-Trishuli-Narayani corridor flood of 26 August 2026, digitized against "
+            "post-event imagery."
+        ),
+    },
+    # nepal_2026_emsr927: Copernicus Emergency Management Service
+    # (Copernicus EMS) Rapid Mapping activation EMSR927, Grading
+    # Analysis (GRA) product, "observedEventA" layer -- created
+    # 2026-08-27, one day after the 26 August 2026 flood already covered
+    # by rasuwa_2026 above. Delivered as 3 separate AOI products (AOI01
+    # 85.324-85.348E/28.150-28.188N, AOI02
+    # 85.357-85.380E/28.242-28.280N -- both just north of rasuwa_2026's
+    # own corridor; AOI03 85.099-85.193E/27.857-28.009N -- west of the
+    # other two, closer to the Trishuli/Nuwakot-Dhading corridor --
+    # bounds verified directly from each shapefile, not assumed), but
+    # registered here as ONE event with `path` a LIST of all 3
+    # shapefiles rather than 3 separate event keys, at explicit request
+    # -- one activation, one toggle in the UI, not 3 near-identical
+    # entries a user has to select between one at a time.
+    # get_observed_flood_mask/get_validation_extent_geojson
+    # (validation_extent.py) both read every path in the list and merge
+    # them into one GeoDataFrame before rasterizing/serving, reprojecting
+    # each independently first (never assuming they share one native CRS
+    # -- they don't have to, this project's other multi-source events
+    # like nepal_2024_west_mbrsc vs. rasuwa_2026 already differ:
+    # EPSG:32644 vs EPSG:32645). AOI01/AOI02 are each a single polygon
+    # (~111.08 km^2 / ~125.88 km^2 from each shapefile's own `area`
+    # field); AOI03 is 2 polygons (~559.83 km^2 + ~29.25 km^2 =
+    # ~589.08 km^2). Combined total ~826 km^2 across all 3 AOIs' 4
+    # polygons.
+    #
+    # Registered here as flood-extent validation data, NOT as a separate
+    # landslide/mass-movement hazard event, despite the product's own
+    # schema tagging `event_type`/`obj_desc` as "6-Mass Movement"/
+    # "Landslide" for all three AOIs (checked directly against each real
+    # attribute table before registering, not assumed from the folder
+    # name) -- confirmed this is the correct read for this event: the
+    # 26 August 2026 disaster was a landslide-triggered flood/debris
+    # flow, so the mapped extent is real flood/debris-flow inundation on
+    # the ground, even though Copernicus EMS's own event-type
+    # vocabulary classifies the *trigger* mechanism (mass movement)
+    # rather than the *water* impact this project's validation feature
+    # actually checks against. Flagged here explicitly rather than
+    # silently registered under a generic label, the same
+    # "document, don't hide" pattern this file already uses for every
+    # other caveated event above.
+    #
+    # License not formally verified against a specific open license the
+    # way nepal_2024_terai's CC BY-SA is -- the product's own metadata
+    # only points to Copernicus EMS's general copyright-notice page
+    # (http://emergency.copernicus.eu/mapping/ems/cite-copernicus-ems-
+    # mapping-portal); used here as a named EU agency's public rapid-
+    # mapping product with full attribution, same caveat class as
+    # nepal_2024_west_eosrs/nepal_2024_west_mbrsc above.
+    "nepal_2026_emsr927": {
+        "label": "Nepal floods, 26 Aug 2026 (Copernicus EMSR927, landslide-triggered debris flow, AOI01-03)",
+        "path": [
+            "EMSR927_AOI01_GRA_PRODUCT_v1/EMSR927_AOI01_GRA_PRODUCT_observedEventA_v1.shp",
+            "EMSR927_AOI02_GRA_PRODUCT_v1/EMSR927_AOI02_GRA_PRODUCT_observedEventA_v1.shp",
+            "EMSR927_AOI03_GRA_PRODUCT_v1/EMSR927_AOI03_GRA_PRODUCT_observedEventA_v1.shp",
+        ],
+        "attribution": (
+            "Copernicus Emergency Management Service (© European Union), Rapid Mapping "
+            "activation EMSR927, Grading product, AOI01-AOI03 observed event extent, created "
+            "27 August 2026. Full copyright notice: "
+            "http://emergency.copernicus.eu/mapping/ems/cite-copernicus-ems-mapping-portal"
+        ),
+    },
 }
+
+# Shelter-site identification (app/overlay/shelters.py) -- a candidate
+# building's own footprint area (m^2, computed on the UTM grid, never
+# raw EPSG:4326 degrees, per SPEC.md's CRS convention) must be at least
+# this large to be considered a candidate large/institutional-scale
+# structure (a school, community hall, or similar building genuinely
+# large enough to shelter people). Not literature-calibrated -- a
+# structurally reasonable placeholder (250 m^2 is roughly a small
+# school building's footprint) in the same documented-placeholder spirit
+# as DRAINAGE_DENSITY_THRESHOLD_CELLS/DRAINAGE_DENSITY_WINDOW_RADIUS_M
+# above, pending real calibration against a known set of Kathmandu
+# Valley shelter buildings. Overridable per-request
+# (ShelterIdentificationRequest.min_footprint_area_m2), this is only the
+# default.
+SHELTER_MIN_FOOTPRINT_AREA_M2 = float(os.environ.get("SHELTER_MIN_FOOTPRINT_AREA_M2", "250.0"))
+
+# Default number of ranked candidates POST /api/overlay/shelters returns
+# when the caller doesn't specify top_n.
+SHELTER_DEFAULT_TOP_N = int(os.environ.get("SHELTER_DEFAULT_TOP_N", "20"))

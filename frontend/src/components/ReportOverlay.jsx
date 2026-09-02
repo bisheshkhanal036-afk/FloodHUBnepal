@@ -110,6 +110,14 @@ export default function ReportOverlay() {
           <HazardPopulationChart zonalStats={result.zonal_stats} />
 
           <h5 className="report-overlay__section-heading">Zonal breakdown</h5>
+          <label className="result-panel__visibility-toggle">
+            <input
+              type="checkbox"
+              checked={state.buildingsLayerVisible}
+              onChange={() => dispatch({ type: 'TOGGLE_BUILDINGS_LAYER_VISIBLE' })}
+            />
+            Show buildings on map ({formatNumber(result.total_buildings)}, colored by hazard class — zoom in to see them)
+          </label>
           <table className="report-panel__zonal-table">
             <thead>
               <tr>

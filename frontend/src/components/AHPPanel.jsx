@@ -9,6 +9,7 @@
 import { CANONICAL_CLUSTERS, criteriaByCluster } from '../config/criteria'
 import { useAppState, useSelectedCriteriaIds } from '../state/AppStateContext'
 import { useAhpAutoCompute } from '../state/useAhpAutoCompute'
+import ErrorNotice from './ErrorNotice'
 import PairwiseMatrixEditor from './PairwiseMatrixEditor'
 
 const CLUSTER_LABELS = Object.fromEntries(CANONICAL_CLUSTERS.map((c) => [c, c]))
@@ -46,8 +47,12 @@ export default function AHPPanel() {
 
   return (
     <div className="ahp-panel">
+      {/* No Retry button here -- this is a reactive computation
+          (useAhpAutoCompute), not a manual trigger; a transient failure
+          resolves itself the next time any matrix cell changes, which
+          this UI already prompts the user to do. */}
       {ahp.status === 'error' && !ahp.error?.failures && (
-        <p className="field-error">{ahp.error?.message || 'AHP computation failed.'}</p>
+        <ErrorNotice error={ahp.error} fallback="AHP computation failed." />
       )}
 
       <div className="ahp-section">

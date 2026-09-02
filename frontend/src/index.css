@@ -71,6 +71,10 @@
   --font-display: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
   --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  /* Decorative Devanagari display face for the brand wordmark only
+     (BrandMark.jsx, "खोला") -- never used for body/UI text, which stays
+     on --font-body/--font-display regardless of language. */
+  --font-devanagari: 'Yatra One', 'Noto Sans Devanagari', var(--font-display);
   --text-xs: 0.72rem;
   --text-sm: 0.8125rem;
   --text-base: 0.875rem;
@@ -279,6 +283,22 @@ input[type='radio'] {
   width: 100vw;
 }
 
+/* App.jsx's Suspense fallback -- shown briefly while a lazy-loaded
+   view's own chunk (MapView/Sidebar/CitizenView, plus maplibre-gl/
+   geotiff.js on the very first visit to either) is still downloading,
+   instead of a blank white flash. */
+.view-loading-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  width: 100vw;
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+}
+
 /* Wraps MapView plus everything that floats on top of it (ReportOverlay,
    DataGapNotice) -- MapView's own root div is fully MapLibre-managed
    (the library injects its canvas/controls straight into it), so
@@ -418,6 +438,45 @@ input[type='radio'] {
   color: var(--color-text-muted) !important;
 }
 
+/* MapLibre's own click-to-inspect popups (the classified-buildings and
+   shelter-candidate popups, MapView.jsx) -- a real bug, not just
+   unstyled chrome like the controls above: maplibre-gl.css's own
+   popup-content box is hardcoded WHITE regardless of theme, but the
+   popup's inline HTML never set an explicit text color, so it inherited
+   this app's dark-theme body text color (near-white) -- white text on a
+   white box, unreadable. Both properties set explicitly here rather
+   than relying on inheritance, so the popup is legible in both themes
+   regardless of what color the page around it happens to be using.
+   `!important` matches every other maplibregl-ctrl-* override on this
+   page, needed for the same reason: overriding a library's own
+   higher-specificity default rules. */
+.maplibregl-popup-content {
+  background: var(--color-panel) !important;
+  color: var(--color-text) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--radius-sm) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35) !important;
+  font-family: var(--font-body) !important;
+}
+
+.maplibregl-popup-content strong {
+  color: var(--color-text) !important;
+}
+
+.maplibregl-popup-tip {
+  border-top-color: var(--color-panel) !important;
+  border-bottom-color: var(--color-panel) !important;
+}
+
+.maplibregl-popup-close-button {
+  color: var(--color-text-muted) !important;
+}
+
+.maplibregl-popup-close-button:hover {
+  background: var(--color-panel-alt) !important;
+  color: var(--color-text) !important;
+}
+
 .sidebar {
   width: 420px;
   min-width: 420px;
@@ -460,6 +519,74 @@ input[type='radio'] {
   display: block;
   color: var(--color-text-muted);
   font-size: var(--text-xs);
+}
+
+/* Brand wordmark (BrandMark.jsx): "खोला" in a decorative Devanagari
+   display face with a gradient fill, so the product name itself reads
+   as a graphic mark rather than plain UI text -- deliberately the one
+   exception to this app's --font-display/--font-body-only type system.
+   Three sizes via the variant modifier; the gradient/layout rules are
+   shared so all three stay visually one family, not three unrelated
+   treatments. */
+.brand-mark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  line-height: 1.5;
+}
+
+.brand-mark__deva {
+  font-family: var(--font-devanagari);
+  font-weight: 400;
+  /* Yatra One's Devanagari glyphs (esp. the matras on "खो") carry real
+     height above/below the Latin em-box a tight line-height assumes --
+     1 was clipping the top of the mark against its own line box. 1.5
+     gives the ascenders genuine room; the gradient/background-clip
+     itself was never the source of the clipping, only the box it was
+     painted into. */
+  line-height: 1.5;
+  padding-top: 0.15em;
+  display: inline-block;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.brand-mark__latin {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.brand-mark--nav .brand-mark__deva {
+  font-size: 2.4rem;
+}
+
+.brand-mark--sidebar .brand-mark__deva {
+  font-size: 2rem;
+}
+
+.brand-mark--nav .brand-mark__latin,
+.brand-mark--sidebar .brand-mark__latin {
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+}
+
+.brand-mark--hero {
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding-top: 0.3em;
+}
+
+.brand-mark--hero .brand-mark__deva {
+  font-size: clamp(5rem, 15vw, 10rem);
+}
+
+.brand-mark--hero .brand-mark__latin {
+  font-size: clamp(1rem, 2vw, 1.4rem);
+  letter-spacing: 0.35em;
 }
 
 .sidebar__header-actions {
@@ -647,6 +774,34 @@ input[type='radio'] {
   padding: 0.5rem 0.65rem;
   font-size: var(--text-sm);
   margin: 0.4rem 0;
+}
+
+/* ErrorNotice.jsx -- friendly headline (.field-error's own box/color),
+   the raw backend message collapsed underneath, an optional Retry. */
+.error-notice__headline {
+  margin: 0;
+}
+
+.error-notice__detail {
+  margin-top: 0.35rem;
+}
+
+.error-notice__detail summary {
+  cursor: pointer;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.error-notice__detail p {
+  margin: 0.3rem 0 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+}
+
+.error-notice__retry {
+  display: inline-block;
+  margin-top: 0.4rem;
 }
 
 .field-warning {
@@ -1421,6 +1576,52 @@ input[type='radio'] {
 }
 
 /* ==========================================================================
+   Shelters panel -- shelter-site identification (SheltersPanel.jsx). A
+   ranked list is compact enough to stay in the sidebar directly, unlike
+   the full vulnerability report below, which needs its own map overlay.
+   ========================================================================== */
+.shelters-panel__identify-button {
+  margin-top: var(--space-2);
+}
+
+.shelters-panel__list {
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.shelters-panel__item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-panel-alt);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+}
+
+.shelters-panel__rank {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.shelters-panel__detail {
+  color: var(--color-text-muted);
+}
+
+.shelters-panel__score {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+/* ==========================================================================
    Report overlay -- the full vulnerability report, covering .map-area
    instead of stacked into the sidebar (see App.jsx/ReportOverlay.jsx).
    ========================================================================== */
@@ -1977,6 +2178,55 @@ input[type='radio'] {
   max-width: 56rem;
 }
 
+/* FirstVisitTour.jsx -- a narrower modal shell (one short step at a
+   time, not long-form content) with its own step-label/dots/actions
+   row. */
+.tour-modal {
+  max-width: 28rem;
+}
+
+.tour-modal__step-label {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.tour-modal__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+}
+
+.tour-modal__body {
+  margin: 0 0 var(--space-5);
+  color: var(--color-text-muted);
+  line-height: 1.6;
+}
+
+.tour-modal__dots {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+}
+
+.tour-modal__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--color-border);
+}
+
+.tour-modal__dot--active {
+  background: var(--color-primary);
+}
+
+.tour-modal__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .literature {
   font-size: var(--text-sm);
   line-height: 1.55;
@@ -2115,7 +2365,11 @@ input[type='radio'] {
 .hero__title {
   font-family: var(--font-display);
   font-size: var(--text-display);
-  line-height: 1.02;
+  /* Loosened from the tight 1.02 a plain-Latin title used -- this now
+     wraps BrandMark's Devanagari graphic exclusively, whose tall
+     matras/ascenders in Yatra One need real headroom above and below;
+     1.02 was clipping the top of "खो" against the line box. */
+  line-height: 1.4;
   letter-spacing: var(--tracking-tighter);
   margin: 0 0 var(--space-4);
   color: var(--color-text);
@@ -2138,39 +2392,17 @@ input[type='radio'] {
   margin: var(--space-6) auto var(--space-8);
 }
 
-/* HeroGraphic.jsx -- concentric risk-ramp rings + the Logo mark's own
-   river-bend glyph at hero scale. */
+/* HeroGraphic.jsx -- the real icon artwork (public/icon.png) on its own. */
 .hero-graphic {
   display: flex;
   justify-content: center;
   margin: var(--space-2) 0;
 }
 
-.hero-graphic__svg {
-  width: min(60vw, 260px);
+.hero-graphic__icon {
+  width: min(50vw, 320px);
   height: auto;
-}
-
-.hero-graphic__ring {
-  transform-origin: center;
-  animation: hero-graphic-pulse 4.5s ease-in-out infinite;
-}
-
-@keyframes hero-graphic-pulse {
-  0%,
-  100% {
-    opacity: 0.4;
-  }
-  50% {
-    opacity: 0.85;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hero-graphic__ring {
-    animation: none;
-    opacity: 0.6;
-  }
+  filter: drop-shadow(0 8px 28px rgba(0, 0, 0, 0.4));
 }
 
 .hero__actions {
@@ -2179,33 +2411,6 @@ input[type='radio'] {
   justify-content: center;
   gap: var(--space-4);
   margin-bottom: var(--space-6);
-}
-
-.hero__facts {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-2) var(--space-5);
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  font-size: var(--text-sm);
-  color: var(--color-text-muted);
-}
-
-.hero__facts li {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.hero__facts li::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-accent);
-  flex-shrink: 0;
 }
 
 /* Scroll-down cue: 3 chevrons cascading through opacity 0 -> 1 -> 0 in a
@@ -2350,14 +2555,19 @@ input[type='radio'] {
 
 .zoom-section__heading {
   text-align: center;
-  font-size: clamp(2rem, 3.2vw, 2.75rem);
-  margin-bottom: var(--space-3);
+  /* Enlarged -- these full-100vh sections were reading as mostly empty
+     space around fairly modest type; bigger headings/body text (here
+     and in .method-scene__* below) is what actually makes each scene
+     feel like it fills the screen, since the section box itself was
+     already min-height: 100vh. */
+  font-size: clamp(2.6rem, 5vw, 4.2rem);
+  margin-bottom: var(--space-5);
 }
 
 .zoom-section__sub {
   text-align: center;
   color: var(--color-text-muted);
-  font-size: var(--text-lg);
+  font-size: var(--text-xl);
   margin: 0 0 var(--space-8);
 }
 
@@ -2385,24 +2595,126 @@ input[type='radio'] {
 }
 
 .method-scene__eyebrow {
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.14em;
   color: var(--color-primary);
-  margin: 0 0 var(--space-3);
+  margin: 0 0 var(--space-4);
 }
 
 .method-scene__body {
-  max-width: 42rem;
+  max-width: 48rem;
   margin: 0 auto;
 }
 
 .method-scene__text {
   color: var(--color-text-muted);
-  font-size: var(--text-lg);
+  font-size: var(--text-xl);
   line-height: 1.7;
   margin: 0;
+}
+
+/* The big, standalone R = Σ(wᵢ × classᵢ) equation on the "What is AHP?"
+   scene -- a deliberately oversized display treatment (not just larger
+   body text) since the ask was specifically for the formula itself to
+   read as a graphic centerpiece, not another line of prose. Monospace
+   for genuine digit/operator alignment, not the display font (which has
+   no distinct math-operator metrics).
+
+   Laid out as a single-line flex row (white-space: nowrap as a second
+   safety net on top of that) with a font-size clamp whose MINIMUM is
+   small enough to still fit a narrow phone width without wrapping to a
+   second line -- the previous 2.2rem floor was too large for that,
+   which is exactly what pushed "class_i)" onto its own line on a
+   narrower viewport. */
+.method-scene__equation {
+  margin: var(--space-8) 0 0;
+  font-family: var(--font-mono);
+  font-size: clamp(1.15rem, 5.5vw, 4.5rem);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-text);
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.3em;
+  white-space: nowrap;
+}
+
+/* Each piece (R / = / Σ / the (wᵢ × classᵢ) term) reveals in sequence
+   once the scene scrolls into view, rather than the whole equation
+   fading in as one flat block -- reads as the formula assembling itself
+   left to right. Driven by the same .zoom-section--active class the
+   scene's own scroll-zoom reveal already toggles (useScrollZoom.js), no
+   separate observer needed. */
+.method-scene__equation-part {
+  opacity: 0;
+  transform: translateY(0.35em);
+  transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.zoom-section--active .method-scene__equation-part {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.zoom-section--active .method-scene__equation-part:nth-child(1) {
+  transition-delay: 0.05s;
+}
+.zoom-section--active .method-scene__equation-part:nth-child(2) {
+  transition-delay: 0.2s;
+}
+.zoom-section--active .method-scene__equation-part:nth-child(3) {
+  transition-delay: 0.35s;
+}
+.zoom-section--active .method-scene__equation-part:nth-child(4) {
+  transition-delay: 0.5s;
+}
+
+.method-scene__equation-sigma {
+  color: var(--color-primary);
+}
+
+/* The sigma's own continuous pulse -- kept on a nested inner span (not
+   the .method-scene__equation-part span itself) so it never fights the
+   part's own translateY entrance transform above; this one starts once
+   the entrance has finished (delay picks up right after the staggered
+   reveal completes) and loops for as long as the scene stays active. */
+.method-scene__equation-sigma-inner {
+  display: inline-block;
+  transform-origin: center;
+}
+
+.zoom-section--active .method-scene__equation-sigma-inner {
+  animation: equation-sigma-pulse 2.4s ease-in-out 0.85s infinite;
+}
+
+@keyframes equation-sigma-pulse {
+  0%,
+  100% {
+    transform: scaleY(1.15);
+  }
+  50% {
+    transform: scaleY(1.35) scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .method-scene__equation-part {
+    transition: none;
+    opacity: 1;
+    transform: none;
+  }
+  .zoom-section--active .method-scene__equation-sigma-inner {
+    animation: none;
+    transform: scaleY(1.15);
+  }
+}
+
+.method-scene__equation-term sub {
+  font-size: 0.55em;
 }
 
 .method-scene__steps {
@@ -2412,16 +2724,16 @@ input[type='radio'] {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-5);
   text-align: left;
 }
 
 .method-scene__steps li {
   counter-increment: method-step;
   position: relative;
-  padding-left: 2.8rem;
+  padding-left: 3.4rem;
   color: var(--color-text-muted);
-  font-size: var(--text-base);
+  font-size: var(--text-lg);
   line-height: 1.6;
 }
 
@@ -2434,14 +2746,14 @@ input[type='radio'] {
   position: absolute;
   left: 0;
   top: 0;
-  width: 1.9rem;
-  height: 1.9rem;
+  width: 2.4rem;
+  height: 2.4rem;
   border-radius: var(--radius-full);
   background: var(--color-primary-soft);
   color: var(--color-primary);
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   display: flex;
   align-items: center;
   justify-content: center;

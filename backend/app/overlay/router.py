@@ -37,6 +37,8 @@ from .models import (
 from .progress_stream import stream_compute_events
 from .report import compute_vulnerability_report
 from .service import compute_overlay
+from .shelter_models import ShelterIdentificationRequest, ShelterIdentificationResponse
+from .shelters import identify_shelter_sites
 from .urls import (
     CRITERION_RASTER_PATH_PATTERN,
     HAZARD_CLASSES_PATH_PATTERN,
@@ -492,3 +494,44 @@ def report(payload: VulnerabilityReportRequest) -> VulnerabilityReportResponse:
         raise HTTPException(status_code=422, detail={"error": "ahp_validation_error", "message": str(exc)}) from exc
 
     return VulnerabilityReportResponse.from_report(result)
+
+
+@router.post("/shelters", response_model=ShelterIdentificationResponse)
+def shelters(payload: ShelterIdentificationRequest) -> ShelterIdentificationResponse:
+    """Ranks real OSM building footprints in the AOI as candidate
+    emergency-shelter SITES by multi-criteria suitability (safety,
+    accessibility, service value) -- see shelters.py's own module
+    docstring for the full methodology and its deliberate scope (site
+    suitability from existing building stock, not shelter-TYPE
+    classification -- this codebase's buildings dataset carries no
+    amenity/building=school|hospital tag to classify by).
+
+    Same reuse-the-risk-surface-cache shape as POST /report: submitting
+    the same aoi/criteria/final_weights/complete already sent to
+    POST /compute hits that cache rather than recomputing.
+    """
+    aoi = payload.aoi.to_domain()
+    criteria = [c.to_domain() for c in payload.criteria]
+
+    try:
+        result = identify_shelter_sites(
+            aoi,
+            criteria,
+            payload.final_weights,
+            payload.complete,
+            min_footprint_area_m2=payload.min_footprint_area_m2,
+            top_n=payload.top_n,
+            safety_weight=payload.safety_weight,
+            accessibility_weight=payload.accessibility_weight,
+            service_weight=payload.service_weight,
+        )
+    except OverlayValidationError as exc:
+        raise HTTPException(status_code=422, detail={"error": "overlay_validation_error", "message": str(exc)}) from exc
+    except (NodataValidationError, ReclassificationError) as exc:
+        raise HTTPException(status_code=422, detail={"error": "overlay_data_error", "message": str(exc)}) from exc
+    except DataSourceUnavailableError as exc:
+        raise HTTPException(status_code=503, detail={"error": "data_source_unavailable", "message": str(exc)}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"error": "shelter_validation_error", "message": str(exc)}) from exc
+
+    return ShelterIdentificationResponse.from_result(result)

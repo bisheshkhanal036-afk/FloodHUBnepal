@@ -36,9 +36,101 @@ function initialTheme() {
   return 'dark'
 }
 
+// AOI/criteria/weighting persistence -- the single most annoying loss-
+// of-work moment this app had: a page refresh silently threw away a
+// drawn AOI, every checked criterion, and any AHP/manual weighting work,
+// with no warning. This persists just the "core flow" inputs (never the
+// FETCHED/COMPUTED results downstream of them -- overlay/report/
+// validation/shelters etc. are deliberately NOT saved here, since
+// they're cheap to recompute from the restored inputs and a stale saved
+// result could otherwise be shown as if current). Same
+// localStorage-with-a-try/catch-fallback shape THEME_STORAGE_KEY already
+// established above, applied to a second, versioned key.
+const FLOW_STORAGE_KEY = 'flood-risk-flow-v1'
+const FLOW_STORAGE_FIELDS = [
+  'aoiMode',
+  'aoi',
+  'basinLevel',
+  'criteriaEnabled',
+  'streamThresholdCells',
+  'weightMode',
+  'ahpMatrices',
+  'manualWeights',
+  'classification',
+]
+
+function loadPersistedFlowState() {
+  try {
+    const raw = localStorage.getItem(FLOW_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    // Missing, corrupt, or localStorage unavailable (private browsing,
+    // quota, a stale shape from a previous incompatible version) -- any
+    // of these just means "nothing to restore," never a crash.
+    return {}
+  }
+}
+
+/**
+ * Overlays `persisted` (whatever loadPersistedFlowState found) onto
+ * `defaults` (the fresh initialState() shape), field by field, so a
+ * persisted blob that predates a config/criteria.js change (a criterion
+ * added or removed since it was saved) can never resurrect a dangling
+ * id or silently corrupt the defaults' own shape -- every field is
+ * validated against the CURRENT config before being trusted, not
+ * blindly spread in.
+ */
+function applyPersistedFlowState(defaults, persisted) {
+  const next = { ...defaults }
+  const validCriterionIds = new Set(CRITERIA.map((c) => c.id))
+
+  if (persisted.aoiMode === 'draw' || persisted.aoiMode === 'basin' || persisted.aoiMode === 'district') {
+    next.aoiMode = persisted.aoiMode
+  }
+  if (persisted.aoi && typeof persisted.aoi === 'object' && Array.isArray(persisted.aoi.bbox)) {
+    next.aoi = persisted.aoi
+  }
+  if (persisted.basinLevel === 8 || persisted.basinLevel === 9) next.basinLevel = persisted.basinLevel
+  if (Number.isFinite(persisted.streamThresholdCells)) next.streamThresholdCells = persisted.streamThresholdCells
+  if (['equal', 'ahp', 'manual'].includes(persisted.weightMode)) next.weightMode = persisted.weightMode
+
+  if (persisted.criteriaEnabled && typeof persisted.criteriaEnabled === 'object') {
+    next.criteriaEnabled = {
+      ...next.criteriaEnabled,
+      ...Object.fromEntries(Object.entries(persisted.criteriaEnabled).filter(([id]) => validCriterionIds.has(id))),
+    }
+  }
+  // classification/manualWeights are both keyed by criterion id -- kept
+  // only for a criterion that's both a real, current id AND actually
+  // enabled after the restore above, so a stale entry for an
+  // unchecked/removed criterion can never linger in state.
+  if (persisted.classification && typeof persisted.classification === 'object') {
+    next.classification = Object.fromEntries(
+      Object.entries(persisted.classification).filter(([id]) => validCriterionIds.has(id) && next.criteriaEnabled[id])
+    )
+  }
+  if (persisted.manualWeights && typeof persisted.manualWeights === 'object') {
+    next.manualWeights = Object.fromEntries(
+      Object.entries(persisted.manualWeights).filter(([id]) => validCriterionIds.has(id) && next.criteriaEnabled[id])
+    )
+  }
+  if (
+    persisted.ahpMatrices &&
+    typeof persisted.ahpMatrices === 'object' &&
+    persisted.ahpMatrices.cluster &&
+    persisted.ahpMatrices.withinCluster
+  ) {
+    next.ahpMatrices = persisted.ahpMatrices
+  }
+
+  return next
+}
+
 function initialState() {
   const theme = initialTheme()
-  return {
+  const defaults = {
     theme,
 
     // Independent of `theme` (the app chrome's own light/dark CSS) --
@@ -148,6 +240,18 @@ function initialState() {
     // about to be superseded, so it can't stay displayed as current.
     report: { status: 'idle', result: null, error: null },
 
+    // Shelter-site identification (POST /api/overlay/shelters) -- ranks
+    // real OSM buildings in the AOI as candidate emergency-shelter sites
+    // by safety/accessibility/service-value suitability (backend/app/
+    // overlay/shelters.py). Same shape/reset trigger as `report` above:
+    // a separate, optional follow-up to a successful compute, reset on
+    // OVERLAY_LOADING since it describes a result about to be superseded.
+    shelters: { status: 'idle', result: null, error: null },
+    // Whether the ranked candidates are shown as markers on the map --
+    // opt-in like buildingsLayerVisible below, off by default, reset on
+    // OVERLAY_LOADING alongside `shelters` itself.
+    sheltersLayerVisible: false,
+
     // Whether ReportOverlay (the full infographic-style report, absolutely
     // positioned over the map -- see App.jsx) is currently shown. Kept
     // separate from `report.status` so the user can dismiss it without
@@ -160,6 +264,21 @@ function initialState() {
     // click), reset false on OVERLAY_LOADING (a new compute invalidates the
     // report it was showing, same trigger `report` itself resets on).
     reportOverlayVisible: false,
+
+    // Whether the per-building hazard-class map layer (state.report.
+    // result.buildings, already part of the report response -- no
+    // separate fetch) is shown. Deliberately scoped to ReportOverlay
+    // only, not a standalone always-available control like
+    // meteorFloodVisible/validationExtentVisible above: individual
+    // buildings are report OUTPUT, meaningless without a generated
+    // report, so this lives and dies with the overlay that shows them
+    // rather than persisting independently. Default false (a real AOI
+    // can return tens of thousands of buildings -- 87,402 in one
+    // already-verified test case -- so it's opt-in, not automatic).
+    // Reset on OVERLAY_LOADING alongside reportOverlayVisible/report
+    // itself, for the same reason: a new compute invalidates the
+    // buildings this layer would be showing.
+    buildingsLayerVisible: false,
 
     // Real-flood validation (POST /api/overlay/validate) -- success-
     // rate/AUC-checks the just-computed risk surface against a real,
@@ -210,6 +329,8 @@ function initialState() {
     // after an auto-dismiss timeout or on a manual close click.
     dataGapNotice: null,
   }
+
+  return applyPersistedFlowState(defaults, loadPersistedFlowState())
 }
 
 function resyncWithinClusterMatrices(ahpMatrices, criteriaEnabled) {
@@ -518,6 +639,9 @@ function reducer(state, action) {
         overlay: { status: 'loading', result: null, error: null, criteriaUsed: null, weightsUsed: null, progressLog: [] },
         report: { status: 'idle', result: null, error: null },
         reportOverlayVisible: false,
+        buildingsLayerVisible: false,
+        shelters: { status: 'idle', result: null, error: null },
+        sheltersLayerVisible: false,
         validation: { status: 'idle', result: null, error: null },
         meteorComparison: { status: 'idle', result: null, error: null },
       }
@@ -568,6 +692,22 @@ function reducer(state, action) {
 
     case 'TOGGLE_REPORT_OVERLAY':
       return { ...state, reportOverlayVisible: !state.reportOverlayVisible }
+
+    case 'SHELTERS_LOADING':
+      return { ...state, shelters: { status: 'loading', result: null, error: null } }
+    case 'SHELTERS_LOADED':
+      // Auto-show the map layer on a freshly identified set of
+      // candidates, same reasoning REPORT_LOADED already documents for
+      // reportOverlayVisible -- a result you just asked for should be
+      // immediately visible, not require a second click.
+      return { ...state, shelters: { status: 'loaded', result: action.result, error: null }, sheltersLayerVisible: true }
+    case 'SHELTERS_ERROR':
+      return { ...state, shelters: { status: 'error', result: null, error: action.error } }
+    case 'TOGGLE_SHELTERS_LAYER':
+      return { ...state, sheltersLayerVisible: !state.sheltersLayerVisible }
+
+    case 'TOGGLE_BUILDINGS_LAYER_VISIBLE':
+      return { ...state, buildingsLayerVisible: !state.buildingsLayerVisible }
 
     case 'VALIDATION_EVENTS_LOADING':
       return { ...state, validationEvents: { status: 'loading', list: [], error: null } }
@@ -621,6 +761,35 @@ export function AppStateProvider({ children }) {
   useEffect(() => {
     document.documentElement.dataset.theme = state.theme
   }, [state.theme])
+
+  // Persists the same "core flow" fields applyPersistedFlowState reads
+  // back on the next load (see FLOW_STORAGE_FIELDS above) -- writes on
+  // every relevant change rather than debounced: each of these fields is
+  // small (an AOI bbox/polygon, a handful of matrices, a few dozen
+  // booleans/numbers keyed by criterion id), so a plain localStorage
+  // write is cheap enough not to need one, and skipping a debounce means
+  // a save can never be lost to an in-flight timer if the tab closes
+  // right after the last edit.
+  useEffect(() => {
+    try {
+      const toSave = Object.fromEntries(FLOW_STORAGE_FIELDS.map((key) => [key, state[key]]))
+      localStorage.setItem(FLOW_STORAGE_KEY, JSON.stringify(toSave))
+    } catch {
+      // localStorage unavailable/full -- persistence is a convenience on
+      // top of a working app, never something a save failure should
+      // block or crash.
+    }
+  }, [
+    state.aoiMode,
+    state.aoi,
+    state.basinLevel,
+    state.criteriaEnabled,
+    state.streamThresholdCells,
+    state.weightMode,
+    state.ahpMatrices,
+    state.manualWeights,
+    state.classification,
+  ])
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>
 }

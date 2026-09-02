@@ -71,6 +71,13 @@ services:
       # for HMR to see edits across the Windows->container bind mount) is
       # the live host file, not the stale one baked into the image.
       - ./frontend/vite.config.js:/app/vite.config.js
+      # public/ (favicon, other static-as-is assets) didn't exist on the
+      # host when the earlier mounts above were set up, so it was never
+      # added -- Vite serves this directory's contents verbatim at the
+      # site root (e.g. public/icon.png -> /icon.png), which needs the
+      # real host directory mounted the same way src/ already is, not
+      # just baked into the image at build time.
+      - ./frontend/public:/app/public
     ports:
       - "127.0.0.1:5173:5173"
     depends_on:

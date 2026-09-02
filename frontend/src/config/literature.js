@@ -19,7 +19,7 @@
 export const METHOD_INTRO = {
   title: 'Method & how to read this',
   body: [
-    'FloodHUB maps flood risk with the Analytic Hierarchy Process (AHP), a multi-criteria decision method (Saaty, 1980). Each conditioning factor below is reprojected onto a common 10 m grid, reclassified into five ordinal risk classes (1 = lowest, 5 = highest), and combined as a weighted sum: R = Σ (wᵢ × classᵢ), where the weights wᵢ come from pairwise expert comparisons on Saaty’s 1–9 scale and are checked for logical consistency (Consistency Ratio < 0.10).',
+    'Khola maps flood risk with the Analytic Hierarchy Process (AHP), a multi-criteria decision method (Saaty, 1980). Each conditioning factor below is reprojected onto a common 10 m grid, reclassified into five ordinal risk classes (1 = lowest, 5 = highest), and combined as a weighted sum: R = Σ (wᵢ × classᵢ), where the weights wᵢ come from pairwise expert comparisons on Saaty’s 1–9 scale and are checked for logical consistency (Consistency Ratio < 0.10).',
     'The reclassification ranges turn each factor’s continuous or categorical values into those five classes. Following standard index-based flood-susceptibility practice (Kazakis et al., 2015; Das, 2019; Tehrany et al., 2014), the class breaks are set from the physical behaviour of each factor and the local terrain, then refined by expert judgment; they are editable per criterion in the “Customize breaks” panel. For rigorous use they should be validated against an observed flood inventory (success-rate / AUC).',
   ],
   refs: ['saaty1980', 'kazakis2015', 'das2019', 'tehrany2014'],

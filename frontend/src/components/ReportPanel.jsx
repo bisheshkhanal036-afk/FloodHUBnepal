@@ -11,6 +11,7 @@
 import { generateReport } from '../api/client'
 import { CRITERIA_BY_ID } from '../config/criteria'
 import { useAppState } from '../state/AppStateContext'
+import ErrorNotice from './ErrorNotice'
 
 /** state.ahpMatrices already has exactly the {items, matrix} shape POST /api/overlay/report's weighting.cluster_comparison/within_cluster_comparisons expects -- built directly from the pairwise-comparison UI, not re-derived here. */
 function buildWeightingPayload(state) {
@@ -39,6 +40,12 @@ export default function ReportPanel() {
   const { status, result, error } = state.report
 
   async function handleGenerateReport() {
+    // Guards the same request the button's own `disabled={status ===
+    // 'loading'}` already blocks, in case the handler fires again before
+    // that re-render lands (a fast double-click/double-Enter) -- the
+    // same belt-and-suspenders shape ComputePanel's own handleCompute
+    // already uses (`if (disabled) return`).
+    if (status === 'loading') return
     dispatch({ type: 'REPORT_LOADING' })
     try {
       const payload = {
@@ -85,7 +92,9 @@ export default function ReportPanel() {
           longer than the risk surface itself.
         </p>
       )}
-      {status === 'error' && <p className="field-error">{error?.message || 'Report generation failed.'}</p>}
+      {status === 'error' && (
+        <ErrorNotice error={error} fallback="Report generation failed." onRetry={handleGenerateReport} />
+      )}
 
       {result && (
         <>

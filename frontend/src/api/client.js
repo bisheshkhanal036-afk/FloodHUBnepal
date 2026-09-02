@@ -151,6 +151,19 @@ export function generateReport(payload) {
   return requestJson('/api/overlay/report', { method: 'POST', body: JSON.stringify(payload) })
 }
 
+/**
+ * POST /api/overlay/shelters -- ranks real OSM building footprints in
+ * the AOI as candidate emergency-shelter sites (safety/accessibility/
+ * service-value suitability; see backend/app/overlay/shelters.py's own
+ * docstring). Same aoi/criteria/final_weights/complete shape as
+ * computeOverlay's own payload, plus the optional shelter-specific
+ * knobs; reuses POST /compute's own cache the same way generateReport
+ * does.
+ */
+export function identifyShelterSites(payload) {
+  return requestJson('/api/overlay/shelters', { method: 'POST', body: JSON.stringify(payload) })
+}
+
 /** GET /api/overlay/validation-events -- [{key, label}] for every real, satellite-observed flood event a risk surface can be validated against (backend/app/data/validation_extent.py's config.VALIDATION_EVENTS). */
 export function listValidationEvents() {
   return requestJson('/api/overlay/validation-events')

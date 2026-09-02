@@ -49,3 +49,24 @@ export function bboxToPolygon([minLng, minLat, maxLng, maxLat]) {
     ],
   }
 }
+
+/**
+ * A cheap approximate centroid (plain average of the exterior ring's own
+ * vertices, not a true area-weighted centroid) for a GeoJSON Polygon or
+ * MultiPolygon -- good enough for placing a marker/highlight point on a
+ * small building footprint (a shelter candidate's own geometry, which
+ * this exists for), not precise enough for anything measurement-related.
+ * MultiPolygon uses only its first polygon's exterior ring, since a real
+ * building footprint from this app's own OSM source is never genuinely
+ * multi-part.
+ */
+export function polygonCentroid(geometry) {
+  const ring = geometry.type === 'MultiPolygon' ? geometry.coordinates[0][0] : geometry.coordinates[0]
+  let sumLng = 0
+  let sumLat = 0
+  for (const [lng, lat] of ring) {
+    sumLng += lng
+    sumLat += lat
+  }
+  return [sumLng / ring.length, sumLat / ring.length]
+}

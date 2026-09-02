@@ -34,6 +34,7 @@
 import { ADDITIONAL_SOURCE_CREDITS, SOURCE_ATTRIBUTIONS, TEAM_CREDITS } from '../config/attribution'
 import { useHeroScrollScale } from '../lib/useHeroScrollScale'
 import { useScrollZoom } from '../lib/useScrollZoom'
+import BrandMark from './BrandMark'
 import HeroGraphic from './HeroGraphic'
 import Logo from './Logo'
 
@@ -108,7 +109,7 @@ export default function LandingPage({ onLaunch }) {
       <header className="landing__nav">
         <div className="landing__brand">
           <Logo size={28} />
-          FloodHUB
+          <BrandMark variant="nav" />
         </div>
         <button type="button" className="button button--ghost" onClick={onLaunch}>
           Launch tool →
@@ -117,7 +118,9 @@ export default function LandingPage({ onLaunch }) {
 
       <HeroSection>
         <div className="hero hero--centered">
-          <h1 className="hero__title">FloodHUB</h1>
+          <h1 className="hero__title">
+            <BrandMark variant="hero" as="span" />
+          </h1>
           <p className="hero__tagline">Multi-criteria flood risk mapping for Nepal</p>
 
           <HeroGraphic />
@@ -135,11 +138,6 @@ export default function LandingPage({ onLaunch }) {
               About &amp; credits
             </a>
           </div>
-          <ul className="hero__facts">
-            <li>Basin-aware AOI selection</li>
-            <li>AHP · equal · manual weighting</li>
-            <li>Day &amp; night basemaps</li>
-          </ul>
         </div>
       </HeroSection>
 
@@ -169,11 +167,21 @@ export default function LandingPage({ onLaunch }) {
 
       <MethodScene id="what-is-ahp" eyebrow="The weighting method" heading="What is AHP?">
         <p className="method-scene__text">
-          FloodHUB weighs flood risk using the Analytic Hierarchy Process (AHP) — a structured way to turn expert
+          Khola weighs flood risk using the Analytic Hierarchy Process (AHP) — a structured way to turn expert
           judgment into numbers instead of a hidden formula. Each conditioning factor is reprojected onto a common
           10&nbsp;m grid, reclassified into five ordinal risk classes, and combined as a weighted sum, where the
           weights come from your own pairwise comparisons and are checked for logical consistency before they&rsquo;re
           ever used.
+        </p>
+        <p className="method-scene__equation" aria-label="R equals the sum over i of w sub i times class sub i">
+          <span className="method-scene__equation-part">R</span>
+          <span className="method-scene__equation-part">=</span>
+          <span className="method-scene__equation-part method-scene__equation-sigma">
+            <span className="method-scene__equation-sigma-inner">Σ</span>
+          </span>
+          <span className="method-scene__equation-part method-scene__equation-term">
+            (w<sub>i</sub> × class<sub>i</sub>)
+          </span>
         </p>
       </MethodScene>
 
@@ -241,7 +249,7 @@ export default function LandingPage({ onLaunch }) {
       </ZoomSection>
 
       <footer className="landing__footer">
-        <span>FloodHUB — Nepal</span>
+        <span>Khola — Nepal</span>
         <button type="button" className="link-button" onClick={onLaunch}>
           Launch tool →
         </button>

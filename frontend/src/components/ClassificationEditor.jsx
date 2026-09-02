@@ -14,6 +14,7 @@ import { computeCriterionBreaks } from '../api/client'
 import { WORLDCOVER_LABELS } from '../config/criteria'
 import { breaksToRules, selectClassificationMethod } from '../lib/classification'
 import { useAppState } from '../state/AppStateContext'
+import ErrorNotice from './ErrorNotice'
 import ReclassificationTable from './ReclassificationTable'
 
 const METHODS = [
@@ -55,8 +56,8 @@ function ContinuousEditor({ criterion, entry, aoi, streamThresholdCells, dispatc
   // effect re-fires the same way an AOI change already does -- no
   // separate streamThresholdCells dependency needed here, just always
   // send its current value whenever a fetch does happen.
-  useEffect(() => {
-    if (method === 'manual' || fetch.status !== 'idle' || !aoi) return
+  function fetchBreaks() {
+    if (!aoi) return
     dispatch({ type: 'CLASSIFICATION_BREAKS_LOADING', id: criterion.id })
     computeCriterionBreaks({
       aoi: { bbox: aoi.bbox, polygon: aoi.polygon || null },
@@ -68,7 +69,12 @@ function ContinuousEditor({ criterion, entry, aoi, streamThresholdCells, dispatc
         dispatch({ type: 'SET_CLASSIFICATION_BREAKS', id: criterion.id, breaks: data[method] })
       })
       .catch((error) => dispatch({ type: 'CLASSIFICATION_BREAKS_ERROR', id: criterion.id, error }))
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-fetch only on method/aoi/fetch.status change, not on every breaks edit
+  }
+
+  useEffect(() => {
+    if (method === 'manual' || fetch.status !== 'idle' || !aoi) return
+    fetchBreaks()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-fetch only on method/aoi/fetch.status change, not on every breaks edit; the retry button below calls fetchBreaks directly instead of going through this effect
   }, [method, aoi, criterion.id, fetch.status])
 
   function selectMethod(newMethod) {
@@ -108,7 +114,7 @@ function ContinuousEditor({ criterion, entry, aoi, streamThresholdCells, dispatc
         <p className="panel__hint">Computing {METHODS.find((m) => m.id === method).label.toLowerCase()} breaks…</p>
       )}
       {fetch.status === 'error' && method !== 'manual' && (
-        <p className="field-error">{fetch.error?.message || 'Could not compute breaks.'}</p>
+        <ErrorNotice error={fetch.error} fallback="Could not compute breaks." onRetry={fetchBreaks} />
       )}
       {fetch.status === 'loaded' && (
         <p className="panel__hint">

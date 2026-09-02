@@ -14,6 +14,7 @@ import { listValidationEvents, validateRiskSurface } from '../api/client'
 import { aucQuality } from '../lib/aucQuality'
 import { formatFraction } from '../lib/formatFraction'
 import { useAppState } from '../state/AppStateContext'
+import ErrorNotice from './ErrorNotice'
 import FrequencyRatioChart from './FrequencyRatioChart'
 import SuccessRateChart from './SuccessRateChart'
 
@@ -22,14 +23,19 @@ export default function ValidationPanel() {
   const { criteriaUsed, weightsUsed } = state.overlay
   const eventsReady = state.validationEvents.status === 'loaded'
 
-  // Fetched once, not tied to any particular compute result -- the list
-  // of what's available to validate against never changes per-AOI.
-  useEffect(() => {
-    if (state.validationEvents.status !== 'idle') return
+  function loadValidationEvents() {
     dispatch({ type: 'VALIDATION_EVENTS_LOADING' })
     listValidationEvents()
       .then((events) => dispatch({ type: 'VALIDATION_EVENTS_LOADED', events }))
       .catch((error) => dispatch({ type: 'VALIDATION_EVENTS_ERROR', error }))
+  }
+
+  // Fetched once, not tied to any particular compute result -- the list
+  // of what's available to validate against never changes per-AOI.
+  useEffect(() => {
+    if (state.validationEvents.status !== 'idle') return
+    loadValidationEvents()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadValidationEvents is stable enough for this one-shot fetch; retry below calls it directly instead of going through this effect
   }, [state.validationEvents.status, dispatch])
 
   if (state.overlay.status !== 'loaded' || !criteriaUsed || !weightsUsed) return null
@@ -38,6 +44,11 @@ export default function ValidationPanel() {
 
   async function handleValidate() {
     if (!state.selectedValidationEvent) return
+    // Same double-click/double-Enter guard ReportPanel's own
+    // handleGenerateReport documents -- the button's disabled attribute
+    // already blocks this, this just closes the gap before that
+    // re-render lands.
+    if (status === 'loading') return
     dispatch({ type: 'VALIDATION_LOADING' })
     try {
       const payload = {
@@ -62,7 +73,11 @@ export default function ValidationPanel() {
 
       {state.validationEvents.status === 'loading' && <p className="panel__hint">Loading available events…</p>}
       {state.validationEvents.status === 'error' && (
-        <p className="field-error">{state.validationEvents.error?.message || 'Could not load validation events.'}</p>
+        <ErrorNotice
+          error={state.validationEvents.error}
+          fallback="Could not load validation events."
+          onRetry={loadValidationEvents}
+        />
       )}
 
       {eventsReady && state.validationEvents.list.length === 0 && (
@@ -97,7 +112,7 @@ export default function ValidationPanel() {
         </>
       )}
 
-      {status === 'error' && <p className="field-error">{error?.message || 'Validation failed.'}</p>}
+      {status === 'error' && <ErrorNotice error={error} fallback="Validation failed." onRetry={handleValidate} />}
 
       {result && (
         <div className="validation-panel__result">

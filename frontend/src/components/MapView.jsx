@@ -16,8 +16,8 @@ import {
   getValidationExtentGeoJSON,
   listValidationEvents,
 } from '../api/client'
-import { riskValueToRgb, SUPPORT_STATUS_COLORS, DISTRICT_FILL_COLOR } from '../lib/colorRamp'
-import { AREA_CAP_KM2, approxBboxAreaKm2, bboxToPolygon, cornersToBbox } from '../lib/geo'
+import { riskValueToRgb, riskValueToCssColor, SUPPORT_STATUS_COLORS, DISTRICT_FILL_COLOR } from '../lib/colorRamp'
+import { AREA_CAP_KM2, approxBboxAreaKm2, bboxToPolygon, cornersToBbox, polygonCentroid } from '../lib/geo'
 import { gridCornersToWgs84 } from '../lib/proj'
 import { decodeGeoTiffToDataUrl } from '../lib/rasterPreview'
 import { useAppState } from '../state/AppStateContext'
@@ -49,23 +49,26 @@ const BASEMAPS = {
   },
   light: {
     label: 'Light',
+    // Was CARTO's basemaps.cartocdn.com/light_all -- CARTO discontinued
+    // free/anonymous access to that endpoint (it now returns a 200 OK
+    // "API KEY REQUIRED" watermark image instead of real tiles, verified
+    // live -- not a network/config issue on this app's side). Esri's
+    // Canvas World_Light_Gray_Base is the same style of muted gray
+    // basemap, free, no key required (verified live: real street-level
+    // tiles over Kathmandu, not a placeholder).
     tiles: [
-      'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-      'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-      'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-      'https://d.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+      'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
     ],
-    attribution: '© OpenStreetMap contributors © CARTO',
+    attribution: 'Esri, HERE, Garmin, FAO, NOAA, USGS',
   },
   dark: {
     label: 'Dark',
+    // Same CARTO deprecation as 'light' above -- swapped to Esri's
+    // Canvas World_Dark_Gray_Base for the same reason.
     tiles: [
-      'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-      'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-      'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-      'https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+      'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
     ],
-    attribution: '© OpenStreetMap contributors © CARTO',
+    attribution: 'Esri, HERE, Garmin, FAO, NOAA, USGS',
   },
   satellite: {
     label: 'Satellite',
@@ -384,6 +387,59 @@ const DRAW_PREVIEW_SOURCE = 'draw-preview'
 const BASINS_SOURCE = 'basins'
 const DISTRICTS_SOURCE = 'districts'
 const RISK_SURFACE_SOURCE = 'risk-surface'
+const BUILDINGS_SOURCE = 'buildings'
+const BUILDINGS_LAYER = 'buildings-fill'
+// Individual footprints are only legible once zoomed in enough to tell
+// them apart -- at a city-wide view, tens of thousands of them (87,402
+// in one already-verified real test case) is visual noise, not
+// information, on top of which the hazard-class raster/zonal table
+// already cover the zoomed-out picture. ~13 is roughly "individual
+// buildings distinguishable" for this basemap set.
+const BUILDINGS_MIN_ZOOM = 13
+const SHELTERS_SOURCE = 'shelter-candidates'
+const SHELTERS_FILL_LAYER = 'shelter-candidates-fill'
+const SHELTERS_LABEL_LAYER = 'shelter-candidates-label'
+// A gold/amber fill -- deliberately distinct from riskValueToRgb's own
+// green-yellow-red hazard ramp (used by BUILDINGS_FILL_COLOR below and
+// the risk-surface raster itself), so a shelter candidate reads as its
+// own category of thing, never mistaken for one more hazard-class swatch.
+const SHELTERS_FILL_COLOR = '#f5b301'
+// A separate point source/layer, one feature per candidate at its own
+// footprint's approximate centroid (lib/geo.js's polygonCentroid) --
+// SHELTERS_FILL_LAYER alone (a real building's own small footprint
+// polygon) can be genuinely hard to spot at anything but a close zoom,
+// especially against a busy basemap; this animated "highlight" halo
+// underneath it is what actually draws the eye to each candidate
+// regardless of zoom level, the literal ask behind "make the shelters
+// highlighted." Radius/opacity are animated by a small requestAnimationFrame
+// loop (SHELTERS_HIGHLIGHT_ANIMATION_MS below) -- MapLibre's own paint
+// properties have no CSS-keyframe equivalent for a canvas-rendered
+// layer, so this is the one other place in this file (alongside
+// useHeroScrollScale.js's own documented exception on the landing page)
+// that ticks a paint property directly rather than relying on a CSS
+// transition/animation.
+const SHELTERS_HIGHLIGHT_SOURCE = 'shelter-candidates-highlight'
+const SHELTERS_HIGHLIGHT_LAYER = 'shelter-candidates-highlight-pulse'
+const SHELTERS_HIGHLIGHT_ANIMATION_MS = 1800
+// Always the 'risk' scheme's own 5 class colors (matching classColor
+// below), same as every other hazard-class swatch in this app
+// (ReportOverlay's zonal table/chart, CriterionSnapshot) -- deliberately
+// NOT tied to state.riskColorScheme, which only ever re-colors the
+// continuous risk-surface raster + its own legend, per that state
+// field's own established scope.
+function classColor(hazardClass) {
+  return riskValueToCssColor((hazardClass - 1) / 4)
+}
+const BUILDINGS_FILL_COLOR = [
+  'match',
+  ['coalesce', ['get', 'hazard_class'], 0],
+  1, classColor(1),
+  2, classColor(2),
+  3, classColor(3),
+  4, classColor(4),
+  5, classColor(5),
+  'rgba(140, 140, 140, 0.35)', // hazard_class null -- outside the AOI/grid, not a 6th real class
+]
 const VALIDATION_EXTENT_SOURCE = 'validation-extent'
 const VALIDATION_EXTENT_LAYER = 'validation-extent'
 // A real, live-caught bug: nepal_bipad_flood_points (backend/app/data/
@@ -391,13 +447,27 @@ const VALIDATION_EXTENT_LAYER = 'validation-extent'
 // nepal_2024_terai -- a 'fill' layer renders literally nothing for
 // Point/MultiPoint geometries in MapLibre (fill only applies to
 // polygons), so that event's own toggle silently did nothing visible on
-// the map. Fixed with a SECOND layer on the same source, 'circle' type
-// -- always added alongside the fill layer regardless of which event is
-// currently loaded, not conditionally chosen by inspecting geometry
-// type: a circle layer is itself already a safe no-op over polygon
-// geometries the exact same way fill is a no-op over points, so both
-// layers can coexist unconditionally and whichever one actually matches
-// the loaded event's own geometry type is the one that renders.
+// the map. Fixed with a SECOND layer on the same source, 'circle' type.
+//
+// A second real, live-reported bug, caught after the fix above shipped:
+// unlike 'fill' (genuinely restricted to Polygon/MultiPolygon) and
+// 'line', MapLibre's 'circle' layer type is NOT restricted to Point/
+// MultiPoint -- it draws a circle at every VERTEX of whatever geometry
+// is in the source, including every ring vertex of a Polygon/
+// MultiPolygon. The original comment here assumed a circle layer was "a
+// safe no-op over polygon geometries the exact same way fill is a no-op
+// over points" -- that assumption was wrong, and every polygon-type
+// event (nepal_2024_terai, nepal_2024_west_eosrs, nepal_2024_west_mbrsc,
+// rasuwa_2026, the EMSR927 events, ...) was rendering a magenta
+// point-marker circle at every one of its polygon's own vertices.
+// Fixed with an explicit `filter` on each layer keyed on MapLibre's
+// `geometry-type` expression (returns 'Point'/'LineString'/'Polygon'
+// only -- geojson-vt flattens Multi* geometries into repeated single-
+// part features before tiling, so there's no separate 'MultiPolygon'/
+// 'MultiPoint' value to match), so each layer only ever draws its own
+// intended geometry type regardless of what else the shared source
+// holds -- correct now for the actual reason both layers can safely
+// coexist on one source, not the previous (incorrect) reasoning.
 const VALIDATION_EXTENT_POINTS_LAYER = 'validation-extent-points'
 
 export default function MapView() {
@@ -410,6 +480,12 @@ export default function MapView() {
   // (no React lifecycle of its own) needs an escape hatch to be updated
   // from outside after construction.
   const validationExtentControlRef = useRef(null)
+  // The shelter-candidates highlight's own requestAnimationFrame handle
+  // (SHELTERS_HIGHLIGHT_LAYER below) -- stopped and restarted whenever
+  // the candidate set changes, and always cancelled on unmount, so it
+  // can never keep ticking a paint property on a layer that no longer
+  // exists.
+  const shelterHighlightAnimRef = useRef(null)
   // Caches the risk-surface GeoTIFF's raw bytes, keyed by data_url --
   // switching color schemes (state.riskColorScheme) needs to re-decode
   // with a different colorFn, but not re-fetch bytes that haven't
@@ -659,6 +735,13 @@ export default function MapView() {
                 id: VALIDATION_EXTENT_LAYER,
                 type: 'fill',
                 source: VALIDATION_EXTENT_SOURCE,
+                // MapLibre's `geometry-type` expression only ever returns
+                // 'Point'/'LineString'/'Polygon' -- GeoJSON sources are
+                // tiled via geojson-vt, which flattens Multi* geometries
+                // into repeated single-part features before this
+                // expression ever sees them, so there's no 'MultiPolygon'/
+                // 'MultiPoint' value to also match here.
+                filter: ['==', ['geometry-type'], 'Polygon'],
                 paint: { 'fill-color': '#e930c8', 'fill-opacity': 0.55 },
                 layout: { visibility: initialVisibility },
               },
@@ -676,6 +759,7 @@ export default function MapView() {
                 id: VALIDATION_EXTENT_POINTS_LAYER,
                 type: 'circle',
                 source: VALIDATION_EXTENT_SOURCE,
+                filter: ['==', ['geometry-type'], 'Point'],
                 paint: {
                   'circle-radius': 7,
                   'circle-color': '#e930c8',
@@ -958,6 +1042,35 @@ export default function MapView() {
     else map.once('load', fit)
   }, [state.aoi])
 
+  // --- restore a drawn AOI's own outline on load ---
+  // setupDrawInteraction's own mouseup handler is the only other place
+  // DRAW_PREVIEW_SOURCE ever gets real data -- it's left populated after
+  // a successful drag rather than cleared, which is what makes the
+  // drawn rectangle stay visible afterward. That path never runs for an
+  // AOI restored from localStorage (AppStateContext's persisted-flow-
+  // state feature) on a fresh page load: state.aoi is already set the
+  // instant this component mounts, with no drag interaction to have
+  // populated the source. Without this, a restored draw-mode AOI would
+  // fit the map to the right area (the effect above) but show no visible
+  // boundary at all -- confusing next to the sidebar's own "AOI set"
+  // summary. Basin/district selections don't need the equivalent here:
+  // their own selected-highlight layers (basins-selected/districts-
+  // selected) are already driven by state.aoi.basinId/districtPcode
+  // directly, not a one-shot interaction result like this source is.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !state.aoi || state.aoi.source !== 'draw') return
+    const draw = () => {
+      map.getSource(DRAW_PREVIEW_SOURCE)?.setData({
+        type: 'FeatureCollection',
+        features: [{ type: 'Feature', properties: {}, geometry: bboxToPolygon(state.aoi.bbox) }],
+      })
+    }
+    if (map.isStyleLoaded()) draw()
+    else map.once('load', draw)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only needs to run once per mount for a restored AOI; a live draw interaction already keeps this source in sync itself
+  }, [])
+
   // --- risk surface raster overlay ---
   // Re-runs on a new compute result (state.overlay.result) or a changed
   // color scheme (state.riskColorScheme) -- either needs a fresh decode
@@ -1018,7 +1131,314 @@ export default function MapView() {
     map.setLayoutProperty('risk-surface-layer', 'visibility', state.riskSurfaceVisible ? 'visible' : 'none')
   }, [state.riskSurfaceVisible])
 
+  // --- classified buildings overlay (state.report.result.buildings) ---
+  // Unlike the risk-surface layer above, this data is already in memory
+  // -- it's part of the POST /api/overlay/report response ReportOverlay
+  // already reads, no separate fetch here. Removes+re-adds the source/
+  // layer (not just setData) the same way the risk-surface layer does,
+  // since a genuinely new report (different AOI/criteria) can arrive,
+  // not just an update to the same one. Rendered above the risk-surface
+  // raster (added with no beforeId, same as that layer) so individual
+  // footprints stay visible on top of the colored raster rather than
+  // being painted under it.
+  useEffect(() => {
+    const map = mapRef.current
+    const buildings = state.report.result?.buildings
+    if (!map || !buildings) return
+
+    const apply = () => {
+      if (map.getLayer(BUILDINGS_LAYER)) map.removeLayer(BUILDINGS_LAYER)
+      if (map.getSource(BUILDINGS_SOURCE)) map.removeSource(BUILDINGS_SOURCE)
+      map.addSource(BUILDINGS_SOURCE, { type: 'geojson', data: buildings })
+      map.addLayer({
+        id: BUILDINGS_LAYER,
+        type: 'fill',
+        source: BUILDINGS_SOURCE,
+        minzoom: BUILDINGS_MIN_ZOOM,
+        paint: {
+          'fill-color': BUILDINGS_FILL_COLOR,
+          'fill-opacity': 0.8,
+          'fill-outline-color': 'rgba(0, 0, 0, 0.45)',
+        },
+        // stateRef, not the closure's own `state.buildingsLayerVisible`
+        // -- same reasoning the risk-surface layer's own initial
+        // visibility above already follows.
+        layout: { visibility: stateRef.current.buildingsLayerVisible ? 'visible' : 'none' },
+      })
+    }
+    if (map.isStyleLoaded()) apply()
+    else map.once('load', apply)
+  }, [state.report.result])
+
+  // --- classified buildings visibility toggle ---
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !map.getLayer(BUILDINGS_LAYER)) return
+    map.setLayoutProperty(BUILDINGS_LAYER, 'visibility', state.buildingsLayerVisible ? 'visible' : 'none')
+  }, [state.buildingsLayerVisible])
+
+  // --- shelter-site candidates (state.shelters.result.candidates) ---
+  // Same remove+re-add shape as the classified-buildings layer above:
+  // the response's `candidates` are a flat list of {geometry, ...
+  // properties}, not already a GeoJSON FeatureCollection like /report's
+  // `buildings` is, so this effect builds one client-side before handing
+  // it to MapLibre. Rendered above the buildings layer (added with no
+  // beforeId, same as every other overlay layer here) so candidates
+  // stay visible even when the classified-buildings layer is also on.
+  useEffect(() => {
+    const map = mapRef.current
+    const candidates = state.shelters.result?.candidates
+    if (!map || !candidates) return
+
+    // Shared by both the fill-layer features below AND the highlight-
+    // layer features -- a real bug, found live, is exactly what this
+    // sharing prevents: the highlight halo's own features originally
+    // carried only {rank}, not the rest, so clicking the halo (larger
+    // and easier to hit than a real building's own small footprint --
+    // the whole point of adding it) showed undefined hazard/distance/
+    // score instead of that candidate's real data. One shared function
+    // means the two layers' popups can never drift apart like that again.
+    const candidateProperties = (c) => ({
+      rank: c.rank,
+      hazard_label: c.hazard_label,
+      suitability_score: c.suitability_score,
+      distance_to_road_m: c.distance_to_road_m,
+      population_density: c.population_density,
+      footprint_area_m2: c.footprint_area_m2,
+    })
+
+    const featureCollection = {
+      type: 'FeatureCollection',
+      features: candidates.map((c) => ({
+        type: 'Feature',
+        geometry: c.geometry,
+        properties: candidateProperties(c),
+      })),
+    }
+
+    // A separate point FeatureCollection (one centroid per candidate,
+    // lib/geo.js's polygonCentroid) for the animated highlight halo --
+    // see SHELTERS_HIGHLIGHT_SOURCE's own comment for why this needs a
+    // point geometry rather than reusing the fill layer's own polygons.
+    const highlightFeatureCollection = {
+      type: 'FeatureCollection',
+      features: candidates.map((c) => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: polygonCentroid(c.geometry) },
+        properties: candidateProperties(c),
+      })),
+    }
+
+    const apply = () => {
+      if (shelterHighlightAnimRef.current) cancelAnimationFrame(shelterHighlightAnimRef.current)
+      if (map.getLayer(SHELTERS_LABEL_LAYER)) map.removeLayer(SHELTERS_LABEL_LAYER)
+      if (map.getLayer(SHELTERS_FILL_LAYER)) map.removeLayer(SHELTERS_FILL_LAYER)
+      if (map.getLayer(SHELTERS_HIGHLIGHT_LAYER)) map.removeLayer(SHELTERS_HIGHLIGHT_LAYER)
+      if (map.getSource(SHELTERS_SOURCE)) map.removeSource(SHELTERS_SOURCE)
+      if (map.getSource(SHELTERS_HIGHLIGHT_SOURCE)) map.removeSource(SHELTERS_HIGHLIGHT_SOURCE)
+
+      map.addSource(SHELTERS_HIGHLIGHT_SOURCE, { type: 'geojson', data: highlightFeatureCollection })
+      // Added FIRST (beneath the fill/label layers added below) so the
+      // pulsing halo reads as radiating out from behind each building
+      // footprint, not painted over top of it.
+      map.addLayer({
+        id: SHELTERS_HIGHLIGHT_LAYER,
+        type: 'circle',
+        source: SHELTERS_HIGHLIGHT_SOURCE,
+        paint: {
+          'circle-color': SHELTERS_FILL_COLOR,
+          'circle-radius': 14,
+          'circle-opacity': 0.5,
+          'circle-blur': 0.6,
+        },
+        layout: { visibility: stateRef.current.sheltersLayerVisible ? 'visible' : 'none' },
+      })
+
+      map.addSource(SHELTERS_SOURCE, { type: 'geojson', data: featureCollection })
+      map.addLayer({
+        id: SHELTERS_FILL_LAYER,
+        type: 'fill',
+        source: SHELTERS_SOURCE,
+        paint: { 'fill-color': SHELTERS_FILL_COLOR, 'fill-opacity': 0.85, 'fill-outline-color': 'rgba(0, 0, 0, 0.6)' },
+        layout: { visibility: stateRef.current.sheltersLayerVisible ? 'visible' : 'none' },
+      })
+      map.addLayer({
+        id: SHELTERS_LABEL_LAYER,
+        type: 'symbol',
+        source: SHELTERS_SOURCE,
+        layout: {
+          'text-field': ['concat', '#', ['to-string', ['get', 'rank']]],
+          'text-size': 12,
+          'text-offset': [0, -1.2],
+          visibility: stateRef.current.sheltersLayerVisible ? 'visible' : 'none',
+        },
+        paint: { 'text-color': '#7a4e00', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
+      })
+
+      // Runs regardless of current visibility -- ticking a hidden
+      // layer's paint property is cheap, and this avoids a race between
+      // this effect and the separate visibility-toggle effect below
+      // over exactly when the layer first exists to animate.
+      startShelterHighlightPulse(map, shelterHighlightAnimRef)
+    }
+    if (map.isStyleLoaded()) apply()
+    else map.once('load', apply)
+
+    return () => {
+      if (shelterHighlightAnimRef.current) {
+        cancelAnimationFrame(shelterHighlightAnimRef.current)
+        shelterHighlightAnimRef.current = null
+      }
+    }
+  }, [state.shelters.result])
+
+  // --- shelter candidates visibility toggle ---
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !map.getLayer(SHELTERS_FILL_LAYER)) return
+    const visibility = state.sheltersLayerVisible ? 'visible' : 'none'
+    map.setLayoutProperty(SHELTERS_FILL_LAYER, 'visibility', visibility)
+    map.setLayoutProperty(SHELTERS_LABEL_LAYER, 'visibility', visibility)
+    map.setLayoutProperty(SHELTERS_HIGHLIGHT_LAYER, 'visibility', visibility)
+  }, [state.sheltersLayerVisible])
+
+  // --- shelter candidate click-to-inspect popup --- same delegated-by-
+  // layer-id, bound-once shape as the classified-buildings popup below.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    const onClick = (e) => {
+      const feature = e.features?.[0]
+      if (!feature) return
+      const {
+        rank,
+        hazard_label: hazardLabel,
+        suitability_score: score,
+        distance_to_road_m: distance,
+        footprint_area_m2: area,
+      } = feature.properties
+      const distanceText = distance != null ? `${Math.round(distance)} m to nearest road` : 'road distance unknown'
+      const areaText = area != null ? `${Math.round(area)} m² footprint` : 'footprint area unknown'
+      new maplibregl.Popup({ closeButton: true, closeOnClick: true, maxWidth: '220px' })
+        .setLngLat(e.lngLat)
+        .setHTML(
+          `<div style="font-size:13px"><strong>Shelter candidate #${rank}</strong><br/>Hazard: ${hazardLabel}<br/>` +
+            `${areaText}<br/>${distanceText}<br/>Suitability: ${Math.round(score * 100)}%</div>`
+        )
+        .addTo(map)
+    }
+    const onEnter = () => {
+      map.getCanvas().style.cursor = 'pointer'
+    }
+    const onLeave = () => {
+      map.getCanvas().style.cursor = stateRef.current.aoiMode === 'draw' ? 'crosshair' : 'grab'
+    }
+
+    // Bound to both the fill layer AND the (larger, easier-to-hit)
+    // highlight halo -- both carry the same feature properties (built
+    // from the same candidates list), so either one produces an
+    // identical popup; this just makes the whole highlighted area
+    // clickable, not only a real building's own small footprint.
+    for (const layerId of [SHELTERS_FILL_LAYER, SHELTERS_HIGHLIGHT_LAYER]) {
+      map.on('click', layerId, onClick)
+      map.on('mouseenter', layerId, onEnter)
+      map.on('mouseleave', layerId, onLeave)
+    }
+    return () => {
+      for (const layerId of [SHELTERS_FILL_LAYER, SHELTERS_HIGHLIGHT_LAYER]) {
+        map.off('click', layerId, onClick)
+        map.off('mouseenter', layerId, onEnter)
+        map.off('mouseleave', layerId, onLeave)
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bind once; handlers read stateRef for live state
+  }, [])
+
+  // --- classified buildings click-to-inspect popup --- bound once
+  // (delegated by layer id, MapLibre's own pattern for basins-fill/
+  // districts-fill above), not re-bound every time the layer above is
+  // removed/re-added -- a click landing in the brief window where the
+  // layer doesn't exist just matches nothing, never a stale popup or a
+  // second stacked listener from a naive re-bind.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    const onClick = (e) => {
+      const feature = e.features?.[0]
+      if (!feature) return
+      const { hazard_class: hazardClass, hazard_label: hazardLabel } = feature.properties
+      const label = hazardLabel || (hazardClass == null ? 'No data at this location' : `Class ${hazardClass}`)
+      new maplibregl.Popup({ closeButton: true, closeOnClick: true, maxWidth: '220px' })
+        .setLngLat(e.lngLat)
+        .setHTML(`<div style="font-size:13px"><strong>Building</strong><br/>Hazard class: ${label}</div>`)
+        .addTo(map)
+    }
+    const onEnter = () => {
+      map.getCanvas().style.cursor = 'pointer'
+    }
+    const onLeave = () => {
+      map.getCanvas().style.cursor = stateRef.current.aoiMode === 'draw' ? 'crosshair' : 'grab'
+    }
+
+    map.on('click', BUILDINGS_LAYER, onClick)
+    map.on('mouseenter', BUILDINGS_LAYER, onEnter)
+    map.on('mouseleave', BUILDINGS_LAYER, onLeave)
+    return () => {
+      map.off('click', BUILDINGS_LAYER, onClick)
+      map.off('mouseenter', BUILDINGS_LAYER, onEnter)
+      map.off('mouseleave', BUILDINGS_LAYER, onLeave)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bind once; handlers read stateRef for live state
+  }, [])
+
   return <div ref={containerRef} className="map-view" />
+}
+
+/**
+ * Pulses SHELTERS_HIGHLIGHT_LAYER's own circle-radius/circle-opacity via
+ * requestAnimationFrame, since MapLibre's canvas-rendered paint
+ * properties have no CSS-keyframe equivalent -- see that layer's own
+ * comment for why this is one of only two places in this file
+ * (alongside useHeroScrollScale.js's own documented landing-page
+ * exception) that ticks a paint property directly rather than a CSS
+ * transition. `animRef` is the calling component's own ref, so its
+ * effect can cancel this loop on cleanup/unmount without needing this
+ * function to be a hook itself.
+ *
+ * Respects prefers-reduced-motion the same way useHeroScrollScale.js/
+ * useScrollZoom.js already do on the landing page: no animation loop at
+ * all, just a fixed, still-visible (not suppressed) radius/opacity.
+ */
+function startShelterHighlightPulse(map, animRef) {
+  let reducedMotion = false
+  try {
+    reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  } catch {
+    // matchMedia unavailable in some test/embed environments -- fall through to the animated path
+  }
+  if (reducedMotion) {
+    if (map.getLayer(SHELTERS_HIGHLIGHT_LAYER)) {
+      map.setPaintProperty(SHELTERS_HIGHLIGHT_LAYER, 'circle-radius', 12)
+      map.setPaintProperty(SHELTERS_HIGHLIGHT_LAYER, 'circle-opacity', 0.4)
+    }
+    return
+  }
+
+  const tick = (timestamp) => {
+    // The layer is removed (and this same rAF handle cancelled) the
+    // instant a new shelters result replaces this one -- this check is
+    // a defensive second line, not the primary stop mechanism, in case
+    // a frame was already queued the instant that happened.
+    if (!map.getLayer(SHELTERS_HIGHLIGHT_LAYER)) return
+    const phase = (timestamp % SHELTERS_HIGHLIGHT_ANIMATION_MS) / SHELTERS_HIGHLIGHT_ANIMATION_MS
+    const wave = (Math.sin(phase * Math.PI * 2) + 1) / 2 // 0..1, smooth breathing rather than a linear sawtooth
+    map.setPaintProperty(SHELTERS_HIGHLIGHT_LAYER, 'circle-radius', 10 + wave * 8)
+    map.setPaintProperty(SHELTERS_HIGHLIGHT_LAYER, 'circle-opacity', 0.25 + wave * 0.35)
+    animRef.current = requestAnimationFrame(tick)
+  }
+  animRef.current = requestAnimationFrame(tick)
 }
 
 function setupDrawInteraction(map, stateRef, dispatch) {

@@ -13,6 +13,7 @@ import { compareToMeteor } from '../api/client'
 import { aucQuality } from '../lib/aucQuality'
 import { formatFraction } from '../lib/formatFraction'
 import { useAppState } from '../state/AppStateContext'
+import ErrorNotice from './ErrorNotice'
 import FrequencyRatioChart from './FrequencyRatioChart'
 import SuccessRateChart from './SuccessRateChart'
 
@@ -42,6 +43,9 @@ export default function MeteorComparisonPanel() {
   const { status, result, error } = state.meteorComparison
 
   async function handleCompare() {
+    // Same double-click/double-Enter guard ReportPanel's own
+    // handleGenerateReport documents.
+    if (status === 'loading') return
     dispatch({ type: 'METEOR_COMPARISON_LOADING' })
     try {
       const payload = {
@@ -69,7 +73,7 @@ export default function MeteorComparisonPanel() {
         {status === 'loading' ? 'Comparing…' : result ? 'Re-compare' : 'Compare to METEOR'}
       </button>
 
-      {status === 'error' && <p className="field-error">{error?.message || 'Comparison failed.'}</p>}
+      {status === 'error' && <ErrorNotice error={error} fallback="Comparison failed." onRetry={handleCompare} />}
 
       {result && (
         <div className="validation-panel__result">

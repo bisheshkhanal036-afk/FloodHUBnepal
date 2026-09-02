@@ -16,12 +16,14 @@ import { useAppState, useFinalWeights, useSelectedCriteriaIds } from '../state/A
 import AboutModal from './AboutModal'
 import AOIPanel from './AOIPanel'
 import CriteriaPanel from './CriteriaPanel'
+import BrandMark from './BrandMark'
 import Logo from './Logo'
 import StepSection from './StepSection'
 import WeightingPanel from './WeightingPanel'
 import ComputePanel from './ComputePanel'
 import ResultPanel from './ResultPanel'
 import ReportPanel from './ReportPanel'
+import SheltersPanel from './SheltersPanel'
 import ValidationPanel from './ValidationPanel'
 import MeteorComparisonPanel from './MeteorComparisonPanel'
 
@@ -70,6 +72,13 @@ export default function Sidebar({ onBackToLanding }) {
         complete: state.meteorComparison.status === 'loaded',
         content: <MeteorComparisonPanel />,
       },
+      {
+        id: 8,
+        title: 'Shelters',
+        reachable: overlayLoaded,
+        complete: state.shelters.status === 'loaded',
+        content: <SheltersPanel />,
+      },
     ]
   }, [
     state.aoi,
@@ -79,6 +88,7 @@ export default function Sidebar({ onBackToLanding }) {
     state.report.status,
     state.validation.status,
     state.meteorComparison.status,
+    state.shelters.status,
   ])
 
   // Every reachable step is open by default -- deliberately NOT an
@@ -105,7 +115,7 @@ export default function Sidebar({ onBackToLanding }) {
         <button type="button" className="sidebar__brand" onClick={onBackToLanding} title="Back to overview">
           <Logo size={32} />
           <span>
-            <span className="sidebar__brand-title">FloodHUB</span>
+            <BrandMark variant="sidebar" />
             <span className="sidebar__brand-sub">Nepal</span>
           </span>
         </button>

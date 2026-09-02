@@ -30,9 +30,11 @@ from __future__ import annotations
 import json
 import logging
 from functools import lru_cache
+from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
+import pandas as pd
 from rasterio.features import rasterize
 
 from . import config
@@ -55,6 +57,56 @@ logger = logging.getLogger(__name__)
 # real nepal_2024_terai polygon, 2084 parts: 9.75MB geometry-only at
 # full precision, 2.47MB simplified to this tolerance).
 EXTENT_DISPLAY_SIMPLIFY_TOLERANCE_DEG = 0.0001
+
+
+def _resolve_event_paths(meta: dict) -> list[Path]:
+    """`meta["path"]` is normally a single filename (relative to
+    config.LOCAL_VALIDATION_EXTENTS_DIR), but an event can also register
+    a LIST of filenames -- e.g. nepal_2026_emsr927, delivered by
+    Copernicus EMS as 3 separate per-AOI shapefiles but registered here
+    as ONE toggleable event, at explicit request, rather than 3 near-
+    identical event keys a user would have to pick between one at a
+    time. Both call sites below (get_observed_flood_mask,
+    get_validation_extent_geojson) go through this + _read_and_merge so
+    neither has to special-case "one file" vs "several".
+    """
+    raw = meta["path"]
+    names = raw if isinstance(raw, list) else [raw]
+    return [config.LOCAL_VALIDATION_EXTENTS_DIR / name for name in names]
+
+
+def _read_and_merge(paths: list[Path], target_crs: str) -> gpd.GeoDataFrame:
+    """Reads every shapefile in `paths` and merges them into one
+    GeoDataFrame in `target_crs`. Each file is reprojected
+    INDEPENDENTLY before merging -- never assuming every path in a
+    multi-file event shares one native CRS, since this project's other
+    events already don't (nepal_2024_west_mbrsc is EPSG:32644,
+    rasuwa_2026 is EPSG:32645) -- so a future multi-file event mixing
+    native CRSs is handled correctly by construction, not by accident.
+    """
+    frames = []
+    for path in paths:
+        gdf = gpd.read_file(path)
+        if gdf.crs is not None and str(gdf.crs) != target_crs:
+            gdf = gdf.to_crs(target_crs)
+        frames.append(gdf)
+    if len(frames) == 1:
+        return frames[0]
+    # ignore_index=True: each source file's own row index is meaningless
+    # once merged, and would otherwise produce duplicate index values
+    # across files.
+    return gpd.GeoDataFrame(pd.concat(frames, ignore_index=True), crs=target_crs)
+
+
+def _raise_if_missing(event: str, paths: list[Path]) -> None:
+    missing = [p for p in paths if not p.exists()]
+    if missing:
+        raise DataSourceUnavailableError(
+            f"validation_extent: no local flood-extent shapefile for event {event!r} -- missing "
+            f"{[str(p) for p in missing]} (of {len(paths)} file(s) this event is registered "
+            "against). There is no cloud fallback for this one-time downloaded product. See "
+            "config.py's VALIDATION_EVENTS for where to obtain it."
+        )
 
 
 def list_validation_events() -> dict[str, str]:
@@ -105,20 +157,12 @@ def get_observed_flood_mask(aoi: AOI, event: str) -> ObservedFloodMaskResult:
                 f"{sorted(config.VALIDATION_EVENTS)!r}"
             )
 
-        path = config.LOCAL_VALIDATION_EXTENTS_DIR / meta["path"]
-        if not path.exists():
-            raise DataSourceUnavailableError(
-                f"validation_extent: no local flood-extent shapefile for event {event!r} at "
-                f"{path} -- there is no cloud fallback for this one-time downloaded product. "
-                "See config.py's VALIDATION_EVENTS for where to obtain it."
-            )
+        paths = _resolve_event_paths(meta)
+        _raise_if_missing(event, paths)
 
-        logger.info("validation_extent: LOCAL HIT for event=%s aoi=%s -> %s", event, aoi.bbox_4326, path)
-        gdf = gpd.read_file(path)
-
+        logger.info("validation_extent: LOCAL HIT for event=%s aoi=%s -> %s", event, aoi.bbox_4326, paths)
         grid = compute_aoi_grid(aoi.bounds_utm)
-        if gdf.crs is not None and str(gdf.crs) != grid.crs:
-            gdf = gdf.to_crs(grid.crs)
+        gdf = _read_and_merge(paths, grid.crs)
 
         geoms = [geom for geom in gdf.geometry if geom is not None and not geom.is_empty]
         if not geoms:
@@ -192,18 +236,11 @@ def get_validation_extent_geojson(event: str) -> dict:
             f"{sorted(config.VALIDATION_EVENTS)!r}"
         )
 
-    path = config.LOCAL_VALIDATION_EXTENTS_DIR / meta["path"]
-    if not path.exists():
-        raise DataSourceUnavailableError(
-            f"validation_extent: no local flood-extent shapefile for event {event!r} at "
-            f"{path} -- there is no cloud fallback for this one-time downloaded product. "
-            "See config.py's VALIDATION_EVENTS for where to obtain it."
-        )
+    paths = _resolve_event_paths(meta)
+    _raise_if_missing(event, paths)
 
-    logger.info("validation_extent: building display GeoJSON for event=%s -> %s", event, path)
-    gdf = gpd.read_file(path)
-    if gdf.crs is not None and str(gdf.crs) != "EPSG:4326":
-        gdf = gdf.to_crs("EPSG:4326")
+    logger.info("validation_extent: building display GeoJSON for event=%s -> %s", event, paths)
+    gdf = _read_and_merge(paths, "EPSG:4326")
 
     simplified = gdf.geometry.simplify(EXTENT_DISPLAY_SIMPLIFY_TOLERANCE_DEG)
     geom_only = gpd.GeoDataFrame(geometry=simplified, crs="EPSG:4326")
