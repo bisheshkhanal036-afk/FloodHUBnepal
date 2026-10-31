@@ -49,3 +49,15 @@ export function mapPaths(districts) {
   const point = ([lon, lat]) => `${(offsetX+(lon*Math.cos(28*Math.PI/180)-minX)*scale).toFixed(2)},${(offsetY+(-lat-minY)*scale).toFixed(2)}`
   return districts.map(d => ({ code: d.code, path: polygons(d).map(polygon => polygon.map(ring => `M${ring.map(point).join('L')}Z`).join('')).join('') }))
 }
+
+// Match the exact projection and padding used by mapPaths.
+export function hazardRect(districts, bounds) {
+  const points = districts.flatMap(d => (d.geometry.type === 'Polygon' ? [d.geometry.coordinates] : d.geometry.coordinates).flat(2))
+  const cos = Math.cos(28*Math.PI/180)
+  const xs = points.map(p=>p[0]*cos), ys = points.map(p=>-p[1])
+  const minX = xs.reduce((a,b)=>Math.min(a,b),Infinity), maxX = xs.reduce((a,b)=>Math.max(a,b),-Infinity), minY = ys.reduce((a,b)=>Math.min(a,b),Infinity), maxY = ys.reduce((a,b)=>Math.max(a,b),-Infinity)
+  const scale = Math.min(940/(maxX-minX),490/(maxY-minY))
+  return {x:(1000-(maxX-minX)*scale)/2+(bounds[0]*cos-minX)*scale,
+    y:(550-(maxY-minY)*scale)/2+(-bounds[3]-minY)*scale,
+    width:(bounds[2]-bounds[0])*cos*scale,height:(bounds[3]-bounds[1])*scale}
+}

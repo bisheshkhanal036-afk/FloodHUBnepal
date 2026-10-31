@@ -17,6 +17,9 @@ try {
   const dataResponse=await page.request.get(new URL('demo/snapshot.json',url).href)
   const data=await dataResponse.json()
   if(data.districts.length!==77||data.schemes.length!==5)throw new Error('Incorrect live snapshot')
+  if(data.hazard?.validatedUnits.length!==366)throw new Error('Missing hazard manifest')
+  for(const file of Object.values(data.hazard.files)){const r=await page.request.get(new URL('demo/'+file,url).href);if(!r.ok()||(await r.body()).length<10000)throw new Error('Missing raster '+file)}
+  await page.getByTestId('hazard-raster').waitFor()
   const csv=await page.request.get(new URL('demo/district-exposure.csv',url).href)
   if(csv.status()!==200||(await csv.text()).split('\n').length!==386)throw new Error('CSV download failed')
   await page.getByRole('button',{name:'Shelters',exact:true}).click()

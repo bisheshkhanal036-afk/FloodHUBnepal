@@ -6,7 +6,7 @@ test('loads at the Pages project path and compares actual district results',asyn
   const before=await page.getByTestId('district-value').innerText()
   await page.getByLabel('Weighting scheme').selectOption('equal8')
   await expect(page.getByTestId('district-value')).not.toHaveText(before)
-  await page.getByLabel('Color the map by').selectOption('areaShare')
+  await page.getByLabel('District summary metric').selectOption('areaShare')
   await expect(page.getByTestId('district-value')).toContainText('%')
   await page.getByLabel('Inspect a district').selectOption('NP0104')
   await expect(page.getByRole('heading',{name:'Jhapa',exact:true})).toBeVisible()
@@ -49,4 +49,26 @@ test('a failed static-data request gives a recoverable error instead of fake res
   await page.goto('./');await expect(page.getByRole('heading',{name:'The snapshot is unavailable.'})).toBeVisible()
   await page.unroute('**/demo/snapshot.json');await page.getByRole('button',{name:'Retry loading'}).click()
   await expect(page.getByRole('heading',{name:'Kathmandu',exact:true})).toBeVisible()
+})
+
+
+test('serves five real categorical rasters and switches between susceptibility and exposure',async({page,request})=>{
+  await page.goto('./')
+  await expect(page.getByTestId('hazard-raster')).toBeVisible()
+  const snapshot=await (await request.get('demo/snapshot.json')).json()
+  expect(snapshot.hazard.validatedUnits).toHaveLength(366)
+  const sizes=[]
+  for(const scheme of snapshot.schemes){
+    await page.getByLabel('Weighting scheme').selectOption(scheme.id)
+    await expect(page.getByTestId('hazard-raster')).toHaveAttribute('href',`/FloodHUBnepal/demo/${snapshot.hazard.files[scheme.id]}`)
+    const raster=await request.get(`demo/${snapshot.hazard.files[scheme.id]}`)
+    expect(raster.ok()).toBe(true)
+    const bytes=await raster.body();expect(bytes.subarray(1,4).toString()).toBe('PNG');sizes.push(bytes.length)
+  }
+  expect(sizes.every(n=>n>10000)).toBe(true)
+  await page.getByLabel('Map layer').selectOption('exposure')
+  await expect(page.getByTestId('hazard-raster')).toHaveCount(0)
+  await page.getByLabel('Map layer').selectOption('hazard')
+  await expect(page.getByTestId('hazard-raster')).toBeVisible()
+  await page.locator('.demo-map-card').screenshot({path:'test-results/hazard-map.png'})
 })

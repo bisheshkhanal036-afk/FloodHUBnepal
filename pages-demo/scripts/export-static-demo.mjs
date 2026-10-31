@@ -98,6 +98,7 @@ const snapshot = {
   boundaryAttribution: { title: 'Nepal — Subnational Administrative Boundaries', source: 'Survey Department of Nepal; UN Resident Coordinator’s Office in Nepal; distributed via OCHA HDX', url: 'https://data.humdata.org/dataset/cod-ab-npl', license: 'CC BY-IGO', changes: 'District outlines simplified (~0.002° tolerance) and coordinates rounded for an overview map. Not for measurement or legal boundaries.' },
   provenance: provenancePaths.map(path => ({ path, sha256: createHash('sha256').update(source(path)).digest('hex') })),
 }
+try { snapshot.hazard = JSON.parse(source('pages-demo/public/demo/hazard/manifest.json')) } catch (error) { if (error.code !== 'ENOENT') throw error }
 writeFileSync(resolve(output, 'snapshot.json'), JSON.stringify(snapshot))
 const columns = ['scheme','district_code','district','province', ...Object.keys(fields)]
 const quote = value => `"${String(value).replaceAll('"','""')}"`

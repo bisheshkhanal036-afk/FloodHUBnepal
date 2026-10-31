@@ -27,3 +27,6 @@ screenshots are retained locally under `test-results/`. Recheck with
 Source changes are on `feat/github-pages-demo`, draft PR #5; the application’s
 default branch was not merged or replaced. The site is independently published
 from its generated `gh-pages` branch.
+
+
+Hazard raster addition: five 3320 x 1680 transparent categorical PNGs, 0.0025 degree overview cells (about 250 m). All 366 native cache grid dimensions verified against HydroBASINS bounding boxes projected using the four-corner EPSG:32645 convention; zero overlapping overview samples. National breaks and exact published RQ3 scheme inputs; RQ3 half-up class boundaries after ten-decimal score rounding. Missing native cells remain transparent. Five Python classification/artifact checks, 13 Vitest tests and five Chrome browser tests. Screenshot inspection confirms raster and district-outline alignment; mobile has no horizontal page overflow. Browser tests exercise all five raster URLs and both layer modes. These checks verify export mechanics and UI, not predictive accuracy of the research model.
