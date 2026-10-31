@@ -37,7 +37,7 @@ if($LASTEXITCODE -ne 0){
     & git -C $publishDirectory push origin HEAD:gh-pages
     Check 'Push publishing branch'
 }
-& gh api "repos/$Repository/pages" --silent 2>$null
+& gh api "repos/$Repository/pages" --silent
 if($LASTEXITCODE -ne 0){
     & gh api --method POST "repos/$Repository/pages" -f 'source[branch]=gh-pages' -f 'source[path]=/'
     Check 'Enable GitHub Pages'
