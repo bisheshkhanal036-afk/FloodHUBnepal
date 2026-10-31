@@ -1,0 +1,52 @@
+import { test, expect } from '@playwright/test'
+
+test('loads at the Pages project path and compares actual district results',async({page})=>{
+  const errors=[],requests=[];page.on('pageerror',error=>errors.push(error.message));page.on('request',request=>requests.push(request.url()))
+  await page.goto('./');await expect(page.getByRole('heading',{name:'Kathmandu',exact:true})).toBeVisible()
+  const before=await page.getByTestId('district-value').innerText()
+  await page.getByLabel('Weighting scheme').selectOption('equal8')
+  await expect(page.getByTestId('district-value')).not.toHaveText(before)
+  await page.getByLabel('Color the map by').selectOption('areaShare')
+  await expect(page.getByTestId('district-value')).toContainText('%')
+  await page.getByLabel('Inspect a district').selectOption('NP0104')
+  await expect(page.getByRole('heading',{name:'Jhapa',exact:true})).toBeVisible()
+  await page.getByRole('button',{name:'Zoom in'}).click();await expect(page.getByText('150%',{exact:true})).toBeVisible()
+  await page.getByRole('button',{name:'Reset',exact:true}).click()
+  expect(await page.locator('.demo-map-scroll').evaluate(container=>{const box=container.getBoundingClientRect();return [...container.querySelectorAll('path')].every(path=>{const r=path.getBoundingClientRect();return r.left>=box.left-1&&r.right<=box.right+1&&r.top>=box.top-1&&r.bottom<=box.bottom+1})})).toBe(true)
+  await expect.poll(()=>page.locator('.demo-figure img').evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true)
+  await page.evaluate(()=>window.scrollTo(0,0))
+  expect(errors).toEqual([]);expect(requests.filter(url=>url.includes('/api/')||url.includes(':8000'))).toEqual([])
+  expect(requests.every(url=>url.startsWith('http://127.0.0.1:4187/'))).toBe(true)
+  await page.screenshot({path:'test-results/desktop-explorer.png',fullPage:true})
+})
+
+test('supports keyboard map selection, filtering, figures and real downloads',async({page,request})=>{
+  await page.goto('./');await expect(page.getByRole('heading',{name:'Kathmandu',exact:true})).toBeVisible()
+  const district=page.getByRole('button',{name:/^Morang:/});await district.focus();await page.keyboard.press('Enter')
+  await expect(page.getByRole('heading',{name:'Morang',exact:true})).toBeVisible()
+  await page.getByLabel('Find a district or province').fill('Panchthar');await page.getByRole('button',{name:'Inspect Panchthar'}).click()
+  await expect(page.getByRole('heading',{name:'Panchthar',exact:true})).toBeVisible()
+  await page.getByRole('button',{name:'Shelters',exact:true}).click()
+  await expect(page.getByRole('heading',{name:'How stable are candidate lists?'})).toBeVisible()
+  const image=page.getByRole('img',{name:/Overlap between ranked Kathmandu/});await expect(image).toBeVisible()
+  await expect.poll(()=>image.evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true)
+  const csv=await request.get('demo/district-exposure.csv');expect(csv.ok()).toBe(true);expect((await csv.text()).split('\n')).toHaveLength(386)
+  const snapshot=await request.get('demo/snapshot.json');expect((await snapshot.json()).districts).toHaveLength(77)
+  await page.getByLabel('Find a district or province').fill('no such district');await expect(page.getByText(/No districts match/)).toBeVisible()
+})
+
+test('mobile layout keeps controls and district details readable without horizontal page overflow',async({page})=>{
+  await page.setViewportSize({width:390,height:844});await page.goto('./')
+  await expect(page.getByRole('heading',{name:'Kathmandu',exact:true})).toBeVisible()
+  await page.getByLabel('Weighting scheme').selectOption('fitted_full');await page.getByLabel('Inspect a district').selectOption('NP0104')
+  await expect(page.getByRole('heading',{name:'Jhapa',exact:true})).toBeVisible()
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true)
+  await page.screenshot({path:'test-results/mobile-explorer.png',fullPage:true})
+})
+
+test('a failed static-data request gives a recoverable error instead of fake results',async({page})=>{
+  await page.route('**/demo/snapshot.json',route=>route.fulfill({status:503,body:'Unavailable'}))
+  await page.goto('./');await expect(page.getByRole('heading',{name:'The snapshot is unavailable.'})).toBeVisible()
+  await page.unroute('**/demo/snapshot.json');await page.getByRole('button',{name:'Retry loading'}).click()
+  await expect(page.getByRole('heading',{name:'Kathmandu',exact:true})).toBeVisible()
+})

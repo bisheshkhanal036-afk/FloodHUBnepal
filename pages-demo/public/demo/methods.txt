@@ -1,0 +1,14 @@
+KHOLA STATIC DEMO — METHOD NOTES
+Snapshot: 2026-10-31
+
+This site displays existing research outputs. It does not compute new susceptibility scores.
+
+The eight research criteria are elevation, slope, topographic wetness index (TWI), height above nearest drainage (HAND), drainage density, distance to river, soil sand-content proxy, and land cover. Scheme-specific weights are compared across equal weights, published expert medians, a Nepal-only expert median, and fitted cluster/full references. They are not live or user-edited weights.
+
+The exported district aggregates select the rows identified by breaks=national and definition=class45 in results/rq3_exposure_by_district.csv. Population uses the population_cal_* columns (census-calibrated research estimates). National totals come from rq3_national_totals.csv. Land coverage is valid mapped area divided by the district analysis area. Missing cells are unknown, not low susceptibility.
+
+The map colors district-level aggregates, not raster pixels. Classes 4–5 are modeled susceptibility categories; they are not current flooding, calibrated flood probabilities, or operational evacuation guidance. Population counts reflect population concentration as well as classification. Fitted models are research comparisons, not universally superior forecasts. The displayed figures are unchanged original project outputs.
+
+One research unit was missing, corresponding to 133.758 km² inside Nepal (rq3_coverage_note.csv). Research methods and calibrated population are distinct from the live application's raw-HRSL reporting paths.
+
+Source paths and SHA-256 fingerprints are in snapshot.json. Boundary attribution and simplification are in README.txt and the site's Sources section. No raw incident inventory or individual shelter locations are published here.
