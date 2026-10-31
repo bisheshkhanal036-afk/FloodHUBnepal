@@ -13,3 +13,17 @@
 This verifies the static presentation and data wiring, not the scientific validity of the underlying research. The displayed aggregates are the committed research outputs, not recomputed metrics, forecasts, incident records or operational shelter instructions.
 
 Reproduction: `npm ci`, `npm test`, `npm run build -- --base /FloodHUBnepal/`, `npm run test:browser` (Node 24+, Chrome locally; see README for bundled Chromium).
+
+## Public deployment check
+
+GitHub Pages deployment run **41172081916** completed successfully from `gh-pages`.
+Chrome checked `https://bisheshkhanal036-afk.github.io/FloodHUBnepal/` on 2026-10-31:
+HTTP 200; 77 districts; five schemes; 385 downloadable district/scheme CSV rows;
+scheme/district switching and research figures working; zero JavaScript runtime
+errors; zero API requests; no page overflow at 390 px. Live desktop/mobile
+screenshots are retained locally under `test-results/`. Recheck with
+`node scripts/check-live.mjs`.
+
+Source changes are on `feat/github-pages-demo`, draft PR #5; the application’s
+default branch was not merged or replaced. The site is independently published
+from its generated `gh-pages` branch.

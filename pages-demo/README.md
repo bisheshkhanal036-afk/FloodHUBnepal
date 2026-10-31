@@ -20,7 +20,7 @@ Browser checks use Playwright. Locally they use an installed Chrome; set `CI=1` 
 
 ## Publish
 
-The intended URL is `https://bisheshkhanal036-afk.github.io/FloodHUBnepal/`.
+The live URL is `https://bisheshkhanal036-afk.github.io/FloodHUBnepal/` (verified 2026-10-31). Source changes are available in [draft PR #5](https://github.com/bisheshkhanal036-afk/FloodHUBnepal/pull/5); publishing the generated site does not require merging the application’s default branch.
 
 GitHub Pages serves only the built `dist/` contents from the root of the `gh-pages` branch, including `.nojekyll`. Repository **Settings → Pages → Source** should be **Deploy from a branch**, branch **gh-pages**, folder **/ (root)**. This uses GitHub's Pages branch build rather than requiring a custom workflow or workflow-write token scope.
 
