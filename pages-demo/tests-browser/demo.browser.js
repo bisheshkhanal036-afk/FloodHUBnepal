@@ -10,9 +10,9 @@ test('loads at the Pages project path and compares actual district results',asyn
   await expect(page.getByTestId('district-value')).toContainText('%')
   await page.getByLabel('Inspect a district').selectOption('NP0104')
   await expect(page.getByRole('heading',{name:'Jhapa',exact:true})).toBeVisible()
-  await page.getByRole('button',{name:'Zoom in'}).click();await expect(page.getByText('150%',{exact:true})).toBeVisible()
+  const zoomBefore=await page.getByTestId('map-zoom').innerText();await page.getByRole('button',{name:'Zoom in',exact:true}).click();await expect(page.getByTestId('map-zoom')).not.toHaveText(zoomBefore)
   await page.getByRole('button',{name:'Reset',exact:true}).click()
-  expect(await page.locator('.demo-map-scroll').evaluate(container=>{const box=container.getBoundingClientRect();return [...container.querySelectorAll('path')].every(path=>{const r=path.getBoundingClientRect();return r.left>=box.left-1&&r.right<=box.right+1&&r.top>=box.top-1&&r.bottom<=box.bottom+1})})).toBe(true)
+  await expect(page.getByRole('region',{name:/Interactive susceptibility map/})).toBeVisible()
   await expect.poll(()=>page.locator('.demo-figure img').evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true)
   await page.evaluate(()=>window.scrollTo(0,0))
   expect(errors).toEqual([]);expect(requests.filter(url=>url.includes('/api/')||url.includes(':8000'))).toEqual([])
@@ -60,8 +60,8 @@ test('serves five real categorical rasters and switches between susceptibility a
   const sizes=[]
   for(const scheme of snapshot.schemes){
     await page.getByLabel('Weighting scheme').selectOption(scheme.id)
-    await expect(page.getByTestId('hazard-raster')).toHaveAttribute('href',`/FloodHUBnepal/demo/${snapshot.hazard.files[scheme.id]}`)
-    const raster=await request.get(`demo/${snapshot.hazard.files[scheme.id]}`)
+    await expect(page.getByTestId('hazard-raster')).toHaveAttribute('src',`/FloodHUBnepal/demo/${snapshot.hazard.webMercatorFiles[scheme.id]}`)
+    const raster=await request.get(`demo/${snapshot.hazard.webMercatorFiles[scheme.id]}`)
     expect(raster.ok()).toBe(true)
     const bytes=await raster.body();expect(bytes.subarray(1,4).toString()).toBe('PNG');sizes.push(bytes.length)
   }
@@ -71,4 +71,60 @@ test('serves five real categorical rasters and switches between susceptibility a
   await page.getByLabel('Map layer').selectOption('hazard')
   await expect(page.getByTestId('hazard-raster')).toBeVisible()
   await page.locator('.demo-map-card').screenshot({path:'test-results/hazard-map.png'})
+})
+
+
+test('basin-relative classification, basin fit and district fit preserve geographic map navigation',async({page,request})=>{
+  await page.goto('./')
+  await expect(page.getByLabel('Zoom to research basin')).toBeEnabled()
+  const zoomBefore=await page.getByTestId('map-zoom').innerText()
+  await page.getByLabel('Zoom to research basin').selectOption('4080848980_L8')
+  await expect(page.getByTestId('map-zoom')).not.toHaveText(zoomBefore)
+  await expect(page.locator('.demo-basin-note')).toContainText('Kathmandu Valley')
+  await expect(page.getByLabel('Boundary overlay')).toHaveValue('basins')
+  await page.getByLabel('Raster classification').selectOption('basin')
+  await expect(page.getByTestId('hazard-raster')).toHaveAttribute('src',/basin_expert_median_3857.png$/)
+  await expect.poll(()=>page.getByTestId('hazard-raster').evaluate(img=>img.complete&&img.naturalWidth===3320)).toBe(true)
+  await expect(page.locator('.demo-classification-note')).toContainText('District and national exposure')
+  const original=await (await request.get('demo/hazard/expert_median_3857.png')).body()
+  const relative=await (await request.get('demo/hazard/basin_expert_median_3857.png')).body()
+  expect(original.equals(relative)).toBe(false)
+  await page.getByLabel('Boundary overlay').selectOption('districts')
+  await page.getByRole('button',{name:'Zoom to district',exact:true}).click()
+  await page.getByRole('button',{name:'Enlarge map',exact:true}).click()
+  await expect(page.getByRole('button',{name:'Compact map',exact:true})).toHaveAttribute('aria-pressed','true')
+  await page.locator('.demo-map-card').screenshot({path:'test-results/basin-detail.png'})
+})
+
+test('satellite imagery is optional, attributed and recovers from tile failures',async({page})=>{
+  const tiles=[]
+  // Deterministic offline tile fixture; the live check separately verifies the provider.
+  await page.route('https://services.arcgisonline.com/**',route=>{tiles.push(route.request().url());return route.fulfill({status:200,contentType:'image/png',path:'public/demo/hazard/expert_median_3857.png'})})
+  await page.goto('./')
+  expect(tiles).toHaveLength(0)
+  await page.getByLabel('Background imagery').selectOption('satellite')
+  await expect.poll(()=>tiles.length).toBeGreaterThan(0)
+  await expect(page.locator('.leaflet-control-attribution')).toContainText('Esri')
+  await expect.poll(()=>page.locator('.leaflet-tile-loaded').count()).toBeGreaterThan(0)
+  await page.getByLabel('Background imagery').selectOption('none')
+  await expect(page.locator('.leaflet-tile-pane img')).toHaveCount(0)
+  await page.unroute('https://services.arcgisonline.com/**')
+  await page.route('https://services.arcgisonline.com/**',route=>route.abort())
+  await page.getByLabel('Background imagery').selectOption('satellite')
+  await expect(page.getByRole('status')).toContainText('Some background imagery could not load')
+  await expect(page.getByTestId('hazard-raster')).toBeVisible()
+})
+
+
+test('missing basin vectors and a failed raster report errors while district zoom and scheme recovery work',async({page})=>{
+  await page.route('**/demo/basins.json',route=>route.fulfill({status:503,body:'Unavailable'}))
+  await page.route('**/demo/hazard/expert_median_3857.png',route=>route.abort())
+  await page.goto('./')
+  await expect(page.getByLabel('Zoom to research basin')).toBeDisabled()
+  await expect(page.getByText(/Basin outlines are unavailable/)).toBeVisible()
+  await expect(page.getByRole('alert')).toContainText('susceptibility raster could not be loaded')
+  await page.getByRole('button',{name:'Zoom to district',exact:true}).click()
+  await page.getByLabel('Weighting scheme').selectOption('equal8')
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect.poll(()=>page.getByTestId('hazard-raster').evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true)
 })

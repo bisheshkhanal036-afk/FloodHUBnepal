@@ -2,6 +2,9 @@ import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import StaticDemo from '../StaticDemo'
+// Leaflet needs actual browser layout/SVG APIs; its interactions are covered
+// by Playwright. These tests isolate the surrounding research data controls.
+vi.mock('../ResearchMap',()=>({default:()=> <div aria-label="Research map"/>}))
 const data=JSON.parse(readFileSync('public/demo/snapshot.json','utf8'))
 afterEach(()=>{cleanup();vi.unstubAllGlobals()})
 describe('static explorer',()=>{

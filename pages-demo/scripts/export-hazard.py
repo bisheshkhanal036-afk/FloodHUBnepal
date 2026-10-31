@@ -71,7 +71,8 @@ def export():
     lon=extent[0]+(np.arange(width)+.5)*(extent[2]-extent[0])/width
     lat=extent[3]-(np.arange(height)+.5)*(extent[3]-extent[1])/height
     xx,yy=transform.transform(*np.meshgrid(lon,lat))
-    images=np.zeros((5,height,width),dtype=np.uint8); units=[]; overlaps=0
+    images=np.zeros((5,height,width),dtype=np.uint8)
+    basin_images=np.zeros_like(images); units=[]; overlaps=0
     for n,path in enumerate(files):
         bbox=bounds[int(path.stem.split('_')[0])]; ox,oy,sw,sh=grid(bbox,transform)
         with np.load(path,allow_pickle=False) as z:
@@ -88,20 +89,38 @@ def export():
             good[good]=valid[pos[good]]==source[good]
             rr=rr[good];cc=cc[good];pos=pos[good]
             scores=np.zeros((5,len(pos)),dtype=np.float64)
+            basin_scores=np.zeros_like(scores)
+            basin_breaks=json.loads(str(z['meta_json']))['per_basin_quintile_breaks']
             for j,c in enumerate(CRITERIA):
-                classes=classify(z['x_'+c][pos],c,breaks)
+                values=z['x_'+c][pos]
+                classes=classify(values,c,breaks)
                 assert np.all((classes>=1)&(classes<=5))
                 scores+=w[:,j,None]*classes
+                basin_scores+=w[:,j,None]*classify(values,c,basin_breaks)
             overlaps+=int(np.count_nonzero(images[0,rr,cc]))
             images[:,rr,cc]=score_classes(scores)
+            basin_images[:,rr,cc]=score_classes(basin_scores)
             units.append(path.stem)
         if n%25==0: print(f'{n+1}/{len(files)} grids validated',flush=True)
     palette=[0,0,0]+[int(c[i:i+2],16) for c in COLORS for i in [1,3,5]]
-    for i,name in enumerate(IDS):
-        im=Image.fromarray(images[i],mode='P'); im.putpalette(palette+[0]*(768-len(palette)))
-        im.save(OUT/f'{name}.png',transparency=0,optimize=True)
+    # Leaflet projects image bounds to Web Mercator. Warp the rows explicitly
+    # rather than stretching a geographic image linearly in Mercator space.
+    north=np.arcsinh(np.tan(np.radians(extent[3])))
+    south=np.arcsinh(np.tan(np.radians(extent[1])))
+    display_lat=np.degrees(np.arctan(np.sinh(north-(np.arange(height)+.5)*(north-south)/height)))
+    source_rows=np.clip(np.floor((extent[3]-display_lat)/(extent[3]-extent[1])*height).astype(int),0,height-1)
+    for prefix,stack in [('',images),('basin_',basin_images)]:
+        for i,name in enumerate(IDS):
+            for suffix,arr in [('',stack[i]),('_3857',stack[i,source_rows,:])]:
+                im=Image.fromarray(arr,mode='P'); im.putpalette(palette+[0]*(768-len(palette)))
+                im.save(OUT/f'{prefix}{name}{suffix}.png',transparency=0,optimize=True)
     sources=['expert_weights.csv','results/rq1_fitted_weights.csv','results/rq3_national_breaks.csv','optimization_config.yaml']
     manifest=dict(bounds=extent,width=width,height=height,colors=COLORS,files={s:f'hazard/{s}.png' for s in IDS},
+        webMercatorFiles={s:f'hazard/{s}_3857.png' for s in IDS},
+        basinFiles={s:f'hazard/basin_{s}.png' for s in IDS},
+        basinWebMercatorFiles={s:f'hazard/basin_{s}_3857.png' for s in IDS},
+        basinMethod='Basin-relative quintiles from each cached research unit; fixed WorldCover classes; same five weight schemes and RQ3 score rounding. Classes are relative to each basin, so adjacent basin boundaries can show discontinuities. District and national exposure cards remain based on national breaks.',
+        mapDisplayCRS='EPSG:3857 (nearest-neighbor row reprojection of the geographic overview)',
         description='National susceptibility overview: 0.0025 degree cells (about 250 m), nearest native 10 m cell. Not flood probability or an inundation forecast.',
         method='Eight criteria, national breaks, published weights; scores rounded to ten decimals then floor(score + 0.5), classes 1-5, matching RQ3. Transparent cells are unknown or outside the analysis domain. Zoom enlarges the overview, not its resolution.',
         sourceCRS='EPSG:32645',displayCRS='EPSG:4326',resampling='nearest',validatedUnits=units,overlappingSamples=overlaps,

@@ -39,4 +39,36 @@ class HazardExportTests(unittest.TestCase):
             self.assertEqual(set(np.unique(np.array(im))),set(range(6)))
             self.assertGreater(np.count_nonzero(np.array(im)),1000000)
 
+    def test_basin_view_is_distinct_with_matching_valid_domain(self):
+        for scheme in module.IDS:
+            national=np.array(module.Image.open(module.OUT/f'{scheme}.png'))
+            basin=np.array(module.Image.open(module.OUT/f'basin_{scheme}.png'))
+            np.testing.assert_array_equal(national>0,basin>0)
+            self.assertGreater(np.count_nonzero(national!=basin),10000)
+            self.assertEqual(set(np.unique(basin)),set(range(6)))
+
+    def test_mercator_overlay_matches_geographic_samples(self):
+        # Independently locate geographic points in both projections. Flat
+        # stretching would disagree by several rows over Nepal's latitude span.
+        from pyproj import Transformer
+        project=Transformer.from_crs(4326,3857,always_xy=True)
+        _,south=project.transform(80,26.3);_,north=project.transform(88.3,30.5)
+        for prefix in ['', 'basin_']:
+            original=np.array(module.Image.open(module.OUT/f'{prefix}expert_median.png'))
+            warped=np.array(module.Image.open(module.OUT/f'{prefix}expert_median_3857.png'))
+            for row in [10,400,800,1200,1660]:
+                # Inverse projection of the center of a display row.
+                inverse=Transformer.from_crs(3857,4326,always_xy=True)
+                _,lat=inverse.transform(0,north-(row+.5)*(north-south)/1680)
+                geographic_row=int((30.5-lat)/4.2*1680)
+                np.testing.assert_array_equal(warped[row],original[geographic_row])
+
+    def test_basin_ids_match_the_cached_research_units(self):
+        collection=json.loads((module.OUT.parent/'basins.json').read_text(encoding='utf-8'))
+        manifest=json.loads((module.OUT/'manifest.json').read_text(encoding='utf-8'))
+        self.assertEqual({f['properties']['id'] for f in collection['features']},set(manifest['validatedUnits']))
+        for feature in collection['features']:
+            self.assertIn(feature['geometry']['type'],['Polygon','MultiPolygon'])
+            self.assertGreater(feature['properties']['areaInNepalKm2'],0)
+
 if __name__=='__main__': unittest.main()

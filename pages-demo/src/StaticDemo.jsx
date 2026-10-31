@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
-import { COLORS, METRICS, compact, number, ratio, metricValue, colorFor, displayValue, rankedDistricts, validateSnapshot, mapPaths, hazardRect } from './demoData'
+import { COLORS, METRICS, compact, number, ratio, metricValue, colorFor, displayValue, rankedDistricts, validateSnapshot } from './demoData'
 import './static-demo.css'
+import ResearchMap from './ResearchMap'
 
 const asset = path => `${import.meta.env.BASE_URL}demo/${path}`
 const REPOSITORY = 'https://github.com/bisheshkhanal036-afk/FloodHUBnepal'
 
 export default function StaticDemo({ initialData }) {
-  const [layer, setLayer] = useState('hazard'), [opacity, setOpacity] = useState(.9), [rasterError, setRasterError] = useState(false)
+  const [classification, setClassification] = useState('national')
+  const [layer, setLayer] = useState('hazard'), [opacity, setOpacity] = useState(.9)
   const [data, setData] = useState(initialData ? validateSnapshot(initialData) : null)
   const [error, setError] = useState(''), [attempt, setAttempt] = useState(0)
   const [scheme, setScheme] = useState('expert_median'), [metric, setMetric] = useState('population')
   const [selected, setSelected] = useState('NP0327'), [query, setQuery] = useState('')
-  const [page, setPage] = useState(0), [figure, setFigure] = useState('exposure'), [zoom, setZoom] = useState(1)
+  const [page, setPage] = useState(0), [figure, setFigure] = useState('exposure')
   useEffect(() => {
     if (initialData) return
     const controller = new AbortController(); setError(''); setData(null)
@@ -21,8 +23,6 @@ export default function StaticDemo({ initialData }) {
     }).then(value => setData(validateSnapshot(value))).catch(e => { if (e.name !== 'AbortError') setError(e.message) })
     return () => controller.abort()
   }, [initialData, attempt])
-  const paths = useMemo(() => data ? mapPaths(data.districts) : [], [data])
-  const rasterRect = useMemo(() => data?.hazard ? hazardRect(data.districts, data.hazard.bounds) : null, [data])
   const showHazard = layer === 'hazard' && !!data?.hazard
   const ranked = useMemo(() => data ? rankedDistricts(data.districts, scheme, metric, query) : [], [data, scheme, metric, query])
   const district = data?.districts.find(d => d.code === selected)
@@ -56,7 +56,7 @@ export default function StaticDemo({ initialData }) {
         <section id="explorer" className="demo-container demo-section">
           <div className="demo-section-heading"><div><p className="demo-eyebrow">01 / THE DISTRICT EXPLORER</p><h2>One landscape. Different perspectives.</h2></div><a className="demo-download" href={asset('district-exposure.csv')} download>Download aggregate CSV ↓</a></div>
           <div className="demo-controls">
-            {data.hazard && <label>Map layer<select value={layer} onChange={e=>{setLayer(e.target.value);setRasterError(false)}}><option value="hazard">Susceptibility raster</option><option value="exposure">District exposure</option></select></label>}
+            {data.hazard && <label>Map layer<select value={layer} onChange={e=>{setLayer(e.target.value)}}><option value="hazard">Susceptibility raster</option><option value="exposure">District exposure</option></select></label>}
             {showHazard && <label>Raster opacity<input aria-label="Raster opacity" type="range" min="0.2" max="1" step="0.1" value={opacity} onChange={e=>setOpacity(Number(e.target.value))} /></label>}
             <label>Weighting scheme<select value={scheme} onChange={e => {setScheme(e.target.value);setPage(0)}}>{data.schemes.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
             <label>District summary metric<select value={metric} onChange={e => changeMetric(e.target.value)}>{Object.entries(METRICS).map(([id,m]) => <option value={id} key={id}>{m.label}</option>)}</select></label>
@@ -70,16 +70,8 @@ export default function StaticDemo({ initialData }) {
           </div>
           <div className="demo-explorer">
             <div className="demo-map-card">
-              <div className="demo-map-header"><span><span className="demo-live-dot" aria-hidden="true" />{showHazard ? 'PRECOMPUTED SUSCEPTIBILITY RASTER' : 'PRECOMPUTED DISTRICT VIEW'}</span><div className="demo-map-zoom"><button aria-label="Zoom out" disabled={zoom===1} onClick={()=>setZoom(n=>Math.max(1,n-.5))}>−</button><span>{Math.round(zoom*100)}%</span><button aria-label="Zoom in" disabled={zoom===3} onClick={()=>setZoom(n=>Math.min(3,n+.5))}>+</button><button onClick={()=>setZoom(1)}>Reset</button></div></div>
-              <div className="demo-map-scroll" tabIndex={0} aria-label="Nepal district map. Zoom to scroll across the map; select a district for details.">
-                <svg viewBox="0 0 1000 550" style={{width:`${zoom*100}%`,height:`${zoom*100}%`}} aria-label="Precomputed susceptibility and exposure in Nepal" role="group">
-                  <title>Nepal district exposure overview</title>
-                  {showHazard && <image data-testid="hazard-raster" href={asset(data.hazard.files[scheme])} {...rasterRect} preserveAspectRatio="none" opacity={opacity} style={{imageRendering:'pixelated'}} onError={()=>setRasterError(true)} />}
-                  {paths.map(({code,path}) => {const d=data.districts.find(item=>item.code===code);const value=metricValue(d.values[scheme],metric);return <path key={code} d={path} fill={showHazard?'transparent':colorFor(value,metric)} fillRule="evenodd" className={`demo-district ${selected===code?'is-selected':''}`} role="button" tabIndex={0} aria-label={`${d.name}: ${displayValue(value,metric)} ${METRICS[metric].suffix==='%'?'':METRICS[metric].suffix}`} aria-pressed={selected===code} onClick={()=>choose(code)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();choose(code)}}}><title>{d.name} · {displayValue(value,metric)}</title></path>})}
-                </svg>
-              </div>
-              {rasterError && showHazard && <p role="alert">The susceptibility raster could not be loaded. Please reload the page.</p>}
-              {showHazard ? <div className="demo-map-footer"><strong>Modeled flood susceptibility · classes 1–5</strong><div className="demo-map-legend">{data.hazard.colors.map((color,i)=><span key={color}><i style={{background:color}}/><small>{i+1} · {['Very low','Low','Moderate','High','Very high'][i]}</small></span>)}</div><p>{data.hazard.description}</p><p>{data.hazard.method}</p><a href={asset('hazard/manifest.json')} download>Download raster methods & provenance</a></div> : <div className="demo-map-footer"><strong>{METRICS[metric].label}</strong><div className="demo-map-legend">{COLORS.map((color,i)=><span key={color}><i style={{background:color}} /><small>{i===0?'Under ':i===4?'≥ ':''}{displayValue(i===0?METRICS[metric].breaks[0]:METRICS[metric].breaks[i-1],metric,true)}{i>0&&i<4?`–${displayValue(METRICS[metric].breaks[i],metric,true)}`:''}</small></span>)}</div><p>Simplified district overview · click or use the district selector · missing coverage is not low susceptibility</p></div>}
+              <ResearchMap data={data} scheme={scheme} metric={metric} selected={selected} onSelect={choose} showHazard={showHazard} opacity={opacity} classification={classification} onClassificationChange={setClassification} />
+              {showHazard ? <div className="demo-map-footer"><strong>Modeled flood susceptibility · classes 1–5</strong><div className="demo-map-legend">{data.hazard.colors.map((color,i)=><span key={color}><i style={{background:color}}/><small>{i+1} · {['Very low','Low','Moderate','High','Very high'][i]}</small></span>)}</div><p>{data.hazard.description.replace('National susceptibility','Susceptibility')}</p><p>{classification==='basin'?data.hazard.basinMethod:data.hazard.method}</p><a href={asset('hazard/manifest.json')} download>Download raster methods & provenance</a></div> : <div className="demo-map-footer"><strong>{METRICS[metric].label}</strong><div className="demo-map-legend">{COLORS.map((color,i)=><span key={color}><i style={{background:color}} /><small>{i===0?'Under ':i===4?'≥ ':''}{displayValue(i===0?METRICS[metric].breaks[0]:METRICS[metric].breaks[i-1],metric,true)}{i>0&&i<4?`–${displayValue(METRICS[metric].breaks[i],metric,true)}`:''}</small></span>)}</div><p>Simplified district overview · click or use the district selector · missing coverage is not low susceptibility</p></div>}
             </div>
             <aside className="demo-district-card" aria-live="polite" aria-label="Selected district details"><p className="demo-eyebrow">DISTRICT SPOTLIGHT / {district.code}</p><h3>{district.name}</h3><p className="demo-muted">{district.province} Province</p><div className="demo-spotlight"><span>{METRICS[metric].short}</span><strong data-testid="district-value">{displayValue(metricValue(values,metric),metric,true)}</strong><p>in modeled classes 4–5</p></div>
               <dl><div><dt>Estimated residents</dt><dd>{number(values.populationHigh)}</dd></div><div><dt>Share of mapped population</dt><dd>{displayValue(ratio(values.populationHigh,values.populationValid),'populationShare')}</dd></div><div><dt>Mapped land in classes 4–5</dt><dd>{number(values.areaHigh/1e6)} km²</dd></div><div><dt>Buildings in classes 4–5</dt><dd>{number(values.buildingsHigh)}</dd></div></dl>
@@ -99,7 +91,7 @@ export default function StaticDemo({ initialData }) {
           <figure className="demo-figure"><div className="demo-figure-title"><div><h3>{selectedFigure.title}</h3><p>{selectedFigure.description}</p></div><a href={asset(selectedFigure.file)} download>Download figure ↓</a></div><a href={asset(selectedFigure.file)} target="_blank" rel="noreferrer" aria-label={`Open full-size figure: ${selectedFigure.title}`}><img key={selectedFigure.file} src={asset(selectedFigure.file)} alt={selectedFigure.description} loading="eager" /></a><figcaption>Precomputed project output · {selectedFigure.file}. Open the figure for a full-size view. No calculation is performed when switching figures.</figcaption></figure>
         </div></section>
 
-        <section id="about" className="demo-container demo-section"><p className="demo-eyebrow">03 / KNOW WHAT YOU’RE LOOKING AT</p><h2>Useful comparisons.<br />Honest boundaries.</h2><div className="demo-about-grid"><article><span>01</span><h3>A research snapshot</h3><p>This site explores saved results across five weighting schemes. It cannot draw a new study area, accept uploads, recalculate weights, assess your location, or run Citizen/NBS tools.</p></article><article><span>02</span><h3>Exposure, not a prediction</h3><p>The raster shows cell-level susceptibility; the district view shows aggregate exposure. The district card always reports district totals, not values at the clicked pixel. A high value is not a current flood alert, a probability, or an instruction to evacuate.</p></article><article><span>03</span><h3>Methods matter</h3><p>These research outputs use national breaks and census-calibrated population. They are distinct from the interactive application’s raw-HRSL reports. Read the source tables and methodology before using the values.</p></article></div>
+        <section id="about" className="demo-container demo-section"><p className="demo-eyebrow">03 / KNOW WHAT YOU’RE LOOKING AT</p><h2>Useful comparisons.<br />Honest boundaries.</h2><div className="demo-about-grid"><article><span>01</span><h3>A research snapshot</h3><p>This site explores saved results across five weighting schemes. It cannot draw a new study area, accept uploads, recalculate weights, assess your location, or run Citizen/NBS tools.</p></article><article><span>02</span><h3>Exposure, not a prediction</h3><p>The raster can use national breaks or basin-relative quintiles; the district view shows aggregate exposure. The district card always reports district totals, not values at the clicked pixel. A high value is not a current flood alert, a probability, or an instruction to evacuate.</p></article><article><span>03</span><h3>Methods matter</h3><p>These research outputs use national breaks and census-calibrated population. They are distinct from the interactive application’s raw-HRSL reports. Read the source tables and methodology before using the values.</p></article></div>
           <details className="demo-provenance"><summary>Sources, attribution & reproducibility</summary><div><p><strong>Boundaries:</strong> {data.boundaryAttribution.source}. <a href={data.boundaryAttribution.url} target="_blank" rel="noreferrer">OCHA HDX source</a> · {data.boundaryAttribution.license}. {data.boundaryAttribution.changes}</p><p><strong>Research inputs:</strong> the project’s Copernicus DEM, WorldCover, OSM, HRSL and other configured sources. Source choices, calibration and limitations are documented in the repository. Figures are original project outputs, unchanged.</p><p>No raw flood incident records, uploaded user files or individual shelter coordinates are included in this demo.</p><div className="demo-source-links"><a href={asset('snapshot.json')} download>Snapshot & source fingerprints ↓</a><a href={asset('README.txt')} download>Attribution notes ↓</a><a href={asset('methods.txt')} target="_blank" rel="noreferrer">Method notes ↗</a></div></div></details>
         </section>
       </>}

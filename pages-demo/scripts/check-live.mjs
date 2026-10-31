@@ -18,7 +18,7 @@ try {
   const data=await dataResponse.json()
   if(data.districts.length!==77||data.schemes.length!==5)throw new Error('Incorrect live snapshot')
   if(data.hazard?.validatedUnits.length!==366)throw new Error('Missing hazard manifest')
-  for(const file of Object.values(data.hazard.files)){const r=await page.request.get(new URL('demo/'+file,url).href);if(!r.ok()||(await r.body()).length<10000)throw new Error('Missing raster '+file)}
+  for(const file of [...Object.values(data.hazard.webMercatorFiles),...Object.values(data.hazard.basinWebMercatorFiles)]){const r=await page.request.get(new URL('demo/'+file,url).href);if(!r.ok()||(await r.body()).length<10000)throw new Error('Missing raster '+file)}
   await page.getByTestId('hazard-raster').waitFor()
   const csv=await page.request.get(new URL('demo/district-exposure.csv',url).href)
   if(csv.status()!==200||(await csv.text()).split('\n').length!==386)throw new Error('CSV download failed')
@@ -30,8 +30,16 @@ try {
   mkdirSync('test-results',{recursive:true})
   await page.evaluate(()=>window.scrollTo(0,0))
   await page.screenshot({path:'test-results/live-desktop.png',fullPage:true})
+  await page.getByLabel('Zoom to research basin').selectOption('4080848980_L8')
+  await page.getByLabel('Raster classification').selectOption('basin')
+  await page.getByLabel('Background imagery').selectOption('satellite')
+  await page.waitForFunction(()=>{const tiles=[...document.querySelectorAll('.leaflet-tile-pane img')];return tiles.length>0&&tiles.every(img=>img.complete&&img.naturalWidth>0)},{},{timeout:30000})
+  await page.getByLabel('Raster opacity').fill('0.5')
+  await page.locator('.demo-map-card').screenshot({path:'test-results/live-basin-satellite.png'})
+  const loadedTiles=await page.locator('.leaflet-tile-loaded').count()
+  if(!await page.locator('.leaflet-control-attribution').innerText().then(text=>text.includes('Esri')))throw new Error('Missing imagery attribution')
   await page.setViewportSize({width:390,height:844})
   if(!await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth))throw new Error('Mobile page overflow')
   await page.screenshot({path:'test-results/live-mobile.png',fullPage:true})
-  console.log(JSON.stringify({url,status:response.status(),districts:data.districts.length,schemes:data.schemes.length,csvRows:385,figures:'loaded',runtimeErrors:errors.length,apiRequests:requests.filter(r=>r.includes('/api/')).length,mobileOverflow:false},null,2))
+  console.log(JSON.stringify({url,status:response.status(),districts:data.districts.length,schemes:data.schemes.length,csvRows:385,basins:366,classification:'basin-relative',satelliteTiles:loadedTiles,figures:'loaded',runtimeErrors:errors.length,apiRequests:requests.filter(r=>r.includes('/api/')).length,mobileOverflow:false},null,2))
 }finally{await browser.close()}

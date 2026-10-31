@@ -21,6 +21,29 @@
     "fitted_cluster": "hazard/fitted_cluster.png",
     "fitted_full": "hazard/fitted_full.png"
   },
+  "webMercatorFiles": {
+    "expert_median": "hazard/expert_median_3857.png",
+    "expert_median_nepal": "hazard/expert_median_nepal_3857.png",
+    "equal8": "hazard/equal8_3857.png",
+    "fitted_cluster": "hazard/fitted_cluster_3857.png",
+    "fitted_full": "hazard/fitted_full_3857.png"
+  },
+  "basinFiles": {
+    "expert_median": "hazard/basin_expert_median.png",
+    "expert_median_nepal": "hazard/basin_expert_median_nepal.png",
+    "equal8": "hazard/basin_equal8.png",
+    "fitted_cluster": "hazard/basin_fitted_cluster.png",
+    "fitted_full": "hazard/basin_fitted_full.png"
+  },
+  "basinWebMercatorFiles": {
+    "expert_median": "hazard/basin_expert_median_3857.png",
+    "expert_median_nepal": "hazard/basin_expert_median_nepal_3857.png",
+    "equal8": "hazard/basin_equal8_3857.png",
+    "fitted_cluster": "hazard/basin_fitted_cluster_3857.png",
+    "fitted_full": "hazard/basin_fitted_full_3857.png"
+  },
+  "basinMethod": "Basin-relative quintiles from each cached research unit; fixed WorldCover classes; same five weight schemes and RQ3 score rounding. Classes are relative to each basin, so adjacent basin boundaries can show discontinuities. District and national exposure cards remain based on national breaks.",
+  "mapDisplayCRS": "EPSG:3857 (nearest-neighbor row reprojection of the geographic overview)",
   "description": "National susceptibility overview: 0.0025 degree cells (about 250 m), nearest native 10 m cell. Not flood probability or an inundation forecast.",
   "method": "Eight criteria, national breaks, published weights; scores rounded to ten decimals then floor(score + 0.5), classes 1-5, matching RQ3. Transparent cells are unknown or outside the analysis domain. Zoom enlarges the overview, not its resolution.",
   "sourceCRS": "EPSG:32645",

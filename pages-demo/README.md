@@ -1,6 +1,6 @@
 # Khola — GitHub Pages research demo
 
-A self-contained React/Vite site showing precomputed district exposure across Nepal. It has **no Python service, database, map-tile service, API keys, account system or live analysis**. The separate application in `../frontend` and `../backend` retains its own build and behavior.
+A React/Vite site showing precomputed susceptibility and district exposure across Nepal. It has **no Python service, database, API keys, account system or live analysis**. Optional satellite background tiles are fetched directly from Esri World Imagery when selected; the default neutral background makes no third-party tile requests. The separate application in `../frontend` and `../backend` retains its own build and behavior.
 
 ## Preview and verify
 
@@ -54,3 +54,14 @@ It exports only explicitly selected aggregate columns, simplified boundaries and
 ### Regenerate susceptibility overviews
 
 Install Python `numpy pillow pyproj pyshp`, then run `python scripts/export-hazard.py` from this folder with the canonical Tier A NPZ caches and HydroBASINS L8/L9 shapefiles available locally. The exporter validates every reconstructed native grid against its cache shape, uses the published national breaks and RQ3 weighting inputs, and produces five transparent indexed PNGs plus a methods/provenance manifest. It does not train a model or fetch new inputs. Classification follows RQ3: round weighted score to ten decimals, then floor(score + 0.5), clipped to classes 1?5. Run `python scripts/test_hazard_export.py` to verify classification boundaries and artifacts. `npm run demo:export` preserves the hazard manifest in the snapshot. All generated files are committed for server-free builds.
+
+
+### Basin views and map navigation
+
+The Leaflet map supports dragging, double-click/pinch zoom, keyboard pan/zoom, Shift-drag box zoom, zoom to district, and an enlarged map. Choose among 366 cached HydroBASINS L8/L9 research units to fit their full outlines. IDs are retained because these research units do not all have verified river names. Raster coverage remains Nepal-only even when a full basin crosses the border. Boundary overlays are switchable between districts, research basins and none.
+
+The classification selector switches between national breaks and cached per-basin quintiles for all five schemes. Basin-relative classes describe variation within each research unit; class changes at basin boundaries can be expected. National and district summary cards continue to use national breaks, as labeled. The selected basin note is not a basin exposure total.
+
+`python scripts/export-hazard.py` exports both classifications in geographic and Web Mercator display variants. Mercator variants explicitly resample rows with nearest-neighbor lookup so a geographic PNG is not incorrectly stretched over satellite tiles. `python scripts/export-basins.py` writes simplified basin outlines and the source attribution to `public/demo/basins.json`. The overview remains about 250 m regardless of zoom.
+
+Satellite imagery: Esri, Vantor, Earthstar Geographics, and the GIS User Community. Current attribution was verified against the public World Imagery service metadata. Imagery is contextual, not live flood imagery. Switching to None removes the external tile layer. Tile failures are disclosed without disabling local raster and vector layers. HydroBASINS attribution and source links are shown when basin boundaries are enabled. See https://www.hydrosheds.org/products/hydrobasins and https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer .
