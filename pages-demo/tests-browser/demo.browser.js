@@ -1,0 +1,130 @@
+import { test, expect } from '@playwright/test'
+
+test('loads at the Pages project path and compares actual district results',async({page})=>{
+  const errors=[],requests=[];page.on('pageerror',error=>errors.push(error.message));page.on('request',request=>requests.push(request.url()))
+  await page.goto('./');await expect(page.getByRole('heading',{name:'Kathmandu',exact:true})).toBeVisible()
+  const before=await page.getByTestId('district-value').innerText()
+  await page.getByLabel('Weighting scheme').selectOption('equal8')
+  await expect(page.getByTestId('district-value')).not.toHaveText(before)
+  await page.getByLabel('District summary metric').selectOption('areaShare')
+  await expect(page.getByTestId('district-value')).toContainText('%')
+  await page.getByLabel('Inspect a district').selectOption('NP0104')
+  await expect(page.getByRole('heading',{name:'Jhapa',exact:true})).toBeVisible()
+  const zoomBefore=await page.getByTestId('map-zoom').innerText();await page.getByRole('button',{name:'Zoom in',exact:true}).click();await expect(page.getByTestId('map-zoom')).not.toHaveText(zoomBefore)
+  await page.getByRole('button',{name:'Reset',exact:true}).click()
+  await expect(page.getByRole('region',{name:/Interactive susceptibility map/})).toBeVisible()
+  await expect.poll(()=>page.locator('.demo-figure img').evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true)
+  await page.evaluate(()=>window.scrollTo(0,0))
+  expect(errors).toEqual([]);expect(requests.filter(url=>url.includes('/api/')||url.includes(':8000'))).toEqual([])
+  expect(requests.every(url=>url.startsWith('http://127.0.0.1:4187/'))).toBe(true)
+  await page.screenshot({path:'test-results/desktop-explorer.png',fullPage:true})
+})
+
+test('supports keyboard map selection, filtering, figures and real downloads',async({page,request})=>{
+  await page.goto('./');await expect(page.getByRole('heading',{name:'Kathmandu',exact:true})).toBeVisible()
+  const district=page.getByRole('button',{name:/^Morang:/});await district.focus();await page.keyboard.press('Enter')
+  await expect(page.getByRole('heading',{name:'Morang',exact:true})).toBeVisible()
+  await page.getByLabel('Find a district or province').fill('Panchthar');await page.getByRole('button',{name:'Inspect Panchthar'}).click()
+  await expect(page.getByRole('heading',{name:'Panchthar',exact:true})).toBeVisible()
+  await page.getByRole('button',{name:'Shelters',exact:true}).click()
+  await expect(page.getByRole('heading',{name:'How stable are candidate lists?'})).toBeVisible()
+  const image=page.getByRole('img',{name:/Overlap between ranked Kathmandu/});await expect(image).toBeVisible()
+  await expect.poll(()=>image.evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true)
+  const csv=await request.get('demo/district-exposure.csv');expect(csv.ok()).toBe(true);expect((await csv.text()).split('\n')).toHaveLength(386)
+  const snapshot=await request.get('demo/snapshot.json');expect((await snapshot.json()).districts).toHaveLength(77)
+  await page.getByLabel('Find a district or province').fill('no such district');await expect(page.getByText(/No districts match/)).toBeVisible()
+})
+
+test('mobile layout keeps controls and district details readable without horizontal page overflow',async({page})=>{
+  await page.setViewportSize({width:390,height:844});await page.goto('./')
+  await expect(page.getByRole('heading',{name:'Kathmandu',exact:true})).toBeVisible()
+  await page.getByLabel('Weighting scheme').selectOption('fitted_full');await page.getByLabel('Inspect a district').selectOption('NP0104')
+  await expect(page.getByRole('heading',{name:'Jhapa',exact:true})).toBeVisible()
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true)
+  await page.screenshot({path:'test-results/mobile-explorer.png',fullPage:true})
+})
+
+test('a failed static-data request gives a recoverable error instead of fake results',async({page})=>{
+  await page.route('**/demo/snapshot.json',route=>route.fulfill({status:503,body:'Unavailable'}))
+  await page.goto('./');await expect(page.getByRole('heading',{name:'The snapshot is unavailable.'})).toBeVisible()
+  await page.unroute('**/demo/snapshot.json');await page.getByRole('button',{name:'Retry loading'}).click()
+  await expect(page.getByRole('heading',{name:'Kathmandu',exact:true})).toBeVisible()
+})
+
+
+test('serves five real categorical rasters and switches between susceptibility and exposure',async({page,request})=>{
+  await page.goto('./')
+  await expect(page.getByTestId('hazard-raster')).toBeVisible()
+  const snapshot=await (await request.get('demo/snapshot.json')).json()
+  expect(snapshot.hazard.validatedUnits).toHaveLength(366)
+  const sizes=[]
+  for(const scheme of snapshot.schemes){
+    await page.getByLabel('Weighting scheme').selectOption(scheme.id)
+    await expect(page.getByTestId('hazard-raster')).toHaveAttribute('src',`/FloodHUBnepal/demo/${snapshot.hazard.webMercatorFiles[scheme.id]}`)
+    const raster=await request.get(`demo/${snapshot.hazard.webMercatorFiles[scheme.id]}`)
+    expect(raster.ok()).toBe(true)
+    const bytes=await raster.body();expect(bytes.subarray(1,4).toString()).toBe('PNG');sizes.push(bytes.length)
+  }
+  expect(sizes.every(n=>n>10000)).toBe(true)
+  await page.getByLabel('Map layer').selectOption('exposure')
+  await expect(page.getByTestId('hazard-raster')).toHaveCount(0)
+  await page.getByLabel('Map layer').selectOption('hazard')
+  await expect(page.getByTestId('hazard-raster')).toBeVisible()
+  await page.locator('.demo-map-card').screenshot({path:'test-results/hazard-map.png'})
+})
+
+
+test('basin-relative classification, basin fit and district fit preserve geographic map navigation',async({page,request})=>{
+  await page.goto('./')
+  await expect(page.getByLabel('Zoom to research basin')).toBeEnabled()
+  const zoomBefore=await page.getByTestId('map-zoom').innerText()
+  await page.getByLabel('Zoom to research basin').selectOption('4080848980_L8')
+  await expect(page.getByTestId('map-zoom')).not.toHaveText(zoomBefore)
+  await expect(page.locator('.demo-basin-note')).toContainText('Kathmandu Valley')
+  await expect(page.getByLabel('Boundary overlay')).toHaveValue('basins')
+  await page.getByLabel('Raster classification').selectOption('basin')
+  await expect(page.getByTestId('hazard-raster')).toHaveAttribute('src',/basin_expert_median_3857.png$/)
+  await expect.poll(()=>page.getByTestId('hazard-raster').evaluate(img=>img.complete&&img.naturalWidth===3320)).toBe(true)
+  await expect(page.locator('.demo-classification-note')).toContainText('District and national exposure')
+  const original=await (await request.get('demo/hazard/expert_median_3857.png')).body()
+  const relative=await (await request.get('demo/hazard/basin_expert_median_3857.png')).body()
+  expect(original.equals(relative)).toBe(false)
+  await page.getByLabel('Boundary overlay').selectOption('districts')
+  await page.getByRole('button',{name:'Zoom to district',exact:true}).click()
+  await page.getByRole('button',{name:'Enlarge map',exact:true}).click()
+  await expect(page.getByRole('button',{name:'Compact map',exact:true})).toHaveAttribute('aria-pressed','true')
+  await page.locator('.demo-map-card').screenshot({path:'test-results/basin-detail.png'})
+})
+
+test('satellite imagery is optional, attributed and recovers from tile failures',async({page})=>{
+  const tiles=[]
+  // Deterministic offline tile fixture; the live check separately verifies the provider.
+  await page.route('https://services.arcgisonline.com/**',route=>{tiles.push(route.request().url());return route.fulfill({status:200,contentType:'image/png',path:'public/demo/hazard/expert_median_3857.png'})})
+  await page.goto('./')
+  expect(tiles).toHaveLength(0)
+  await page.getByLabel('Background imagery').selectOption('satellite')
+  await expect.poll(()=>tiles.length).toBeGreaterThan(0)
+  await expect(page.locator('.leaflet-control-attribution')).toContainText('Esri')
+  await expect.poll(()=>page.locator('.leaflet-tile-loaded').count()).toBeGreaterThan(0)
+  await page.getByLabel('Background imagery').selectOption('none')
+  await expect(page.locator('.leaflet-tile-pane img')).toHaveCount(0)
+  await page.unroute('https://services.arcgisonline.com/**')
+  await page.route('https://services.arcgisonline.com/**',route=>route.abort())
+  await page.getByLabel('Background imagery').selectOption('satellite')
+  await expect(page.getByRole('status')).toContainText('Some background imagery could not load')
+  await expect(page.getByTestId('hazard-raster')).toBeVisible()
+})
+
+
+test('missing basin vectors and a failed raster report errors while district zoom and scheme recovery work',async({page})=>{
+  await page.route('**/demo/basins.json',route=>route.fulfill({status:503,body:'Unavailable'}))
+  await page.route('**/demo/hazard/expert_median_3857.png',route=>route.abort())
+  await page.goto('./')
+  await expect(page.getByLabel('Zoom to research basin')).toBeDisabled()
+  await expect(page.getByText(/Basin outlines are unavailable/)).toBeVisible()
+  await expect(page.getByRole('alert')).toContainText('susceptibility raster could not be loaded')
+  await page.getByRole('button',{name:'Zoom to district',exact:true}).click()
+  await page.getByLabel('Weighting scheme').selectOption('equal8')
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect.poll(()=>page.getByTestId('hazard-raster').evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true)
+})
